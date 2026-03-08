@@ -2,6 +2,11 @@
 
 *A minimal Django stack for building and deploying admin-style apps.*
 
+![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue)
+![Django 6.0](https://img.shields.io/badge/django-6.0-green)
+![Coverage 69%](https://img.shields.io/badge/coverage-69%25-yellowgreen)
+![License MIT](https://img.shields.io/badge/license-MIT-brightgreen)
+
 A modern, batteries-included Django starter project built on Django's powerful admin foundation. Production-ready with SQLite, Docker, and zero-downtime Kamal deployment. Clone it, customize it, ship it.
 
 ![Django SmallStack Homepage](docs/images/smallstack-home.png)
@@ -39,6 +44,9 @@ Custom User model ready for email login. Password reset flows, secure sessions, 
 ### Docker Ready
 Production-ready Docker configuration with multi-service compose, health checks, and background worker. Deploy anywhere containers run.
 
+### Database Backups
+Built-in SQLite backup system with management command, scheduled cron support in Docker, and a staff-only web dashboard. Track backup history, view per-backup detail pages with activity timelines, and configure retention policies. Pruned backups are clearly marked — no false alarms.
+
 ### SQLite by Default
 Production-ready SQLite configuration with the database stored outside the container. Perfect for solo developers, small teams, and internal applications. No database service fees—just simple, reliable data storage that backs up with your VPS. Upgrade to PostgreSQL when you need it.
 
@@ -72,17 +80,17 @@ Production-ready SQLite configuration with the database stored outside the conta
    cd django-smallstack
    ```
 
-2. **Set up environment variables:**
+2. **Set up environment variables (optional):**
    ```bash
    cp .env.example .env
-   # Edit .env with your settings
+   # Edit .env to customize — sensible defaults work out of the box
    ```
 
 3. **Run setup:**
    ```bash
    make setup
    ```
-   This installs dependencies, runs migrations, creates a dev superuser, and verifies the configuration.
+   This installs dependencies, runs migrations, creates a dev superuser (`admin`/`admin`), and verifies the configuration.
 
 4. **Start the development server:**
    ```bash
@@ -97,7 +105,7 @@ Production-ready SQLite configuration with the database stored outside the conta
 
 1. **Build and run:**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 2. **Access the application:**
@@ -139,6 +147,14 @@ django-smallstack/
 └── pyproject.toml             # Dependencies & tools config
 ```
 
+## Documentation
+
+| Location | Audience | Content |
+|----------|----------|---------|
+| `README.md` | Everyone | Quick start, feature overview, project structure |
+| `/help/` (in-app) | End users & developers | Full guides, component reference, deployment docs |
+| `docs/skills/` | AI assistants | Structured skill files for Claude Code and similar tools |
+
 ## Built to Extend
 
 SmallStack comes pre-populated with working examples and sensible defaults. Use it as-is for internal tools, or customize everything to build your vision.
@@ -155,8 +171,12 @@ SmallStack comes pre-populated with working examples and sensible defaults. Use 
 ### Running Tests
 
 ```bash
-uv run pytest
+uv run pytest              # Tests with coverage summary
+make coverage              # Tests + HTML coverage report
+open htmlcov/index.html    # Browse per-file coverage
 ```
+
+108 tests, 69% code coverage across all apps (excluding migrations and test files).
 
 ### Code Quality
 

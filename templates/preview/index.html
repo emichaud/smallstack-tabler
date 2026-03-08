@@ -1,0 +1,30 @@
+{% extends "preview/base_preview.html" %}
+
+{% block title %}Index{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="page-pretitle">Reference</div>
+        <h2 class="page-title">Tabler Preview Pages</h2>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    {% for p in pages %}
+    <div class="col-sm-6 col-lg-3">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">{{ p.title }}</h3>
+                <p class="text-secondary">{{ p.description }}</p>
+            </div>
+            <div class="card-footer">
+                <a href="/preview/{{ p.slug }}/" class="btn btn-primary w-100">View</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

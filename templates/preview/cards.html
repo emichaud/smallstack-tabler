@@ -1,0 +1,79 @@
+{% extends "preview/base_preview.html" %}
+
+{% block title %}Cards{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="page-pretitle">Components</div>
+        <h2 class="page-title">Cards</h2>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-deck row-cards">
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Basic card</h3>
+            </div>
+            <div class="card-body">
+                <p>This is a basic card with a header and body content. Cards are the primary building block of the Tabler dashboard.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Card with footer</h3>
+            </div>
+            <div class="card-body">
+                <p>Cards can have optional footers with actions or metadata.</p>
+            </div>
+            <div class="card-footer">
+                <button class="btn btn-primary">Save</button>
+                <button class="btn btn-ghost-secondary ms-2">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-status-top bg-primary"></div>
+            <div class="card-header">
+                <h3 class="card-title">Status card</h3>
+            </div>
+            <div class="card-body">
+                <p>Cards with a colored status indicator on top.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-status-top bg-success"></div>
+            <div class="card-header">
+                <h3 class="card-title">Success</h3>
+            </div>
+            <div class="card-body"><p>Green status indicator for success states.</p></div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-status-top bg-danger"></div>
+            <div class="card-header">
+                <h3 class="card-title">Danger</h3>
+            </div>
+            <div class="card-body"><p>Red status indicator for error or danger states.</p></div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-status-top bg-warning"></div>
+            <div class="card-header">
+                <h3 class="card-title">Warning</h3>
+            </div>
+            <div class="card-body"><p>Amber status indicator for warning states.</p></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

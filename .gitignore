@@ -47,3 +47,4 @@ htmlcov/
 
 # UV
 # uv.lock is tracked for reproducible Docker builds
+_tabler_source/

@@ -1,10 +1,274 @@
-{% extends "smallstack/base.html" %}
-{% load theme_tags static %}
+{% extends "tabler/base.html" %}
+{% load static %}
 
-{% block title %}Home{% endblock %}
+{% block title %}Dashboard{% endblock %}
 
-{% block breadcrumbs %}{% endblock %}
+{% block nav_home_active %}active{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Overview</div>
+                <h2 class="page-title">Dashboard</h2>
+            </div>
+            <div class="col-auto ms-auto d-print-none">
+                <div class="btn-list">
+                    <a href="#" class="btn btn-outline-primary d-none d-sm-inline-block">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                        New view
+                    </a>
+                    <a href="#" class="btn btn-primary d-none d-sm-inline-block">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                        Create new report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
 {% block content %}
-{% include "smallstack/pages/home_content.html" %}
+<!-- Row 1: Welcome card + stat cards -->
+<div class="row row-deck row-cards">
+
+    <!-- Welcome Hero Card -->
+    <div class="col-lg-6">
+        <div class="card welcome-card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-7">
+                        <h2 class="welcome-title">
+                            Welcome back{% if user.is_authenticated %}, {{ user.get_short_name|default:user.username }}{% endif %}!
+                        </h2>
+                        <p class="welcome-subtitle">
+                            Here's what's happening with your projects today.
+                        </p>
+
+                        <div class="row mt-4">
+                            <div class="col-6">
+                                <div class="mini-stat">
+                                    <div class="mini-stat-label">Today's Sales</div>
+                                    <div class="mini-stat-value">$2,854</div>
+                                    <div class="mini-stat-bar">
+                                        <div class="mini-stat-bar-fill green" style="width: 72%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="mini-stat">
+                                    <div class="mini-stat-label">Growth Rate</div>
+                                    <div class="mini-stat-value">-2.8%</div>
+                                    <div class="mini-stat-bar">
+                                        <div class="mini-stat-bar-fill red" style="width: 35%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-5 d-none d-md-block">
+                        <div class="welcome-illustration">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="140" height="140" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="2" width="20" height="20" rx="5"></rect>
+                                <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+                                <path d="M12 6v2m0 8v2"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Users stat card -->
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Total Users</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">43,241</div>
+                    <span class="stat-change positive ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        +5.2%
+                    </span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-users" height="40"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Users stat card with donut -->
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Active Users</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">12,847</div>
+                    <span class="stat-change negative ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>
+                        -1.7%
+                    </span>
+                </div>
+                <div class="d-flex justify-content-center mt-3">
+                    <div class="chart-donut-container">
+                        <canvas id="donut-active" width="80" height="80"></canvas>
+                        <div class="chart-donut-label">76%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: Four smaller stat cards -->
+<div class="row row-deck row-cards mt-0">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Sales</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">75%</div>
+                    <span class="stat-change positive ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        +3.1%
+                    </span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-sales" height="40"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Revenue</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">$48,290</div>
+                    <span class="stat-change positive ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        +8.4%
+                    </span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-revenue" height="40"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">New Clients</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">624</div>
+                    <span class="stat-change negative ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></svg>
+                        -2.1%
+                    </span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-clients" height="40"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Active Subscriptions</div>
+                <div class="d-flex align-items-baseline">
+                    <div class="stat-value">1,849</div>
+                    <span class="stat-change positive ms-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        +4.6%
+                    </span>
+                </div>
+                <div class="sparkline-container">
+                    <canvas id="sparkline-subs" height="40"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<!-- Chart.js for sparklines and donut -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ── Shared sparkline config ─────────────────────────
+    function createSparkline(canvasId, data, color) {
+        var ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        new Chart(ctx.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: data.map(function(_, i) { return ''; }),
+                datasets: [{
+                    data: data,
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: {
+                    x: { display: false },
+                    y: { display: false }
+                },
+                elements: { line: { borderCapStyle: 'round' } }
+            }
+        });
+    }
+
+    // Sparkline data (placeholder)
+    createSparkline('sparkline-users',   [12, 18, 14, 22, 19, 25, 28, 24, 30, 27, 33, 31, 35], '#f59f00');
+    createSparkline('sparkline-sales',   [5, 8, 6, 12, 9, 15, 11, 18, 14, 20, 17, 22, 19],     '#2fb344');
+    createSparkline('sparkline-revenue', [20, 25, 22, 30, 28, 35, 32, 40, 38, 42, 45, 48, 50], '#4299e1');
+    createSparkline('sparkline-clients', [15, 12, 18, 14, 10, 16, 13, 9, 14, 11, 8, 12, 10],   '#d63939');
+    createSparkline('sparkline-subs',    [8, 12, 10, 15, 18, 16, 20, 22, 19, 25, 23, 28, 30],  '#0ca678');
+
+    // ── Donut/Gauge chart ───────────────────────────────
+    var donutCtx = document.getElementById('donut-active');
+    if (donutCtx) {
+        new Chart(donutCtx.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [76, 24],
+                    backgroundColor: ['#f59f00', '#2c2e34'],
+                    borderWidth: 0,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: false,
+                cutout: '75%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

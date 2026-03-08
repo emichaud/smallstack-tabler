@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "apps.tasks",
     "apps.activity",
     "apps.website",  # Project-specific pages (customize freely)
+    "apps.preview",  # Tabler preview pages (design reference)
     # Django built-in apps
     "django.contrib.admin",
     "django.contrib.auth",

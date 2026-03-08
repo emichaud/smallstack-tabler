@@ -1,0 +1,61 @@
+{% load static theme_tags %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} | {{ brand.name }}</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tabler CSS (dark theme) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/css/tabler.min.css">
+
+    <!-- Tabler overrides for dark dashboard -->
+    <link rel="stylesheet" href="{% static 'tabler/css/tabler_overrides.css' %}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="theme-dark {% block body_class %}{% endblock %}">
+    <div class="page">
+        <!-- Top Navbar -->
+        {% block navbar %}
+        {% include "tabler/includes/navbar.html" %}
+        {% endblock %}
+
+        <div class="page-wrapper">
+            <!-- Page Header -->
+            {% block page_header %}{% endblock %}
+
+            <!-- Page Body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer footer-transparent d-print-none">
+                <div class="container-xl">
+                    <div class="row text-center align-items-center">
+                        <div class="col-12">
+                            <span class="text-secondary">&copy; {% now "Y" %} {{ brand.name }}. Built with <a href="https://github.com/emichaud/django-smallstack" class="link-secondary">SmallStack</a> + <a href="https://tabler.io" class="link-secondary">Tabler</a>.</span>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Tabler JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/js/tabler.min.js"></script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

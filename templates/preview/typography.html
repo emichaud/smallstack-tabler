@@ -1,0 +1,63 @@
+{% extends "preview/base_preview.html" %}
+
+{% block title %}Typography{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="page-pretitle">Components</div>
+        <h2 class="page-title">Typography</h2>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Headings</h3></div>
+            <div class="card-body">
+                <h1>h1. Heading</h1>
+                <h2>h2. Heading</h2>
+                <h3>h3. Heading</h3>
+                <h4>h4. Heading</h4>
+                <h5>h5. Heading</h5>
+                <h6>h6. Heading</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Text styles</h3></div>
+            <div class="card-body">
+                <p>This is a regular paragraph with <strong>bold text</strong>, <em>italic text</em>, and <a href="#">a link</a>.</p>
+                <p class="text-secondary">This is secondary text, used for descriptions and metadata.</p>
+                <p class="text-success">Success text for positive messages.</p>
+                <p class="text-warning">Warning text for cautionary messages.</p>
+                <p class="text-danger">Danger text for errors and alerts.</p>
+                <p><small class="text-secondary">Small text is useful for captions and fine print.</small></p>
+                <p><code>Inline code</code> for technical references.</p>
+                <hr>
+                <blockquote class="blockquote">
+                    <p>A well-known quote, contained in a blockquote element.</p>
+                </blockquote>
+            </div>
+        </div>
+    </div>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Badges</h3></div>
+            <div class="card-body">
+                <div class="btn-list">
+                    <span class="badge bg-primary">Primary</span>
+                    <span class="badge bg-secondary">Secondary</span>
+                    <span class="badge bg-success">Success</span>
+                    <span class="badge bg-warning">Warning</span>
+                    <span class="badge bg-danger">Danger</span>
+                    <span class="badge bg-info">Info</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

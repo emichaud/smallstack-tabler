@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Preview{% endblock %} | Tabler Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/css/tabler.min.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="theme-dark">
+    <div class="page">
+        <header class="navbar navbar-expand-md d-print-none">
+            <div class="container-xl">
+                <h1 class="navbar-brand navbar-brand-autodark pe-0 pe-md-3">
+                    <a href="/preview/" style="color: #f59f00; text-decoration: none; font-weight: 700;">
+                        Tabler Preview
+                    </a>
+                </h1>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#preview-nav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="preview-nav">
+                    <ul class="navbar-nav ms-auto">
+                        {% for p in pages %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if current.slug == p.slug %}active{% endif %}" href="/preview/{{ p.slug }}/">{{ p.title }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="navbar-nav flex-row order-md-last ms-3">
+                    <a href="/" class="btn btn-outline-warning btn-sm">Back to App</a>
+                </div>
+            </div>
+        </header>
+        <div class="page-wrapper">
+            {% block page_header %}{% endblock %}
+            <div class="page-body">
+                <div class="container-xl">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/js/tabler.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

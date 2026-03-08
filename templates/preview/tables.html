@@ -1,0 +1,88 @@
+{% extends "preview/base_preview.html" %}
+
+{% block title %}Tables{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="page-pretitle">Components</div>
+        <h2 class="page-title">Tables</h2>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Invoices</h3>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Amount</th>
+                    <th class="w-1"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>
+                        <div class="d-flex py-1 align-items-center">
+                            <span class="avatar me-2" style="background-color: #f59f00; color: #1a1c23;">PA</span>
+                            <div class="flex-fill"><div class="font-weight-medium">Paweł Kuna</div><div class="text-secondary">UI Designer</div></div>
+                        </div>
+                    </td>
+                    <td class="text-secondary">pawelkuna@tabler.io</td>
+                    <td class="text-secondary">Admin</td>
+                    <td><span class="badge bg-success me-1"></span> Active</td>
+                    <td>$1,200.00</td>
+                    <td><a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="d-flex py-1 align-items-center">
+                            <span class="avatar me-2" style="background-color: #4299e1; color: #fff;">JD</span>
+                            <div class="flex-fill"><div class="font-weight-medium">Jeffie Lewzey</div><div class="text-secondary">Developer</div></div>
+                        </div>
+                    </td>
+                    <td class="text-secondary">jlewzey@tabler.io</td>
+                    <td class="text-secondary">User</td>
+                    <td><span class="badge bg-warning me-1"></span> Pending</td>
+                    <td>$890.00</td>
+                    <td><a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="d-flex py-1 align-items-center">
+                            <span class="avatar me-2" style="background-color: #2fb344; color: #fff;">MC</span>
+                            <div class="flex-fill"><div class="font-weight-medium">Mallory Hulme</div><div class="text-secondary">Data Analyst</div></div>
+                        </div>
+                    </td>
+                    <td class="text-secondary">mhulme@tabler.io</td>
+                    <td class="text-secondary">User</td>
+                    <td><span class="badge bg-success me-1"></span> Active</td>
+                    <td>$2,340.00</td>
+                    <td><a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="d-flex py-1 align-items-center">
+                            <span class="avatar me-2" style="background-color: #d63939; color: #fff;">DV</span>
+                            <div class="flex-fill"><div class="font-weight-medium">Dunn Slane</div><div class="text-secondary">Marketing</div></div>
+                        </div>
+                    </td>
+                    <td class="text-secondary">dslane@tabler.io</td>
+                    <td class="text-secondary">Editor</td>
+                    <td><span class="badge bg-danger me-1"></span> Inactive</td>
+                    <td>$450.00</td>
+                    <td><a href="#">Edit</a></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

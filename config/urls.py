@@ -28,6 +28,8 @@ urlpatterns = [
     path("activity/", include("apps.activity.urls")),
     # Backups (staff-only)
     path("backups/", include("apps.smallstack.urls")),
+    # Tabler preview pages (design reference)
+    path("preview/", include("apps.preview.urls")),
     # Utility routes
     path("health/", health_check, name="health_check"),
     path(

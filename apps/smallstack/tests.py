@@ -1,11 +1,18 @@
-"""Tests for the SmallStack backup system."""
+"""Tests for the SmallStack backup system, timezone middleware, template tags, and topbar nav."""
+
+import zoneinfo
+from datetime import datetime
+from datetime import timezone as dt_timezone
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.test import override_settings
+from django.template import Context, Template
+from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .context_processors import _resolve_nav_items
+from .middleware import TimezoneMiddleware
 from .models import BackupRecord
 
 User = get_user_model()
@@ -65,7 +72,7 @@ def pruned_record(db):
         file_size=95000,
         duration_ms=12,
         status="success",
-        triggered_by="cron",
+        triggered_by="scheduler",
         pruned_at=timezone.now(),
     )
 
@@ -197,6 +204,21 @@ class TestBackupViewPermissions:
         response = client.get(reverse("smallstack:backup_detail", kwargs={"pk": success_record.pk}))
         assert response.status_code == 200
 
+    def test_backup_list_has_breadcrumbs(self, client, staff_user):
+        client.force_login(staff_user)
+        response = client.get(reverse("smallstack:backups"))
+        content = response.content.decode()
+        assert "Home" in content
+        assert "Backups" in content
+
+    def test_backup_detail_has_breadcrumbs(self, client, staff_user, success_record):
+        client.force_login(staff_user)
+        response = client.get(reverse("smallstack:backup_detail", kwargs={"pk": success_record.pk}))
+        content = response.content.decode()
+        assert "Home" in content
+        assert "Backups" in content
+        assert f"#{success_record.pk}" in content
+
     def test_backup_detail_404_for_missing_record(self, client, staff_user):
         client.force_login(staff_user)
         response = client.get(reverse("smallstack:backup_detail", kwargs={"pk": 99999}))
@@ -280,6 +302,212 @@ class TestBackupDetailContext:
         assert any(e["label"] == "File missing" for e in events)
 
 
+# ── Timezone Middleware Tests ────────────────────────────────
+
+
+class TestTimezoneMiddleware:
+    """Tests for TimezoneMiddleware timezone activation and caching."""
+
+    def _get_middleware(self):
+        return TimezoneMiddleware(lambda request: None)
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_anonymous_user_gets_server_tz(self, db):
+        """Anonymous users should use the server TIME_ZONE."""
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+
+        self._get_middleware()(request)
+
+        assert str(request._tz_server) == "America/New_York"
+        assert str(request._tz_user) == "America/New_York"
+        assert request._tz_differs is False
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_user_without_tz_gets_server_tz(self, user):
+        """Logged-in user with no timezone preference should use server TZ."""
+        user.profile.timezone = ""
+        user.profile.save()
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+
+        self._get_middleware()(request)
+
+        assert str(request._tz_user) == "America/New_York"
+        assert request._tz_differs is False
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_user_with_tz_overrides_server(self, user):
+        """User with timezone preference should override server TZ."""
+        user.profile.timezone = "America/Los_Angeles"
+        user.profile.save()
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+
+        self._get_middleware()(request)
+
+        assert str(request._tz_user) == "America/Los_Angeles"
+        assert str(request._tz_server) == "America/New_York"
+        assert request._tz_differs is True
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_user_matching_server_tz_no_diff(self, user):
+        """User whose TZ matches server TZ should have _tz_differs=False."""
+        user.profile.timezone = "America/New_York"
+        user.profile.save()
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+
+        self._get_middleware()(request)
+
+        assert request._tz_differs is False
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_middleware_activates_timezone(self, user):
+        """Middleware should call timezone.activate with the resolved TZ."""
+        user.profile.timezone = "Europe/London"
+        user.profile.save()
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+
+        self._get_middleware()(request)
+
+        current_tz = timezone.get_current_timezone()
+        assert str(current_tz) == "Europe/London"
+
+
+# ── Template Tag Tests ──────────────────────────────────────
+
+
+class TestLocaltimeTooltipTag:
+    """Tests for the {% localtime_tooltip %} template tag."""
+
+    def _render(self, template_str, context_dict):
+        template = Template(template_str)
+        return template.render(Context(context_dict))
+
+    def _make_request(self, user_tz, server_tz):
+        """Create a mock request with cached TZ info (as middleware would set)."""
+        request = RequestFactory().get("/")
+        request._tz_server = zoneinfo.ZoneInfo(server_tz)
+        request._tz_user = zoneinfo.ZoneInfo(user_tz)
+        request._tz_differs = user_tz != server_tz
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+        return request
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_same_tz_returns_plain_text(self):
+        """When user TZ matches server TZ, output should be plain text."""
+        request = self._make_request("America/New_York", "America/New_York")
+        dt = datetime(2026, 6, 15, 18, 0, 0, tzinfo=dt_timezone.utc)
+        output = self._render(
+            '{% load theme_tags %}{% localtime_tooltip dt "M d, Y g:i A T" %}',
+            {"dt": dt, "request": request},
+        )
+        assert "tz-tip" not in output
+        assert "Jun" in output
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_different_tz_returns_tooltip_span(self):
+        """When user TZ differs from server, output should have tz-tip class."""
+        request = self._make_request("America/Los_Angeles", "America/New_York")
+        dt = datetime(2026, 6, 15, 18, 0, 0, tzinfo=dt_timezone.utc)
+        output = self._render(
+            '{% load theme_tags %}{% localtime_tooltip dt "M d, Y g:i A T" %}',
+            {"dt": dt, "request": request},
+        )
+        assert 'class="tz-tip"' in output
+        assert "data-tz-server=" in output
+        assert "data-tz-utc=" in output
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_tooltip_shows_correct_times(self):
+        """Tooltip should show server time and UTC time."""
+        request = self._make_request("America/Los_Angeles", "America/New_York")
+        # June 15 18:00 UTC = 14:00 EDT (NY) = 11:00 AM PDT (LA)
+        dt = datetime(2026, 6, 15, 18, 0, 0, tzinfo=dt_timezone.utc)
+        output = self._render(
+            '{% load theme_tags %}{% localtime_tooltip dt "M d, Y g:i A T" %}',
+            {"dt": dt, "request": request},
+        )
+        assert "11:00 AM" in output  # user time (PDT)
+        assert "Server:" in output
+        assert "UTC:" in output
+
+    @override_settings(TIME_ZONE="America/New_York")
+    def test_none_datetime_returns_empty(self):
+        """None datetime should return empty string."""
+        request = self._make_request("America/New_York", "America/New_York")
+        output = self._render(
+            '{% load theme_tags %}{% localtime_tooltip dt %}',
+            {"dt": None, "request": request},
+        )
+        assert output.strip() == ""
+
+
+class TestUserLocaltimeFilter:
+    """Tests for the |user_localtime template filter."""
+
+    def test_authenticated_user_converts_to_user_tz(self, user):
+        """Filter should convert to authenticated user's timezone."""
+        user.profile.timezone = "America/New_York"
+        user.profile.save()
+
+        request = RequestFactory().get("/")
+        request.user = user
+
+        dt = datetime(2026, 6, 15, 18, 0, 0, tzinfo=dt_timezone.utc)
+
+        # Activate user TZ (as middleware would) so |date renders correctly
+        timezone.activate(zoneinfo.ZoneInfo("America/New_York"))
+        try:
+            template = Template(
+                '{% load theme_tags %}{{ dt|user_localtime:request|date:"H" }}'
+            )
+            output = template.render(Context({"dt": dt, "request": request}))
+            assert output.strip() == "14"  # 18 UTC - 4 = 14 EDT
+        finally:
+            timezone.deactivate()
+
+    def test_anonymous_falls_back_to_server_tz(self, db):
+        """Filter should fall back to TIME_ZONE for anonymous users."""
+        request = RequestFactory().get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+
+        dt = datetime(2026, 1, 15, 18, 0, 0, tzinfo=dt_timezone.utc)
+
+        # Activate server TZ (as middleware would for anonymous)
+        timezone.activate(zoneinfo.ZoneInfo("America/New_York"))
+        try:
+            template = Template(
+                '{% load theme_tags %}{{ dt|user_localtime:request|date:"H" }}'
+            )
+            output = template.render(Context({"dt": dt, "request": request}))
+            assert output.strip() == "13"  # 18 UTC - 5 = 13 EST (January)
+        finally:
+            timezone.deactivate()
+
+    def test_none_returns_none(self, db):
+        """Filter should handle None gracefully."""
+        request = RequestFactory().get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+
+        template = Template(
+            '{% load theme_tags %}{{ dt|user_localtime:request|default:"empty" }}'
+        )
+        output = template.render(Context({"dt": None, "request": request}))
+        assert "empty" in output
+
+
 class TestBackupStatDetailView:
     """Tests for stat detail filtering."""
 
@@ -308,3 +536,223 @@ class TestBackupStatDetailView:
 
         assert len(records) == 1
         assert records[0].status == "failed"
+
+
+# ── Legal Pages & Cookie Banner Tests ─────────────────────
+
+
+class TestLegalPages:
+    """Tests for privacy policy and terms of service pages."""
+
+    def test_privacy_page_loads(self, client, db):
+        response = client.get("/privacy/")
+        assert response.status_code == 200
+        assert "Privacy Policy" in response.content.decode()
+
+    def test_terms_page_loads(self, client, db):
+        response = client.get("/terms/")
+        assert response.status_code == 200
+        assert "Terms of Service" in response.content.decode()
+
+    def test_privacy_page_is_public(self, client, db):
+        """Privacy page should not require login."""
+        response = client.get("/privacy/")
+        assert response.status_code == 200
+
+    def test_invalid_legal_page_404s(self, client, db):
+        """Non-existent legal page should 404."""
+
+        # Try accessing via the view directly with a bad page name
+        from django.test import RequestFactory
+
+        from config.views import legal_page_view
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = type("AnonymousUser", (), {"is_authenticated": False})()
+
+        with pytest.raises(Exception):
+            legal_page_view(request, page="nonexistent-page")
+
+    def test_footer_contains_legal_links(self, client, db):
+        """Footer should contain privacy and terms links."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert 'href="/privacy/"' in content
+        assert 'href="/terms/"' in content
+
+    @override_settings(BRAND_PRIVACY_URL="", BRAND_TERMS_URL="")
+    def test_footer_hides_links_when_disabled(self, client, db):
+        """Footer should not show links when URLs are empty."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert "Privacy</a>" not in content
+        assert "Terms</a>" not in content
+
+    def test_cookie_banner_present(self, client, db):
+        """Cookie banner should be in the page HTML."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert "cookie-banner" in content
+
+    @override_settings(BRAND_COOKIE_BANNER=False)
+    def test_cookie_banner_hidden_when_disabled(self, client, db):
+        """Cookie banner should not render when disabled."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert "cookie-banner" not in content
+
+    def test_signup_terms_notice(self, client, db):
+        """Signup page should show terms notice."""
+        response = client.get("/accounts/signup/")
+        content = response.content.decode()
+        assert "Terms of Service" in content
+        assert "Privacy Policy" in content
+
+
+# ── Topbar Navigation Tests ──────────────────────────────
+
+
+class TestTopbarNav:
+    """Tests for configurable topbar navigation."""
+
+    def _make_request(self, path="/", user=None):
+        factory = RequestFactory()
+        request = factory.get(path)
+        if user:
+            request.user = user
+        else:
+            request.user = type("AnonymousUser", (), {"is_authenticated": False, "is_staff": False})()
+        return request
+
+    def test_disabled_by_default(self, client, db):
+        """Topbar nav should not appear when disabled (default)."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert "topbar-nav" not in content
+
+    @override_settings(SMALLSTACK_TOPBAR_NAV_ENABLED=True, SMALLSTACK_TOPBAR_NAV_ITEMS=[
+        {"label": "Home", "url": "website:home"},
+    ])
+    def test_enabled_with_items(self, client, db):
+        """Topbar nav should render when enabled with items."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert "topbar-nav" in content
+        assert "Home" in content
+
+    def test_resolve_url_name(self, db):
+        """URL names should be resolved via reverse()."""
+        request = self._make_request("/")
+        items = [{"label": "Home", "url": "website:home"}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+        assert resolved[0]["url"] == "/"
+        assert resolved[0]["label"] == "Home"
+
+    def test_resolve_absolute_path(self, db):
+        """Absolute paths should pass through."""
+        request = self._make_request("/")
+        items = [{"label": "Docs", "url": "/docs/"}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+        assert resolved[0]["url"] == "/docs/"
+
+    def test_resolve_external_url(self, db):
+        """External URLs should pass through with external flag."""
+        request = self._make_request("/")
+        items = [{"label": "GitHub", "url": "https://github.com", "external": True}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+        assert resolved[0]["external"] is True
+        assert resolved[0]["url"] == "https://github.com"
+
+    def test_bad_url_name_skipped(self, db):
+        """Items with unresolvable URL names should be silently skipped."""
+        request = self._make_request("/")
+        items = [{"label": "Bad", "url": "nonexistent:page"}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 0
+
+    def test_active_state_exact_match(self, db):
+        """Active state on exact path match."""
+        request = self._make_request("/")
+        items = [{"label": "Home", "url": "website:home"}]
+        resolved = _resolve_nav_items(items, request)
+        assert resolved[0]["active"] is True
+
+    def test_active_state_prefix_match(self, db):
+        """Active state on prefix path match."""
+        request = self._make_request("/help/some-page/")
+        items = [{"label": "Help", "url": "/help/"}]
+        resolved = _resolve_nav_items(items, request)
+        assert resolved[0]["active"] is True
+
+    def test_inactive_state(self, db):
+        """Items should not be active when path doesn't match."""
+        request = self._make_request("/other/")
+        items = [{"label": "Help", "url": "/help/"}]
+        resolved = _resolve_nav_items(items, request)
+        assert resolved[0]["active"] is False
+
+    def test_submenu_rendering(self, db):
+        """Submenu items should be resolved recursively."""
+        request = self._make_request("/")
+        items = [{"label": "More", "children": [
+            {"label": "Home", "url": "website:home"},
+            {"label": "Docs", "url": "/docs/"},
+        ]}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+        assert "children" in resolved[0]
+        assert len(resolved[0]["children"]) == 2
+
+    def test_submenu_has_active_child(self, db):
+        """Parent should have has_active_child when a child is active."""
+        request = self._make_request("/")
+        items = [{"label": "More", "children": [
+            {"label": "Home", "url": "website:home"},
+        ]}]
+        resolved = _resolve_nav_items(items, request)
+        assert resolved[0]["has_active_child"] is True
+
+    def test_auth_required_filters_anonymous(self, db):
+        """auth_required items should be hidden for anonymous users."""
+        request = self._make_request("/")
+        items = [{"label": "Dashboard", "url": "/dashboard/", "auth_required": True}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 0
+
+    def test_auth_required_shows_for_authenticated(self, user):
+        """auth_required items should show for authenticated users."""
+        request = self._make_request("/")
+        request.user = user
+        items = [{"label": "Dashboard", "url": "/dashboard/", "auth_required": True}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+
+    def test_staff_required_filters_non_staff(self, user):
+        """staff_required items should be hidden for non-staff users."""
+        request = self._make_request("/")
+        request.user = user
+        items = [{"label": "Admin", "url": "/admin/", "staff_required": True}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 0
+
+    def test_staff_required_shows_for_staff(self, staff_user):
+        """staff_required items should show for staff users."""
+        request = self._make_request("/")
+        request.user = staff_user
+        items = [{"label": "Admin", "url": "/admin/", "staff_required": True}]
+        resolved = _resolve_nav_items(items, request)
+        assert len(resolved) == 1
+
+    @override_settings(SMALLSTACK_TOPBAR_NAV_ENABLED=True, SMALLSTACK_TOPBAR_NAV_ITEMS=[
+        {"label": "GitHub", "url": "https://github.com", "external": True},
+    ])
+    def test_external_link_attributes(self, client, db):
+        """External links should have target=_blank and rel=noopener."""
+        response = client.get("/")
+        content = response.content.decode()
+        assert 'target="_blank"' in content
+        assert 'rel="noopener"' in content

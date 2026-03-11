@@ -25,6 +25,8 @@ INSTALLED_APPS = [
     "apps.help",
     "apps.tasks",
     "apps.activity",
+    "apps.heartbeat",
+    "apps.usermanager",
     "apps.website",  # Project-specific pages (customize freely)
     "apps.preview",  # Tabler preview pages (design reference)
     # Django built-in apps
@@ -37,6 +39,8 @@ INSTALLED_APPS = [
     # Third-party apps
     "django_extensions",
     "django_tasks_db",
+    "django_tables2",
+    "axes",
 ]
 
 # Background Tasks configuration
@@ -56,10 +60,13 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.smallstack.middleware.TimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
     "apps.activity.middleware.ActivityMiddleware",
+    "axes.middleware.AxesMiddleware",
+    "csp.middleware.CSPMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -86,6 +93,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Custom user model
 AUTH_USER_MODEL = "accounts.User"
 
+# Authentication backends (axes must be first for rate limiting)
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -109,7 +122,7 @@ LOGOUT_REDIRECT_URL = "/"
 
 # Internationalization
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = config("TIME_ZONE", default="America/New_York")
 USE_I18N = True
 USE_TZ = True
 
@@ -158,6 +171,18 @@ SMALLSTACK_SIDEBAR_ENABLED = config("SMALLSTACK_SIDEBAR_ENABLED", default=True, 
 # Set to False to start with sidebar closed by default (users can still toggle open)
 SMALLSTACK_SIDEBAR_OPEN = config("SMALLSTACK_SIDEBAR_OPEN", default=True, cast=bool)
 
+# Topbar Navigation
+# Set to True to show a horizontal nav menu in the topbar (between logo and right controls)
+SMALLSTACK_TOPBAR_NAV_ENABLED = config("SMALLSTACK_TOPBAR_NAV_ENABLED", default=False, cast=bool)
+# List of nav items (Python-only, not .env). Override in your project's settings.
+# Item format:
+#   {"label": "Features", "url": "website:features"}           # URL name (reversed)
+#   {"label": "Docs", "url": "/docs/"}                         # Absolute path
+#   {"label": "GitHub", "url": "https://...", "external": True} # External link
+#   {"label": "More", "children": [{"label": "About", "url": "website:about"}]}
+# Optional keys: auth_required, staff_required, url_args
+SMALLSTACK_TOPBAR_NAV_ITEMS = []
+
 # Branding Configuration
 # These paths are relative to STATIC_URL. Override to customize branding.
 BRAND_NAME = config("BRAND_NAME", default="SmallStack")
@@ -169,20 +194,52 @@ BRAND_FAVICON = config("BRAND_FAVICON", default="smallstack/brand/django-smallst
 BRAND_SOCIAL_IMAGE = config("BRAND_SOCIAL_IMAGE", default="smallstack/brand/django-smallstack-social.png")
 BRAND_TAGLINE = config("BRAND_TAGLINE", default="A minimal Django starter stack")
 
+# Legal / Consent
+BRAND_PRIVACY_URL = config("BRAND_PRIVACY_URL", default="/privacy/")
+BRAND_TERMS_URL = config("BRAND_TERMS_URL", default="/terms/")
+BRAND_COOKIE_BANNER = config("BRAND_COOKIE_BANNER", default=True, cast=bool)
+BRAND_SIGNUP_TERMS_NOTICE = config("BRAND_SIGNUP_TERMS_NOTICE", default=True, cast=bool)
+
 # Email settings
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@example.com")
 EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 
 # Activity Tracking
 ACTIVITY_MAX_ROWS = config("ACTIVITY_MAX_ROWS", default=10000, cast=int)
-ACTIVITY_PRUNE_INTERVAL = config("ACTIVITY_PRUNE_INTERVAL", default=100, cast=int)
-ACTIVITY_EXCLUDE_PATHS = ["/static/", "/media/", "/favicon.ico", "/health/", "/admin/jsi18n/", "/__debug__/"]
+ACTIVITY_EXCLUDE_PATHS = [
+    "/static/", "/media/", "/favicon.ico", "/health/",
+    "/status/", "/admin/jsi18n/", "/__debug__/",
+]
 
 # SQLite Backup
 BACKUP_DIR = config("BACKUP_DIR", default=str(BASE_DIR / "backups"))
 BACKUP_RETENTION = config("BACKUP_RETENTION", default=10, cast=int)
 BACKUP_CRON_ENABLED = config("BACKUP_CRON_ENABLED", default=False, cast=bool)
 BACKUP_DOWNLOAD_ENABLED = config("BACKUP_DOWNLOAD_ENABLED", default=True, cast=bool)
+
+# Heartbeat / Uptime Monitoring
+HEARTBEAT_RETENTION_DAYS = config("HEARTBEAT_RETENTION_DAYS", default=7, cast=int)
+HEARTBEAT_EXPECTED_INTERVAL = config("HEARTBEAT_EXPECTED_INTERVAL", default=60, cast=int)
+
+# Login Rate Limiting (django-axes)
+AXES_FAILURE_LIMIT = config("AXES_FAILURE_LIMIT", default=5, cast=int)
+AXES_COOLOFF_TIME = 0.25  # 15 minutes lockout
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]  # Lock per username+IP combination
+AXES_RESET_ON_SUCCESS = True  # Reset failure count after successful login
+
+# Content Security Policy (django-csp)
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:"],
+        "font-src": ["'self'"],
+        "connect-src": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        "form-action": ["'self'"],
+    }
+}
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

@@ -83,8 +83,14 @@
         <footer class="site-footer">
             <div class="footer-content">
                 <span>&copy; {% now "Y" %} {{ brand.name }}</span>
+                {% if brand.privacy_url %}<a href="{{ brand.privacy_url }}" class="footer-link">Privacy</a>{% endif %}
+                {% if brand.terms_url %}<a href="{{ brand.terms_url }}" class="footer-link">Terms</a>{% endif %}
+                {% if smallstack_version %}<span class="footer-version">v{{ smallstack_version }}</span>{% endif %}
             </div>
         </footer>
+
+        <!-- Cookie Consent Banner -->
+        {% include "smallstack/includes/cookie_banner.html" %}
     </div>
 
     <!-- Theme configuration -->
@@ -95,7 +101,8 @@
             colorPalette: '{{ color_palette }}',
             isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
             sidebarEnabled: {{ smallstack_sidebar_enabled|yesno:"true,false" }},
-            sidebarOpen: {{ smallstack_sidebar_open|yesno:"true,false" }}
+            sidebarOpen: {{ smallstack_sidebar_open|yesno:"true,false" }},
+            topbarNavEnabled: {{ smallstack_topbar_nav_enabled|yesno:"true,false" }}
         };
     </script>
     <!-- htmx -->

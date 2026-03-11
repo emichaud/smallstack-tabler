@@ -78,6 +78,9 @@ SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
 SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
 CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=True, cast=bool)
 
+# Backups — store on the mounted data volume so they survive deploys
+BACKUP_DIR = config("BACKUP_DIR", default="/app/data/backups")
+
 # Logging configuration
 #
 # File logging: Set LOG_FILE to a path to also write logs to a file.
@@ -152,3 +155,8 @@ EMAIL_PORT = config("EMAIL_PORT", default=25, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=False, cast=bool)
+SERVER_EMAIL = config("SERVER_EMAIL", default="")
+
+# Admin notifications — receives backup failure alerts and Django error emails
+# Uncomment and set your name/email:
+# ADMINS = [("Your Name", "you@example.com")]

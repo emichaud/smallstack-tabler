@@ -10,11 +10,13 @@ from django.views.generic import RedirectView
 
 from apps.accounts.views import SignupView
 
-from .views import health_check, starter_basic_view, starter_forms_view, starter_view
+from .views import health_check, legal_page_view, starter_basic_view, starter_forms_view, starter_view
 
 urlpatterns = [
     # Project pages - customize these in apps/website/
     path("", include("apps.website.urls")),
+    # User Manager (staff-only)
+    path("", include("apps.usermanager.urls")),
     # Admin
     path("admin/", admin.site.urls),
     # Authentication
@@ -26,10 +28,15 @@ urlpatterns = [
     path("help/", include("apps.help.urls")),
     # Activity tracking
     path("activity/", include("apps.activity.urls")),
+    # Heartbeat / Status
+    path("", include("apps.heartbeat.urls")),
     # Backups (staff-only)
     path("backups/", include("apps.smallstack.urls")),
     # Tabler preview pages (design reference)
     path("preview/", include("apps.preview.urls")),
+    # Legal pages (public)
+    path("privacy/", legal_page_view, {"page": "privacy-policy"}, name="privacy_policy"),
+    path("terms/", legal_page_view, {"page": "terms-of-service"}, name="terms_of_service"),
     # Utility routes
     path("health/", health_check, name="health_check"),
     path(
@@ -46,6 +53,16 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += [
         path("__debug__/", include("debug_toolbar.urls")),
+    ]
+
+    # Preview error pages in development
+    from django.views.defaults import bad_request, page_not_found, permission_denied, server_error
+
+    urlpatterns += [
+        path("_error/400/", bad_request, {"exception": Exception("preview")}),
+        path("_error/403/", permission_denied, {"exception": Exception("preview")}),
+        path("_error/404/", page_not_found, {"exception": Exception("preview")}),
+        path("_error/500/", server_error),
     ]
 
 # Serve media files in development

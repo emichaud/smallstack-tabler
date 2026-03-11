@@ -2,7 +2,6 @@
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Avg, Count, Max, Q
 from django.http import Http404
 from django.shortcuts import render
@@ -12,18 +11,13 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.profile.models import UserProfile
+from apps.smallstack.mixins import StaffRequiredMixin
 from apps.smallstack.pagination import paginate_queryset
 
 from .models import RequestLog
+from .tables import RecentRequestsTable, TopPathsTable
 
 User = get_user_model()
-
-
-class StaffRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    """Mixin that restricts access to staff users."""
-
-    def test_func(self):
-        return self.request.user.is_staff
 
 
 class ActivityStatDetailView(StaffRequiredMixin, View):
@@ -171,21 +165,18 @@ class RequestListView(StaffRequiredMixin, TemplateView):
     page_size = 15
 
     def get_tab_context(self, tab):
+        from django_tables2 import RequestConfig
+
         qs = RequestLog.objects.all()
         if tab == "recent":
-            page_obj = paginate_queryset(
-                qs.select_related("user").order_by("-timestamp"),
-                self.request,
-                page_size=self.page_size,
-            )
-            return {"recent_requests": page_obj, "page_obj": page_obj}
+            table = RecentRequestsTable(qs.select_related("user"))
+            RequestConfig(self.request, paginate={"per_page": self.page_size}).configure(table)
+            return {"table": table}
         elif tab == "top_paths":
-            page_obj = paginate_queryset(
-                qs.values("path").annotate(hits=Count("pk"), avg_time=Avg("response_time_ms")).order_by("-hits"),
-                self.request,
-                page_size=self.page_size,
-            )
-            return {"top_paths": page_obj, "page_obj": page_obj}
+            data = qs.values("path").annotate(hits=Count("pk"), avg_time=Avg("response_time_ms"))
+            table = TopPathsTable(data)
+            RequestConfig(self.request, paginate={"per_page": self.page_size}).configure(table)
+            return {"table": table}
         elif tab == "errors":
             error_qs = qs.filter(status_code__gte=300)
             last_24h = timezone.now() - timezone.timedelta(hours=24)
@@ -256,7 +247,7 @@ class UserActivityView(StaffRequiredMixin, TemplateView):
     """Staff-only detail view for per-user activity with htmx-powered tabs."""
 
     template_name = "activity/users.html"
-    page_size = 15
+    page_size = 10
 
     TAB_PARTIALS = {
         "top_users": "activity/partials/user_top_users.html",

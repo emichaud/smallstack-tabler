@@ -5,22 +5,15 @@ import time
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import FileResponse, Http404, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.views import View
 from django.views.generic import TemplateView
 
+from .mixins import StaffRequiredMixin
 from .models import BackupRecord
 from .pagination import paginate_queryset
-
-
-class StaffRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
-    """Mixin that restricts access to staff users."""
-
-    def test_func(self):
-        return self.request.user.is_staff
 
 
 def _get_db_info():
@@ -307,7 +300,7 @@ class BackupNowView(StaffRequiredMixin, View):
             messages.error(request, "Backup is only available for SQLite databases.")
             return redirect("smallstack:backups")
 
-        record = _do_backup(triggered_by="manual")
+        record = _do_backup(triggered_by="command")
         if record.status == "failed":
             messages.error(request, f"Backup failed: {record.error_message}")
         else:
@@ -327,7 +320,7 @@ class BackupDownloadView(StaffRequiredMixin, View):
             messages.error(request, "Backup download is only available for SQLite databases.")
             return redirect("smallstack:backups")
 
-        record = _do_backup(triggered_by="download")
+        record = _do_backup(triggered_by="manual")
         if record.status == "failed":
             messages.error(request, f"Backup failed: {record.error_message}")
             return redirect("smallstack:backups")

@@ -1,6 +1,6 @@
 [project]
 name = "django-smallstack"
-version = "0.7.1"
+version = "0.8.1"
 description = "A minimal Django stack for building and deploying admin-style apps"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,6 +15,9 @@ dependencies = [
     "pyyaml>=6.0",
     "django-tasks-db>=0.2",
     "django-htmx>=1.19",
+    "django-tables2>=2.8.0",
+    "django-axes>=7.0",
+    "django-csp>=4.0",
 ]
 
 [project.optional-dependencies]

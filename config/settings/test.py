@@ -4,7 +4,16 @@ Test settings for smallstack project.
 Inherits from development but disables debug toolbar to avoid URL namespace issues.
 """
 
+import warnings
+
 from .base import *  # noqa: F401, F403
+
+# Suppress WhiteNoise "No directory at" warning when staticfiles/ doesn't exist
+warnings.filterwarnings(
+    "ignore",
+    message="No directory at.*staticfiles",
+    module="whitenoise.base",
+)
 
 DEBUG = True
 
@@ -43,6 +52,9 @@ STORAGES = {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
+
+# Disable axes rate limiting during tests (avoids false lockouts)
+AXES_ENABLED = False
 
 # Background Tasks - execute immediately during tests (no worker needed)
 TASKS = {

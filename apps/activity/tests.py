@@ -2,6 +2,7 @@
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import RequestFactory, override_settings
 from django.urls import reverse
 
@@ -126,14 +127,16 @@ class TestActivityMiddleware:
         log = RequestLog.objects.first()
         assert log.response_time_ms >= 0
 
-    @override_settings(ACTIVITY_MAX_ROWS=5, ACTIVITY_PRUNE_INTERVAL=1)
-    def test_prune_keeps_table_bounded(self, db, request_factory):
+    @override_settings(ACTIVITY_MAX_ROWS=5)
+    def test_prune_command_keeps_table_bounded(self, db, request_factory):
         middleware = self._get_middleware()
         for i in range(10):
             request = request_factory.get(f"/page/{i}/")
             request.user = None
             middleware(request)
-        assert RequestLog.objects.count() <= 5
+        assert RequestLog.objects.count() == 10
+        call_command("prune_activity")
+        assert RequestLog.objects.count() == 5
 
 
 class TestActivityDashboardView:
@@ -193,9 +196,8 @@ class TestRequestListView:
     def test_context_contains_data(self, client, staff_user):
         client.login(username="staffuser", password="testpass123")
         response = client.get(reverse("activity:requests"))
-        # Full page includes status cards and default (recent) tab data
-        assert "recent_requests" in response.context
-        assert "page_obj" in response.context
+        # Full page includes status cards and default (recent) tab with tables2
+        assert "table" in response.context
         assert "status_groups" in response.context
         assert "total_requests" in response.context
         assert "active_tab" in response.context
@@ -206,8 +208,7 @@ class TestRequestListView:
         client.login(username="staffuser", password="testpass123")
         response = client.get(reverse("activity:requests") + "?tab=top_paths")
         assert response.context["active_tab"] == "top_paths"
-        assert "top_paths" in response.context
-        assert "page_obj" in response.context
+        assert "table" in response.context
 
     def test_htmx_returns_partial(self, client, staff_user):
         """htmx requests should return only the partial template."""
@@ -228,6 +229,25 @@ class TestRequestListView:
         assert response.status_code == 200
         content = response.content.decode()
         assert "<html" in content
+
+    def test_title_bar_has_breadcrumbs(self, client, staff_user):
+        """Requests page should have inline breadcrumbs in title bar."""
+        client.login(username="staffuser", password="testpass123")
+        response = client.get(reverse("activity:requests"))
+        content = response.content.decode()
+        assert "Home" in content
+        assert "Activity" in content
+        assert "Requests" in content
+
+    def test_recent_tab_uses_tables2(self, client, staff_user, db):
+        """Recent tab should use django-tables2 with crud-table class."""
+        from .models import RequestLog
+
+        RequestLog.objects.create(path="/test/", method="GET", status_code=200, response_time_ms=10)
+        client.login(username="staffuser", password="testpass123")
+        response = client.get(reverse("activity:requests"))
+        content = response.content.decode()
+        assert "crud-table" in content
 
 
 class TestUserActivityView:
@@ -284,6 +304,16 @@ class TestUserActivityView:
         assert response.status_code == 200
         content = response.content.decode()
         assert "<html" in content
+
+    def test_title_bar_has_breadcrumbs(self, client, staff_user):
+        """User activity page should have inline breadcrumbs in title bar."""
+        client.login(username="staffuser", password="testpass123")
+        response = client.get(reverse("activity:users"))
+        content = response.content.decode()
+        assert "Home" in content
+        assert "Activity" in content
+        assert "user_count" in response.context
+        assert "recent_signup_count" in response.context
 
     def test_shows_user_with_requests(self, client, staff_user, user):
         RequestLog.objects.create(

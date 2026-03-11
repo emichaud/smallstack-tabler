@@ -8,7 +8,7 @@ slug: smallstack
 
 # Section-specific variables
 variables:
-  version: "0.7.1"
+  version: "0.8.1"
   project_name: "Django SmallStack"
 
 # Pages in this section (order matters for navigation)
@@ -23,10 +23,20 @@ pages:
     description: "Quick start guide and project overview"
     icon: "rocket"
 
+  - slug: tldr
+    title: "TL;DR — Clone to Deploy"
+    description: "The shortest path from zero to a running site"
+    icon: "rocket"
+
   - slug: make-commands
     title: "Make Commands"
     description: "Shortcut commands for development, testing, and deployment"
     icon: "terminal"
+
+  - slug: building-crud-pages
+    title: "Building CRUD Pages"
+    description: "How to create management pages for your models using CRUDView and django-tables2"
+    icon: "settings"
 
   - slug: about
     title: "About & Inspiration"
@@ -51,6 +61,11 @@ pages:
   - slug: theming
     title: "Theming & Customization"
     description: "Customize colors, dark mode, and components"
+    icon: "palette"
+
+  - slug: adding-your-own-theme
+    title: "Adding Your Own Theme"
+    description: "Add a custom CSS framework alongside SmallStack's built-in theme"
     icon: "palette"
 
   - slug: components
@@ -93,6 +108,11 @@ pages:
     description: "Sidebar, breadcrumbs, and page headers"
     icon: "home"
 
+  - slug: topbar-navigation
+    title: "Topbar Navigation"
+    description: "Configurable horizontal nav menu in the topbar"
+    icon: "home"
+
   - slug: theme-bars
     title: "Theme Bars"
     description: "Stacked horizontal bar data visualization"
@@ -102,6 +122,11 @@ pages:
     title: "Settings & Configuration"
     description: "Environment variables and split settings"
     icon: "settings"
+
+  - slug: timezones
+    title: "Working with Timezones"
+    description: "How dates are stored, displayed, and converted across timezones"
+    icon: "clock"
 
   - slug: database-sqlite
     title: "SQLite Database"
@@ -132,6 +157,16 @@ pages:
     title: "Background Tasks"
     description: "Running tasks outside the request-response cycle"
     icon: "tasks"
+
+  - slug: user-manager
+    title: "User Manager"
+    description: "Built-in user management with search, profiles, activity stats, and timezone dashboard"
+    icon: "users"
+
+  - slug: uptime-monitoring
+    title: "Uptime Monitoring"
+    description: "Heartbeat checks, public status page, and uptime tracking"
+    icon: "chart"
 
   - slug: activity-tracking
     title: "Activity Tracking"

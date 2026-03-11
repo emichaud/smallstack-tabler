@@ -8,11 +8,11 @@ SmallStack includes built-in SQLite backup tooling — a management command for 
 # Create a backup
 make backup
 
-# Or with options
-python manage.py backup_db --keep 14
+# Or with options (override retention count)
+python manage.py backup_db --keep 5
 ```
 
-That's all you need. Backups are saved to your `BACKUP_DIR` and tracked in the database automatically.
+That's all you need. Backups are saved to your `BACKUP_DIR` and tracked in the database automatically. By default, the 10 most recent backups are kept — configurable via the `BACKUP_RETENTION` setting or the `--keep` flag.
 
 ## Management Command
 
@@ -22,8 +22,8 @@ The `backup_db` command creates a safe, non-blocking backup using Python's `sqli
 # Basic backup (saved to BACKUP_DIR)
 python manage.py backup_db
 
-# Keep only the 14 most recent backups
-python manage.py backup_db --keep 14
+# Override retention for this run (keeps only the 5 most recent)
+python manage.py backup_db --keep 5
 
 # Save to a specific path
 python manage.py backup_db --output /tmp/my-backup.sqlite3
@@ -33,10 +33,10 @@ python manage.py backup_db --output /tmp/my-backup.sqlite3
 
 | Flag | Description |
 |------|-------------|
-| `--keep N` | Prune oldest backups beyond N. Uses `BACKUP_RETENTION` setting if not specified. |
+| `--keep N` | Prune oldest backups beyond N. Defaults to `BACKUP_RETENTION` setting (10) if not specified. |
 | `--output PATH` | Override the destination file path |
 
-Backup files are named `db-YYYYMMDD-HHMMSS.sqlite3` and stored in `BACKUP_DIR`.
+Backup files are named `db-YYYYMMDD-HHMMSS.sqlite3` (timestamp in UTC) and stored in `BACKUP_DIR`. The UTC naming is intentional — filenames stay consistent regardless of display timezone settings, and sort correctly on disk.
 
 ## Web Interface
 
@@ -46,6 +46,8 @@ Staff users can access the backup dashboard at `/backups/`. The Backups link app
 
 - **Stat cards** — quick counts for recent (24h), successful, failed, and pruned backups, plus average duration and total size on disk
 - **Backup history** — paginated table with clickable IDs that link to each backup's detail page
+
+All dates in the backup dashboard display in your timezone (set on the Profile Edit page, or the server default). When your timezone differs from the server's, dates show a dotted underline — hover to see the server time and UTC. See [Working with Timezones](/help/smallstack/timezones/) for details.
 
 ### Backup Detail Page
 
@@ -90,7 +92,34 @@ The setting is already in your configuration files, just disabled by default. Un
 BACKUP_CRON_ENABLED: "true"  # Enable scheduled database backups
 ```
 
-The default schedule is **daily at 2 AM**, keeping the last 14 backups.
+The default schedule is **daily at 2 AM UTC**. The cron script uses `--keep 14` to retain two weeks of daily backups (overriding the default `BACKUP_RETENTION` of 10).
+
+### Cron and Timezones
+
+Cron jobs run in the **container's system timezone**, which is set via the `TZ` environment variable. By default this is UTC, so `0 2 * * *` means 2 AM UTC.
+
+The Django `TIME_ZONE` setting only affects how dates are *displayed* in templates — it has no effect on when cron jobs fire.
+
+**To run backups at 2 AM in your local timezone**, set `TZ` in your deployment config:
+
+**docker-compose.yml:**
+```yaml
+services:
+  web:
+    environment:
+      - TZ=America/New_York
+```
+
+**Kamal (config/deploy.yml):**
+```yaml
+env:
+  clear:
+    TZ: "America/New_York"
+```
+
+With `TZ=America/New_York`, the `0 2 * * *` cron expression fires at 2 AM Eastern. This is usually what you want — backups run during your off-hours regardless of daylight saving shifts.
+
+> **Note:** Scheduled tasks run via supercronic, which uses the `TZ` environment variable to determine timezone. `CRON_TZ` is not supported — use `TZ` instead.
 
 ### Customize the Schedule
 
@@ -98,7 +127,7 @@ Edit `scripts/smallstack-cron` to change the cron expression:
 
 ```cron
 # Every 6 hours, keep 28 backups
-0 */6 * * * . /app/.env.cron && cd /app && python manage.py backup_db --keep 28 >> /proc/1/fd/1 2>&1
+0 */6 * * * cd /app && python3 manage.py backup_db --keep 28
 ```
 
 After changing, rebuild and redeploy your container.
@@ -114,23 +143,51 @@ These settings are already defined in `config/settings/base.py` with sensible de
 | `BACKUP_CRON_ENABLED` | `false` | Enable cron-based scheduled backups in Docker |
 | `BACKUP_DOWNLOAD_ENABLED` | `true` | Allow backup file downloads from the web UI |
 
+## Setup Checklist
+
+If you're enabling backups in a project built from SmallStack, verify these are in place:
+
+- [ ] `apps.smallstack` is in `INSTALLED_APPS` (`config/settings/base.py`)
+- [ ] `/backups/` URL is included in `config/urls.py`
+- [ ] `BACKUP_*` settings are defined in `config/settings/base.py`
+- [ ] Migrations are up to date (`make migrate`)
+- [ ] `make backup` target exists in your `Makefile`
+- [ ] For Docker/Kamal: `BACKUP_CRON_ENABLED` is set in `docker-compose.yml` or `config/deploy.yml`
+- [ ] For email notifications: `ADMINS`, `SERVER_EMAIL`, and SMTP env vars are configured (see below)
+
 ## Failure Notifications
 
-If a backup fails, SmallStack will email the `ADMINS` list using `mail_admins()`. This requires two things to be configured:
+If a backup fails, SmallStack will email the `ADMINS` list using `mail_admins()`. This requires three things to be configured:
 
-**1. Set ADMINS** — add to `config/settings/production.py`:
+**1. Set ADMINS** — uncomment and edit the example in `config/settings/production.py`:
 ```python
 ADMINS = [("Your Name", "you@example.com")]
 ```
 
-**2. Configure SMTP email** — the default email backend prints to console, which won't reach anyone in production. Set these environment variables to use a real mail server:
+**2. Set SERVER_EMAIL** — this is the from-address Django uses for `mail_admins()` emails. Set it via environment variable or in `production.py`:
 ```bash
-EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+SERVER_EMAIL=server@yourdomain.com
+```
+
+**3. Configure SMTP email** — the default email backend prints to console, which won't reach anyone in production. Set these environment variables to use a real mail server:
+```bash
 EMAIL_HOST=smtp.example.com
 EMAIL_PORT=587
 EMAIL_USE_TLS=true
 EMAIL_HOST_USER=your-email@example.com
 EMAIL_HOST_PASSWORD=your-app-password
+```
+
+> **Note:** Your SMTP provider must authorize the `SERVER_EMAIL` and `DEFAULT_FROM_EMAIL` addresses as sending identities. For example, Fastmail requires you to add each from-address as an alias or sending identity before it will accept outbound mail from that address.
+
+**Verify email delivery** — use Django's built-in test command to confirm your SMTP config works before waiting for a backup failure:
+```bash
+python manage.py sendtestemail you@example.com
+```
+
+In development, `EMAIL_BACKEND` defaults to the console backend, so emails print to your terminal instead of sending. To test real delivery locally, set `EMAIL_BACKEND` in your `.env` file:
+```bash
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
 ```
 
 See the [Email & Password Reset](/help/smallstack/email-auth/) docs for full SMTP setup instructions.

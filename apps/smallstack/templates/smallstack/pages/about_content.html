@@ -1,162 +1,24 @@
 {% load static theme_tags %}
 
 <!-- Hero -->
-<div class="card mb-3" style="overflow: hidden;">
-    <div class="card-body text-center py-5 px-4" style="background: linear-gradient(135deg, rgba(245, 159, 0, 0.06) 0%, transparent 50%);">
-        <div class="mb-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#f59f00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-        </div>
-        <h1 style="margin: 0 0 0.75rem; font-size: 2rem; font-weight: 700;">{{ brand.name }}</h1>
-        <p class="text-secondary" style="max-width: 560px; margin: 0 auto; line-height: 1.7; font-size: 1.05rem;">
+<div class="card">
+    <div class="card-body" style="text-align: center; padding: 2.5rem 1.5rem 2rem;">
+        <h1 style="margin: 0 0 0.5rem; font-size: 1.75rem;">About {{ brand.name }}</h1>
+        <p style="color: var(--body-quiet-color); max-width: 600px; margin: 0 auto; line-height: 1.6;">
             A minimal Django stack for building and deploying admin-style apps.
             Production-ready with SQLite, Docker, and zero-downtime Kamal deployment.
         </p>
     </div>
 </div>
 
-<!-- Feature highlights -->
-<div class="row row-cards mb-3">
-    <div class="col-md-4">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="avatar me-3" style="background: rgba(47, 179, 68, 0.12);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2fb344" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    </span>
-                    <div>
-                        <div class="fw-bold">Batteries Included</div>
-                        <div class="text-secondary" style="font-size: 0.8rem;">Auth, profiles, help system, activity tracking, theming, background tasks</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="avatar me-3" style="background: rgba(245, 159, 0, 0.12);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59f00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
-                    </span>
-                    <div>
-                        <div class="fw-bold">Stay Close to Django</div>
-                        <div class="text-secondary" style="font-size: 0.8rem;">Conventions over invention. No magic, no abstractions you don't need.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card card-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <span class="avatar me-3" style="background: rgba(66, 153, 225, 0.12);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4299e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-                    </span>
-                    <div>
-                        <div class="fw-bold">One-Command Deploy</div>
-                        <div class="text-secondary" style="font-size: 0.8rem;">Docker + Kamal for zero-downtime deployment. SQLite in production.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Tech stack -->
-<div class="row row-cards mb-3">
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Tech Stack</h3>
-            </div>
-            <div class="card-body">
-                <div class="datagrid">
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Framework</div>
-                        <div class="datagrid-content">Django 6.0</div>
-                    </div>
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Database</div>
-                        <div class="datagrid-content">SQLite (production-ready)</div>
-                    </div>
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Frontend</div>
-                        <div class="datagrid-content">Tabler + htmx</div>
-                    </div>
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Deployment</div>
-                        <div class="datagrid-content">Docker + Kamal</div>
-                    </div>
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Server</div>
-                        <div class="datagrid-content">Gunicorn + WhiteNoise</div>
-                    </div>
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Package Manager</div>
-                        <div class="datagrid-content">UV (fast Python)</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Built-in Apps</h3>
-            </div>
-            <div class="list-group list-group-flush">
-                <div class="list-group-item">
-                    <div class="row align-items-center">
-                        <div class="col-auto"><span class="badge bg-green"></span></div>
-                        <div class="col"><strong>Accounts</strong> &mdash; Custom user model, signup, login, password reset</div>
-                    </div>
-                </div>
-                <div class="list-group-item">
-                    <div class="row align-items-center">
-                        <div class="col-auto"><span class="badge bg-green"></span></div>
-                        <div class="col"><strong>Profile</strong> &mdash; User profiles with avatars and theme preferences</div>
-                    </div>
-                </div>
-                <div class="list-group-item">
-                    <div class="row align-items-center">
-                        <div class="col-auto"><span class="badge bg-green"></span></div>
-                        <div class="col"><strong>Activity</strong> &mdash; Request logging, dashboard, user analytics</div>
-                    </div>
-                </div>
-                <div class="list-group-item">
-                    <div class="row align-items-center">
-                        <div class="col-auto"><span class="badge bg-green"></span></div>
-                        <div class="col"><strong>Help</strong> &mdash; Markdown docs, slide presentations, search</div>
-                    </div>
-                </div>
-                <div class="list-group-item">
-                    <div class="row align-items-center">
-                        <div class="col-auto"><span class="badge bg-green"></span></div>
-                        <div class="col"><strong>Heartbeat</strong> &mdash; Uptime monitoring, SLA tracking, public status</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- Feature Slide Viewer -->
 {% if slides %}
-<div class="card mb-3">
-    <div class="card-header">
-        <h3 class="card-title">Feature Tour</h3>
-        <div class="card-actions">
-            <a href="{% url 'help:slides' 'features' %}" class="btn btn-sm btn-outline-primary">
-                Open fullscreen
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ms-1"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-            </a>
-        </div>
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0;">What's Included</h2>
+        <a href="{% url 'help:slides' 'features' %}" style="font-size: 0.8rem; color: var(--body-quiet-color); text-decoration: none;">
+            Open fullscreen &rarr;
+        </a>
     </div>
     <div class="card-body" style="padding: 0;">
         <div class="slides-container" id="slides-container" style="max-width: 100%; padding: 0 1.5rem 1.5rem;">
@@ -184,7 +46,7 @@
                     </svg>
                     <span class="slides-nav-btn-text" id="slides-prev-title">Previous</span>
                 </button>
-                <span class="slides-counter" id="slides-counter"></span>
+                <span class="slides-counter" id="slides-counter" style="font-size: 0.85rem; color: var(--body-quiet-color);"></span>
                 <button class="slides-nav-btn slides-nav-next" id="slides-next">
                     <span class="slides-nav-btn-text" id="slides-next-title">Next</span>
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
@@ -202,30 +64,16 @@
 {% endif %}
 
 <!-- Links -->
-<div class="card">
-    <div class="card-body">
-        <div class="row text-center">
-            <div class="col-md-4">
-                <a href="https://github.com/emichaud/django-smallstack" class="text-decoration-none d-block py-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
-                    <div class="fw-bold">GitHub</div>
-                    <div class="text-secondary" style="font-size: 0.8rem;">Source code &amp; issues</div>
-                </a>
-            </div>
-            <div class="col-md-4">
-                <a href="{% url 'help:section_index' 'smallstack' %}" class="text-decoration-none d-block py-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                    <div class="fw-bold">Documentation</div>
-                    <div class="text-secondary" style="font-size: 0.8rem;">Setup guides &amp; reference</div>
-                </a>
-            </div>
-            <div class="col-md-4">
-                <a href="{% url 'help:slides' 'activity-tracking' %}" class="text-decoration-none d-block py-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                    <div class="fw-bold">Activity Tracking</div>
-                    <div class="text-secondary" style="font-size: 0.8rem;">Slide deck demo</div>
-                </a>
-            </div>
-        </div>
+<div class="card" style="margin-top: 24px;">
+    <div class="card-body" style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center; padding: 1.25rem;">
+        <a href="https://github.com/emichaud/django-smallstack" style="color: var(--link-fg); text-decoration: none; font-weight: 600;">
+            GitHub &rarr;
+        </a>
+        <a href="{% url 'help:section_index' 'smallstack' %}" style="color: var(--link-fg); text-decoration: none; font-weight: 600;">
+            Documentation &rarr;
+        </a>
+        <a href="{% url 'help:slides' 'activity-tracking' %}" style="color: var(--link-fg); text-decoration: none; font-weight: 600;">
+            Activity Tracking Demo &rarr;
+        </a>
     </div>
 </div>

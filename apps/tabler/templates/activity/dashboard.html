@@ -1,0 +1,284 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Activity{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Activity" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Overview</div>
+                <h2 class="page-title">Activity</h2>
+                <div class="text-secondary mt-1">{{ total_requests|stringformat:"," }} tracked requests, {{ max_rows|stringformat:"," }} max</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- ── Top-level stats ──────────────────────────────────────────── -->
+<div class="row row-deck row-cards mb-3">
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm cursor-pointer"
+             hx-get="{% url 'activity:stat_detail' 'requests' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('Recent Requests')">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 text-amber">{{ total_requests }}</div>
+                <div class="text-secondary small">Requests</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 text-amber">{{ avg_response_time }}<span class="fs-5">ms</span></div>
+                <div class="text-secondary small">Avg Response</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm cursor-pointer"
+             hx-get="{% url 'activity:stat_detail' '4xx' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('4xx Client Errors')">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 {% if count_4xx %}text-warning{% else %}text-amber{% endif %}">{{ count_4xx }}</div>
+                <div class="text-secondary small">4xx Errors</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm cursor-pointer"
+             hx-get="{% url 'activity:stat_detail' '5xx' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('5xx Server Errors')">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 {% if count_5xx %}text-red{% else %}text-amber{% endif %}">{{ count_5xx }}</div>
+                <div class="text-secondary small">5xx Errors</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm cursor-pointer"
+             hx-get="{% url 'activity:stat_detail' 'users' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('All Users')">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 text-amber">{{ user_count }}</div>
+                <div class="text-secondary small">Users</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card card-sm cursor-pointer"
+             hx-get="{% url 'activity:stat_detail' 'new_signups' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('New Users (30 Days)')">
+            <div class="card-body text-center">
+                <div class="h1 mb-0 text-amber">{{ recent_signup_count }}</div>
+                <div class="text-secondary small">New (30d)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Two-column: Requests summary + Users summary ─────────────── -->
+<div class="row row-deck row-cards mb-3">
+    <!-- Request Activity card -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Request Activity</h3>
+                <div class="card-actions">
+                    <a href="{% url 'activity:requests' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if top_paths %}
+                <div class="table-responsive">
+                    <table class="table table-vcenter card-table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Top Paths</th>
+                                <th class="text-end">Hits</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in top_paths %}
+                            <tr>
+                                <td><code class="small">{{ row.path|truncatechars:40 }}</code></td>
+                                <td class="text-end">{{ row.hits }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-secondary p-3">No requests recorded yet.</p>
+                {% endif %}
+
+                {% if status_groups %}
+                <div class="card-body pt-0">
+                    <div class="row g-2">
+                        {% for group in status_groups %}
+                        <div class="col">
+                            <div class="text-center p-2 rounded" style="background: var(--tblr-bg-surface-secondary, rgba(0,0,0,.04));">
+                                <div class="fw-bold {% if group.label == '2xx' %}text-green{% elif group.label == '4xx' %}text-warning{% elif group.label == '5xx' %}text-red{% endif %}">{{ group.count }}</div>
+                                <div class="small {% if group.label == '2xx' %}text-green{% elif group.label == '4xx' %}text-warning{% elif group.label == '5xx' %}text-red{% endif %}">{{ group.label }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Users card -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Users</h3>
+                <div class="card-actions">
+                    <a href="{% url 'activity:users' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if top_theme_bar %}
+                <div class="mb-3">
+                    <div class="subheader mb-2">Top Theme</div>
+                    <div class="theme-usage-row">
+                        <div class="theme-usage-meta">
+                            <div class="theme-name">{{ top_theme_bar.name }}</div>
+                            <div class="theme-total">{{ top_theme_bar.total }} user{{ top_theme_bar.total|pluralize }}</div>
+                        </div>
+                        <div class="theme-bar" aria-label="{{ top_theme_bar.name }}: {{ top_theme_bar.dark }} dark, {{ top_theme_bar.light }} light">
+                            {% if top_theme_bar.dark %}
+                            <div class="theme-bar-segment is-dark" style="flex: {{ top_theme_bar.dark }};">
+                                <span>{{ top_theme_bar.dark }}</span>
+                            </div>
+                            {% endif %}
+                            {% if top_theme_bar.light %}
+                            <div class="theme-bar-segment is-light" style="flex: {{ top_theme_bar.light }};">
+                                <span>{{ top_theme_bar.light }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if top_users %}
+                <div class="subheader mb-2">Most Active</div>
+                {% for u in top_users %}
+                <div class="d-flex align-items-center justify-content-between py-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="avatar avatar-sm" style="background-color: #f59f00; color: #1a1c23;">{{ u.user__username|slice:":1"|upper }}</span>
+                        <span>{{ u.user__username }}</span>
+                    </div>
+                    <span class="text-secondary small">{{ u.hits }} hits</span>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Recent requests (quick glance) ───────────────────────────── -->
+{% if recent_requests %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Latest Requests</h3>
+        <div class="card-actions">
+            <div class="btn-group btn-group-sm me-2" id="request-filter-tabs">
+                <button type="button" class="btn btn-primary" data-tab="all" onclick="showRequestTab('all')">All</button>
+                <button type="button" class="btn btn-outline-secondary" data-tab="errors" onclick="showRequestTab('errors')">Errors</button>
+            </div>
+            <a href="{% url 'activity:requests' %}" class="btn btn-sm btn-outline-secondary">View All</a>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table table-striped" id="requests-all">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Path</th>
+                        <th class="text-end">Status</th>
+                        <th>User</th>
+                        <th class="text-end">ms</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_requests %}
+                    <tr>
+                        <td class="text-nowrap small">{{ log.timestamp|date:"M d H:i:s" }}</td>
+                        <td><code class="small">{{ log.path|truncatechars:50 }}</code></td>
+                        <td class="text-end">
+                            <span class="{% if log.status_code >= 500 %}text-red{% elif log.status_code >= 400 %}text-warning{% endif %}">{{ log.status_code }}</span>
+                        </td>
+                        <td class="small">{{ log.user.username|default:"—" }}</td>
+                        <td class="text-end small">{{ log.response_time_ms }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <table class="table table-vcenter card-table table-striped" id="requests-errors" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Path</th>
+                        <th class="text-end">Status</th>
+                        <th>User</th>
+                        <th class="text-end">ms</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_errors %}
+                    <tr>
+                        <td class="text-nowrap small">{{ log.timestamp|date:"M d H:i:s" }}</td>
+                        <td><code class="small">{{ log.path|truncatechars:50 }}</code></td>
+                        <td class="text-end">
+                            <span class="{% if log.status_code >= 500 %}text-red{% elif log.status_code >= 400 %}text-warning{% endif %}">{{ log.status_code }}</span>
+                        </td>
+                        <td class="small">{{ log.user.username|default:"—" }}</td>
+                        <td class="text-end small">{{ log.response_time_ms }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-secondary p-3">No errors recorded.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% include "smallstack/includes/stat_modal.html" %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showRequestTab(tab) {
+    document.getElementById('requests-all').style.display = tab === 'all' ? '' : 'none';
+    document.getElementById('requests-errors').style.display = tab === 'errors' ? '' : 'none';
+    document.querySelectorAll('#request-filter-tabs button').forEach(function(btn) {
+        if (btn.dataset.tab === tab) {
+            btn.className = 'btn btn-primary';
+        } else {
+            btn.className = 'btn btn-outline-secondary';
+        }
+    });
+}
+</script>
+{% endblock %}

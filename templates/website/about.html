@@ -1,12 +1,14 @@
-{% extends "smallstack/base.html" %}
+{% extends "tabler/base.html" %}
 {% load static theme_tags %}
 
 {% block title %}About{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'smallstack/help/css/help.css' %}">
-<link rel="stylesheet" href="{% static 'smallstack/help/css/slides.css' %}">
+<link rel="stylesheet" href="{% static 'tabler/css/slides.css' %}">
 {% endblock %}
+
+{% block page_header %}{% endblock %}
 
 {% block content %}
 {% include "smallstack/pages/about_content.html" %}

@@ -1,7 +1,7 @@
 """User Manager views — CRUDView config + bespoke overrides."""
 
-from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db.models import Avg, Count, Max
 from django.http import HttpResponse
 from django.utils import timezone
@@ -237,7 +237,8 @@ def _get_user_activity_stats(user_obj):
     }
 
 
-@staff_member_required
+@login_required
+@user_passes_test(lambda u: u.is_staff)
 def user_stat_detail(request, stat_type):
     """HTMX endpoint returning HTML for stat card drill-down modals."""
     now = timezone.now()

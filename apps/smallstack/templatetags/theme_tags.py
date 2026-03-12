@@ -138,6 +138,15 @@ def render_breadcrumbs(context):
     }
 
 
+@register.inclusion_tag("tabler/includes/breadcrumbs.html", takes_context=True)
+def render_tabler_breadcrumbs(context):
+    """Render the breadcrumbs trail using Tabler markup."""
+    return {
+        "breadcrumbs": context.get("breadcrumbs", []),
+        "request": context.get("request"),
+    }
+
+
 @register.simple_tag(takes_context=True)
 def querystring(context, **kwargs):
     """Build a query string merging kwargs into the current request.GET.

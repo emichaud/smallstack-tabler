@@ -1,0 +1,154 @@
+<!-- Theme Settings Offcanvas -->
+<div class="offcanvas offcanvas-end offcanvas-narrow" tabindex="-1" id="offcanvas-settings" aria-labelledby="offcanvas-settings-title">
+    <div class="offcanvas-header">
+        <h2 class="offcanvas-title" id="offcanvas-settings-title">Theme Settings</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body d-flex flex-column">
+        <div>
+            <!-- Color mode -->
+            <div class="mb-4">
+                <label class="form-label">Color mode</label>
+                <p class="form-hint">Choose the color mode for your app.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-theme" value="light" class="form-check-input" />
+                        <div class="form-check-label">Light</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-theme" value="dark" class="form-check-input" />
+                        <div class="form-check-label">Dark</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Color scheme -->
+            <div class="mb-4">
+                <label class="form-label">Color scheme</label>
+                <p class="form-hint">The accent color for your app.</p>
+                <div class="row g-2">
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="amber" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #f59f00;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="blue" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #206bc4;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="azure" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #4299e1;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="indigo" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #4263eb;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="purple" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #ae3ec9;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="pink" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #d6336c;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="red" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #d63939;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="orange" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #f76707;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="green" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #2fb344;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="teal" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #0ca678;"></span>
+                        </label>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-colorinput">
+                            <input name="stk-color" type="radio" value="cyan" class="form-colorinput-input" />
+                            <span class="form-colorinput-color" style="background-color: #17a2b8;"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layout -->
+            <div class="mb-4">
+                <label class="form-label">Layout</label>
+                <p class="form-hint">Choose the page layout for your app.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="default" class="form-check-input" />
+                        <div class="form-check-label">Default</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="condensed" class="form-check-input" />
+                        <div class="form-check-label">Condensed</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="sticky" class="form-check-input" />
+                        <div class="form-check-label">Sticky navbar</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Navbar position -->
+            <div class="mb-4">
+                <label class="form-label">Navbar position</label>
+                <p class="form-hint">Choose where the navbar appears.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-navbar" value="top" class="form-check-input" />
+                        <div class="form-check-label">Top</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-navbar" value="side" class="form-check-input" />
+                        <div class="form-check-label">Side</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="mt-auto space-y">
+            <button type="button" class="btn w-100" id="settings-reset">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                Reset to defaults
+            </button>
+        </div>
+    </div>
+</div>

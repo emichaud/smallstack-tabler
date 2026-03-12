@@ -1,0 +1,94 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Changelog{% endblock %}
+
+{% block page_pretitle %}GitHub{% endblock %}
+{% block page_title %}Changelog{% endblock %}
+
+{% block content %}
+<!-- Repo header card -->
+{% if repo %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col">
+                <h3 class="card-title mb-1" style="font-family: 'Courier New', Courier, monospace;">
+                    {{ repo.html_url|cut:"https://github.com/" }}
+                </h3>
+                <p class="text-secondary mb-2">{{ repo.description }}</p>
+                <div class="d-flex gap-2 flex-wrap">
+                    {% if repo.version %}
+                    <span class="badge bg-amber-lt">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                        {{ repo.version }}
+                    </span>
+                    {% endif %}
+                    <span class="badge bg-yellow-lt">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        {{ repo.stars }}
+                    </span>
+                    <span class="badge bg-blue-lt">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                        {{ repo.forks }} forks
+                    </span>
+                    <span class="badge bg-orange-lt">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        {{ repo.open_issues }} issues
+                    </span>
+                </div>
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <a href="{{ repo.html_url }}" target="_blank" rel="noopener" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="me-1"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    Source code
+                </a>
+                <a href="{{ repo.html_url }}/archive/refs/heads/main.zip" target="_blank" rel="noopener" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Download
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Changelog -->
+{% if changelog %}
+    {% for version, commits in changelog.items %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <h3 class="card-title" style="font-family: 'Courier New', Courier, monospace; font-size: 1.25rem;">
+                {{ version }}
+            </h3>
+            <div class="card-actions">
+                <span class="badge bg-secondary-lt">{{ commits|length }} commit{{ commits|length|pluralize }}</span>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <tbody>
+                    {% for commit in commits %}
+                    <tr>
+                        <td class="w-1">
+                            <a href="{{ commit.url }}" target="_blank" rel="noopener" class="font-monospace text-secondary" style="font-size: 0.85rem;">{{ commit.sha }}</a>
+                        </td>
+                        <td>{{ commit.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="empty">
+            <p class="empty-title">Changelog unavailable</p>
+            <p class="empty-subtitle text-secondary">GitHub data could not be loaded. Please try again later.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

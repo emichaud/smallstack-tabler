@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{% endblock %} | {{ brand.name }}</title>
+
+    <!-- Blocking theme script -->
+    <script>
+    (function() {
+        var t = localStorage.getItem('smallstack-theme') || 'dark';
+        document.documentElement.dataset.stkTheme = t;
+    })();
+    </script>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tabler CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
+    <link rel="stylesheet" href="{% static 'tabler/css/tabler_overrides.css' %}">
+    <style>
+        /* Auth page links — light muted tone readable on dark backgrounds */
+        a { color: #a0a4ab; }
+        a:hover { color: #ffffff; }
+    </style>
+</head>
+<body class="d-flex flex-column">
+    <script>
+    (function() {
+        var t = localStorage.getItem('smallstack-theme') || 'dark';
+        if (t === 'dark') document.body.classList.add('theme-dark');
+        document.documentElement.setAttribute('data-bs-theme', t);
+    })();
+    </script>
+    <div class="page page-center">
+        <div class="container container-tight py-4">
+            <div class="text-center mb-4">
+                <a href="{% url 'website:home' %}" class="navbar-brand navbar-brand-autodark">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-2" style="color: #f59f00;">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    {{ brand.name }}
+                </a>
+            </div>
+            <div class="card card-md">
+                <div class="card-body">
+                    {% block auth_content %}{% endblock %}
+                </div>
+            </div>
+            {% block auth_footer %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+</body>
+</html>

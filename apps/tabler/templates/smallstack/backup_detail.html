@@ -1,0 +1,160 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Backup #{{ record.pk }}{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Backups" "smallstack:backups" %}
+{% breadcrumb record.filename|default:"Backup"|truncatechars:30 %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Backups</div>
+                <h2 class="page-title">
+                    Backup #{{ record.pk }}
+                    {% if record.is_pruned %}
+                        <span class="status-badge status-pruned ms-2">pruned</span>
+                    {% else %}
+                        <span class="status-badge status-{{ record.status }} ms-2">{{ record.status }}</span>
+                    {% endif %}
+                </h2>
+                <div class="text-secondary mt-1"><code>{{ record.filename|default:"No file" }}</code></div>
+            </div>
+            <div class="col-auto ms-auto d-print-none">
+                {% if record.status == "success" and record.file_exists and backup_download_enabled %}
+                <a href="{% url 'smallstack:backup_file_download' record.filename %}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Download ({{ record.file_size|filesizeformat }})
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <!-- Info card -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Details</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-vcenter card-table">
+                    <tbody>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase" style="width: 140px;">ID</td>
+                            <td>#{{ record.pk }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Created</td>
+                            <td>{{ record.created_at|date:"M d, Y H:i:s" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Filename</td>
+                            <td>{% if record.filename %}<code>{{ record.filename }}</code>{% else %}<span class="text-secondary">&mdash;</span>{% endif %}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Size</td>
+                            <td>{% if record.file_size %}{{ record.file_size|filesizeformat }}{% else %}&mdash;{% endif %}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Duration</td>
+                            <td>{{ record.duration_ms }} ms</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Trigger</td>
+                            <td>{{ record.get_triggered_by_display }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Status</td>
+                            <td>
+                                {% if record.is_pruned %}
+                                    <span class="status-badge status-pruned">pruned</span>
+                                {% else %}
+                                    <span class="status-badge status-{{ record.status }}">{{ record.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if record.is_pruned %}
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Pruned</td>
+                            <td>{{ record.pruned_at|date:"M d, Y H:i:s" }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if record.error_message %}
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">Error</td>
+                            <td class="text-red">{{ record.error_message }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td class="text-secondary fw-bold small text-uppercase">File on disk</td>
+                            <td>
+                                {% if record.is_pruned %}
+                                    <span class="text-secondary">Removed (retention policy)</span>
+                                {% elif record.file_exists %}
+                                    <span class="text-green">Available</span>
+                                {% elif record.filename %}
+                                    <span class="text-red">Missing</span>
+                                {% else %}
+                                    <span class="text-secondary">&mdash;</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline card -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Activity</h3>
+            </div>
+            <div class="card-body py-2">
+                <ul class="timeline">
+                    {% for event in events %}
+                    <li class="timeline-item">
+                        <div class="timeline-dot dot-{{ event.status }}">
+                            {% if event.icon == "backup" %}
+                                <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                            {% elif event.icon == "error" %}
+                                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                            {% elif event.icon == "pruned" %}
+                                <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12z"/></svg>
+                            {% elif event.icon == "warning" %}
+                                <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                            {% endif %}
+                        </div>
+                        <div class="timeline-content">
+                            <div class="timeline-label">{{ event.label }}</div>
+                            <div class="timeline-detail">{{ event.detail }}</div>
+                        </div>
+                        {% if event.timestamp %}
+                        <div class="timeline-time">{{ event.timestamp|date:"M d, Y H:i:s" }}</div>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-3">
+    <a href="{% url 'smallstack:backups' %}" class="btn btn-link text-secondary p-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back to Backups
+    </a>
+</div>
+{% endblock %}

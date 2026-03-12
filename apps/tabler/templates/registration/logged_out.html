@@ -1,0 +1,19 @@
+{% extends "registration/tabler_auth_base.html" %}
+
+{% block title %}Logged Out{% endblock %}
+
+{% block auth_content %}
+<h2 class="h2 text-center mb-4">Logged Out</h2>
+<p class="text-center text-secondary">You have been successfully logged out.</p>
+<div class="form-footer">
+    {% if smallstack_login_enabled %}
+    <a href="{% url 'login' %}" class="btn btn-primary w-100">Log In Again</a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block auth_footer %}
+<div class="text-center text-secondary mt-3">
+    <a href="{% url 'website:home' %}">Return to Home</a>
+</div>
+{% endblock %}

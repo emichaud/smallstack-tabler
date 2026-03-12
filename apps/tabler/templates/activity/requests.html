@@ -1,0 +1,85 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Requests{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Activity" "activity:dashboard" %}
+{% breadcrumb "Requests" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Activity</div>
+                <h2 class="page-title">Requests</h2>
+                <div class="text-secondary mt-1">
+                    {{ total_requests }} tracked
+                    {% if status_groups %}
+                    <span class="ms-3">
+                        {% for group in status_groups %}
+                        <span class="me-2">
+                            <strong class="{% if group.label == '2xx' %}text-green{% elif group.label == '4xx' %}text-warning{% elif group.label == '5xx' %}text-red{% endif %}">{{ group.count }}</strong>
+                            <small class="{% if group.label == '2xx' %}text-green{% elif group.label == '4xx' %}text-warning{% elif group.label == '5xx' %}text-red{% endif %}">{{ group.label }}</small>
+                        </span>
+                        {% endfor %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Tab Bar -->
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link{% if active_tab == 'recent' %} active{% endif %}"
+                hx-get="{% url 'activity:requests' %}?tab=recent"
+                hx-target="#tab-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)">Recent</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link{% if active_tab == 'top_paths' %} active{% endif %}"
+                hx-get="{% url 'activity:requests' %}?tab=top_paths"
+                hx-target="#tab-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)">Top Paths</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link{% if active_tab == 'errors' %} active{% endif %}"
+                hx-get="{% url 'activity:requests' %}?tab=errors"
+                hx-target="#tab-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)">Errors</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link{% if active_tab == 'by_method' %} active{% endif %}"
+                hx-get="{% url 'activity:requests' %}?tab=by_method"
+                hx-target="#tab-content"
+                hx-swap="innerHTML"
+                onclick="setActiveTab(this)">By Method</button>
+    </li>
+</ul>
+
+<!-- Tab Content -->
+<div id="tab-content">
+    {% include tab_partial %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setActiveTab(btn) {
+    document.querySelectorAll('.nav-tabs .nav-link').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+}
+</script>
+{% endblock %}

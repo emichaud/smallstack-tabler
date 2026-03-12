@@ -37,3 +37,17 @@ def about_view(request):
             "slides": slides or [],
         },
     )
+
+
+def changelog_view(request):
+    """Changelog page with repo stats and version history from GitHub."""
+    from .github import get_changelog, get_repo_stats
+
+    return render(
+        request,
+        "website/changelog.html",
+        {
+            "repo": get_repo_stats(),
+            "changelog": get_changelog(),
+        },
+    )

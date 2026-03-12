@@ -18,6 +18,8 @@ SECRET_KEY = config("SECRET_KEY", default=secrets.token_urlsafe(50))
 
 # Application definition
 INSTALLED_APPS = [
+    # Tabler theme - FIRST so its templates override all other apps
+    "apps.tabler",
     # Custom apps - must be before django.contrib.admin for template overrides
     "apps.accounts",
     "apps.smallstack",
@@ -38,10 +40,14 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party apps
     "django_extensions",
-    "django_tasks_db",
     "django_tables2",
+    "django_tasks_db",
     "axes",
 ]
+
+# Heartbeat monitoring
+HEARTBEAT_RETENTION_DAYS = 7
+HEARTBEAT_EXPECTED_INTERVAL = 60
 
 # Background Tasks configuration
 # Uses DatabaseBackend for persistent task storage
@@ -190,7 +196,7 @@ BRAND_LOGO = config("BRAND_LOGO", default="smallstack/brand/django-smallstack-lo
 BRAND_LOGO_DARK = config("BRAND_LOGO_DARK", default="smallstack/brand/django-smallstack-logo-dark.svg")
 BRAND_LOGO_TEXT = config("BRAND_LOGO_TEXT", default="smallstack/brand/django-smallstack-text.svg")
 BRAND_ICON = config("BRAND_ICON", default="smallstack/brand/django-smallstack-icon.svg")
-BRAND_FAVICON = config("BRAND_FAVICON", default="smallstack/brand/django-smallstack-icon.ico")
+BRAND_FAVICON = config("BRAND_FAVICON", default="brand/favicon.ico")
 BRAND_SOCIAL_IMAGE = config("BRAND_SOCIAL_IMAGE", default="smallstack/brand/django-smallstack-social.png")
 BRAND_TAGLINE = config("BRAND_TAGLINE", default="A minimal Django starter stack")
 
@@ -231,10 +237,10 @@ AXES_RESET_ON_SUCCESS = True  # Reset failure count after successful login
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": ["'self'"],
-        "script-src": ["'self'", "'unsafe-inline'"],
-        "style-src": ["'self'", "'unsafe-inline'"],
+        "script-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
+        "style-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "fonts.googleapis.com"],
         "img-src": ["'self'", "data:"],
-        "font-src": ["'self'"],
+        "font-src": ["'self'", "fonts.gstatic.com", "cdn.jsdelivr.net"],
         "connect-src": ["'self'"],
         "frame-ancestors": ["'none'"],
         "form-action": ["'self'"],

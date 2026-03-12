@@ -1,0 +1,241 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}SLA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .sla-badge {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .sla-badge-met { background: rgba(47,179,68,0.15); color: #2fb344; }
+    .sla-badge-below { background: rgba(247,103,7,0.15); color: #f76707; }
+    .sla-badge-breach { background: rgba(214,57,57,0.15); color: #d63939; }
+    /* Fix datetime-local calendar icon in dark modes */
+    body.theme-dark input[type="datetime-local"],
+    body.theme-dark input[type="date"],
+    body.theme-dark input[type="time"] { color-scheme: dark; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Heartbeat" "heartbeat:dashboard" %}
+{% breadcrumb "SLA" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Monitoring</div>
+                <h2 class="page-title">SLA</h2>
+                <div class="text-secondary mt-1">{% if epoch %}Monitoring since {{ epoch|date:"M d, Y g:i A T" }}{% if monitoring_days %} ({{ monitoring_days }} day{{ monitoring_days|pluralize }}){% endif %}{% else %}No monitoring data{% endif %}</div>
+            </div>
+            <div class="col-auto d-flex gap-3 align-items-center">
+                <div class="text-center">
+                    <div class="h3 mb-0" style="color: var(--tblr-primary);">{{ sla_target }}%</div>
+                    <div class="text-secondary small text-uppercase">Goal</div>
+                </div>
+                <div class="text-center">
+                    <div class="h3 mb-0" style="color: var(--tblr-primary);">{{ sla_minimum }}%</div>
+                    <div class="text-secondary small text-uppercase">Commitment</div>
+                </div>
+                <a href="{% url 'heartbeat:dashboard' %}" class="btn ms-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Uptime + SLA Threshold cards -->
+<div class="row row-cards mb-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-baseline justify-content-between mb-1">
+                    <div class="h1 mb-0" style="color: {{ uptime_overall_color }};">{% if uptime_overall != None %}{{ uptime_overall }}%{% else %}&mdash;{% endif %}</div>
+                    <div class="d-flex gap-1">
+                        {% if uptime_overall != None %}
+                        {% if uptime_overall >= sla_target %}<span class="sla-badge sla-badge-met">Goal</span>{% else %}<span class="sla-badge sla-badge-below">Below</span>{% endif %}
+                        {% if uptime_overall >= sla_minimum %}<span class="sla-badge sla-badge-met">Commit</span>{% else %}<span class="sla-badge sla-badge-breach">Breach</span>{% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-secondary small">Overall{% if monitoring_days %} ({{ monitoring_days }}d){% endif %}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-baseline justify-content-between mb-1">
+                    <div class="h1 mb-0" style="color: {{ uptime_24h_color }};">{% if uptime_24h != None %}{{ uptime_24h }}%{% else %}&mdash;{% endif %}</div>
+                    <div class="d-flex gap-1">
+                        {% if uptime_24h != None %}
+                        {% if uptime_24h >= sla_target %}<span class="sla-badge sla-badge-met">Goal</span>{% else %}<span class="sla-badge sla-badge-below">Below</span>{% endif %}
+                        {% if uptime_24h >= sla_minimum %}<span class="sla-badge sla-badge-met">Commit</span>{% else %}<span class="sla-badge sla-badge-breach">Breach</span>{% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-secondary small">Last 24 Hours</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-baseline justify-content-between mb-1">
+                    <div class="h1 mb-0" style="color: {{ uptime_7d_color }};">{% if uptime_7d != None %}{{ uptime_7d }}%{% else %}&mdash;{% endif %}</div>
+                    <div class="d-flex gap-1">
+                        {% if uptime_7d != None %}
+                        {% if uptime_7d >= sla_target %}<span class="sla-badge sla-badge-met">Goal</span>{% else %}<span class="sla-badge sla-badge-below">Below</span>{% endif %}
+                        {% if uptime_7d >= sla_minimum %}<span class="sla-badge sla-badge-met">Commit</span>{% else %}<span class="sla-badge sla-badge-breach">Breach</span>{% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="text-secondary small">Last 7 Days</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration + How It Works -->
+<div class="row row-cards mb-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Configuration</h3></div>
+            <div class="card-body">
+                <form method="post" action="{% url 'heartbeat:reset_epoch' %}" id="sla-form">
+                    {% csrf_token %}
+                    <div class="row mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label" for="id_started_at">Monitoring Start ({{ form_timezone }})</label>
+                            {{ form.started_at }}
+                            <div class="form-hint">Times are interpreted as {{ form_timezone }}.</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label" for="id_service_target">Goal %</label>
+                            {{ form.service_target }}
+                            <div class="form-hint">{{ form.service_target.help_text }}</div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label" for="id_note">Note</label>
+                            {{ form.note }}
+                            <div class="form-hint">{{ form.note.help_text }}</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label" for="id_service_minimum">Commitment %</label>
+                            {{ form.service_minimum }}
+                            <div class="form-hint">{{ form.service_minimum.help_text }}</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary w-100" onclick="document.getElementById('sla-confirm-modal').style.display='flex'">Save SLA Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">How It Works</h3></div>
+            <div class="card-body">
+                <h4 style="font-size: 0.85rem;" class="fw-bold mb-1">Monitoring Interval</h4>
+                <p class="text-secondary small mb-3">The heartbeat system checks service availability every <strong>{{ expected_interval }} second{{ expected_interval|pluralize }}</strong>. Each check records an "ok" or "fail" status along with the response time.</p>
+
+                <h4 style="font-size: 0.85rem;" class="fw-bold mb-1">Uptime Calculation</h4>
+                <code class="d-inline-block mb-2 p-1" style="background: rgba(var(--tblr-primary-rgb), 0.08); border-radius: 4px; font-size: 0.8rem;">uptime % = (ok checks / expected checks) &times; 100</code>
+                <ul class="text-secondary small mb-3">
+                    <li><strong>Expected checks</strong> = elapsed seconds since monitoring start / {{ expected_interval }}s interval</li>
+                    <li><strong>OK checks</strong> = heartbeats with "ok" status in the window</li>
+                    <li><strong>Missed checks</strong> (no heartbeat recorded) count against uptime</li>
+                </ul>
+
+                <h4 style="font-size: 0.85rem;" class="fw-bold mb-1">SLA Thresholds</h4>
+                <ul class="text-secondary small mb-0">
+                    <li><strong class="text-green">Goal</strong> ({{ sla_target }}%) &mdash; internal target. Allows up to {{ target_down_monthly }} min downtime/month.</li>
+                    <li><strong class="text-red">Commitment</strong> ({{ sla_minimum }}%) &mdash; breach threshold. Allows up to {{ minimum_down_monthly }} min downtime/month.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Daily Summaries -->
+{% if daily_summaries %}
+<div class="card">
+    <div class="card-header"><h3 class="card-title">Daily Summaries</h3></div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Uptime</th>
+                    <th class="text-end">OK</th>
+                    <th class="text-end">Fail</th>
+                    <th class="text-end">Expected</th>
+                    <th class="text-end">Avg Response</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day in daily_summaries %}
+                <tr>
+                    <td>{{ day.date|date:"M d, Y" }}</td>
+                    <td class="fw-bold">{{ day.uptime_pct }}%</td>
+                    <td class="text-end">{{ day.ok_count }}</td>
+                    <td class="text-end">{% if day.fail_count %}<span class="text-red">{{ day.fail_count }}</span>{% else %}0{% endif %}</td>
+                    <td class="text-end">{{ day.expected_count }}</td>
+                    <td class="text-end">{{ day.avg_response_ms }}ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Confirm Modal -->
+<div class="modal modal-blur" id="sla-confirm-modal" tabindex="-1" style="display:none;">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Update SLA Configuration</h5>
+                <button type="button" class="btn-close" onclick="slaModalClose()"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary">Are you sure you want to update the SLA settings? Uptime percentages will recalculate from the new start date.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" onclick="slaModalClose()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="slaModalConfirm()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function slaModalClose() {
+    document.getElementById('sla-confirm-modal').style.display = 'none';
+}
+function slaModalConfirm() {
+    slaModalClose();
+    document.getElementById('sla-form').submit();
+}
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'sla-confirm-modal') slaModalClose();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') slaModalClose();
+});
+</script>
+{% endblock %}

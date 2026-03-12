@@ -1,4 +1,4 @@
-{% extends "smallstack/base.html" %}
+{% extends "tabler/base.html" %}
 {% load static theme_tags %}
 
 {% block title %}Starter Page{% endblock %}
@@ -10,7 +10,19 @@
 {% block breadcrumbs %}
 {% breadcrumb "Home" "website:home" %}
 {% breadcrumb "Starter Page" %}
-{% render_breadcrumbs %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">Starter Page</h2>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block content %}

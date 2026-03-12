@@ -1,0 +1,200 @@
+{% extends "tabler/base.html" %}
+{% load static theme_tags %}
+
+{% block title %}Edit Profile{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Profile" "profile" %}
+{% breadcrumb "Edit" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">Edit Profile</h2>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="row row-cards">
+        <!-- Left Column: Photos -->
+        <div class="col-md-4">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h3 class="card-title">Profile Photo</h3>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        {% if profile.profile_photo %}
+                        <span class="avatar avatar-xl mb-2" style="background-image: url('{{ profile.profile_photo.url }}');" id="profile-photo-avatar"></span>
+                        {% else %}
+                        <span class="avatar avatar-xl mb-2" style="background-color: #f59f00; color: #1a1c23; font-size: 2rem;" id="profile-photo-avatar">
+                            {{ user.username|slice:":1"|upper }}
+                        </span>
+                        {% endif %}
+                        <img src="" alt="Profile photo preview" id="profile-photo-preview" style="display: none; width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">
+                    </div>
+                    <input type="file" name="profile_photo" id="id_profile_photo" accept="image/*" class="form-control">
+                    <small class="form-hint">JPG, PNG or GIF. Max 5MB.</small>
+                    {% if form.profile_photo.errors %}
+                    <div class="invalid-feedback d-block">{{ form.profile_photo.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Cover Photo</h3>
+                </div>
+                <div class="card-body">
+                    {% if profile.background_photo %}
+                    <div class="mb-2">
+                        <img src="{{ profile.background_photo.url }}" alt="Cover photo" class="rounded" style="width: 100%; height: 80px; object-fit: cover;" id="cover-photo-preview">
+                    </div>
+                    {% else %}
+                    <img src="" alt="Cover photo preview" id="cover-photo-preview" style="display: none; width: 100%; height: 80px; object-fit: cover;" class="rounded mb-2">
+                    {% endif %}
+                    <input type="file" name="background_photo" id="id_background_photo" accept="image/*" class="form-control">
+                    <small class="form-hint">Recommended: 1500x500px</small>
+                    {% if form.background_photo.errors %}
+                    <div class="invalid-feedback d-block">{{ form.background_photo.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Information -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Basic Information</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="id_display_name">Display Name</label>
+                            <input type="text" name="display_name" id="id_display_name" class="form-control"
+                                   value="{{ form.display_name.value|default:'' }}" maxlength="100"
+                                   placeholder="How should we call you?">
+                            {% if form.display_name.errors %}
+                            <div class="invalid-feedback d-block">{{ form.display_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="id_email">Email</label>
+                            <input type="email" name="email" id="id_email" class="form-control"
+                                   value="{{ form.email.value|default:'' }}"
+                                   placeholder="you@example.com">
+                            <small class="form-hint">For notifications and password recovery</small>
+                            {% if form.email.errors %}
+                            <div class="invalid-feedback d-block">{{ form.email.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="id_bio">Bio</label>
+                        <textarea name="bio" id="id_bio" class="form-control" rows="4"
+                                  placeholder="Tell us a little about yourself...">{{ form.bio.value|default:'' }}</textarea>
+                        {% if form.bio.errors %}
+                        <div class="invalid-feedback d-block">{{ form.bio.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="id_location">Location</label>
+                            <input type="text" name="location" id="id_location" class="form-control"
+                                   value="{{ form.location.value|default:'' }}" maxlength="100"
+                                   placeholder="City, Country">
+                            {% if form.location.errors %}
+                            <div class="invalid-feedback d-block">{{ form.location.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="id_date_of_birth">Date of Birth</label>
+                            <input type="date" name="date_of_birth" id="id_date_of_birth" class="form-control"
+                                   value="{{ form.date_of_birth.value|date:'Y-m-d'|default:'' }}">
+                            {% if form.date_of_birth.errors %}
+                            <div class="invalid-feedback d-block">{{ form.date_of_birth.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="id_website">Website</label>
+                        <input type="url" name="website" id="id_website" class="form-control"
+                               value="{{ form.website.value|default:'' }}" placeholder="https://yourwebsite.com">
+                        {% if form.website.errors %}
+                        <div class="invalid-feedback d-block">{{ form.website.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Appearance</label>
+                        <input type="hidden" name="theme_preference" id="id_theme_preference" value="{{ form.theme_preference.value|default:'dark' }}">
+                        <input type="hidden" name="color_palette" id="id_color_palette" value="{{ form.color_palette.value|default:'' }}">
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'dark' or not form.theme_preference.value %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="dark">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                                Dark
+                            </button>
+                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'light' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="light">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                                Light
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer text-end">
+                    <a href="{% url 'profile' %}" class="btn btn-link me-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Preview uploaded images
+document.getElementById('id_profile_photo').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var preview = document.getElementById('profile-photo-preview');
+            var avatar = document.getElementById('profile-photo-avatar');
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            if (avatar) avatar.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+document.getElementById('id_background_photo').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var preview = document.getElementById('cover-photo-preview');
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+});
+</script>
+{% endblock %}

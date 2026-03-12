@@ -1,0 +1,150 @@
+{% extends "tabler/base.html" %}
+{% load static theme_tags crud_tags django_tables2 %}
+
+{% block title %}User Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* django-tables2 sort indicators */
+    .table thead th a { color: var(--tblr-muted, #656d77); text-decoration: none; }
+    .table thead th a:hover { color: var(--tblr-primary, #f59f00); }
+    .table thead th.asc a::after { content: " \25B2"; font-size: 0.65rem; }
+    .table thead th.desc a::after { content: " \25BC"; font-size: 0.65rem; }
+    /* django-tables2 pagination */
+    ul.pagination {
+        display: flex; justify-content: center; gap: 0.25rem;
+        list-style: none !important; padding: 1rem 0 0 !important; margin: 0 !important;
+    }
+    ul.pagination li { list-style: none !important; }
+    ul.pagination li a,
+    ul.pagination li span {
+        display: inline-block; padding: 0.3rem 0.75rem;
+        border-radius: 4px; color: var(--tblr-muted, #656d77);
+        text-decoration: none; font-size: 0.85rem;
+    }
+    ul.pagination li a:hover {
+        color: var(--tblr-primary, #f59f00);
+        background: rgba(var(--tblr-primary-rgb), 0.1);
+    }
+    ul.pagination li.active a,
+    ul.pagination li.active span {
+        background: var(--tblr-primary, #f59f00); color: #1a1c23;
+    }
+    /* Clickable stat cards */
+    .stat-card-clickable { cursor: pointer; transition: border-color 0.15s; }
+    .stat-card-clickable:hover { border-color: var(--tblr-primary, #f59f00); }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Users" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Management</div>
+                <h2 class="page-title">User Manager</h2>
+                <div class="text-secondary mt-1">Manage user accounts and profiles</div>
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <a href="{% url 'manage/users-timezones' %}" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Timezones
+                </a>
+                {% if create_view_url %}
+                <a href="{{ create_view_url }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add User
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Dashboard stat cards -->
+{% if dashboard_stats %}
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card-clickable"
+             hx-get="{% url 'manage/users-stat-detail' 'recent' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('Recent Users (30 Days)')">
+            <div class="card-body text-center py-3">
+                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.recent }}</div>
+                <div class="text-secondary small">Recent (30d)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card-clickable"
+             hx-get="{% url 'manage/users-stat-detail' 'total' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('All Active Users')">
+            <div class="card-body text-center py-3">
+                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.total }}</div>
+                <div class="text-secondary small">Total Users</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card-clickable"
+             hx-get="{% url 'manage/users-stat-detail' 'staff' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('Staff Users')">
+            <div class="card-body text-center py-3">
+                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.staff }}</div>
+                <div class="text-secondary small">Staff</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card stat-card-clickable"
+             hx-get="{% url 'manage/users-stat-detail' 'timezones' %}"
+             hx-target="#stat-modal-body"
+             onclick="openStatModal('Unique Timezones')">
+            <div class="card-body text-center py-3">
+                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.unique_tz }}</div>
+                <div class="text-secondary small">Timezones</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Users</h3>
+        <div class="card-actions">
+            <form method="get" class="d-flex gap-2 align-items-center">
+                <div class="input-icon">
+                    <span class="input-icon-addon">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </span>
+                    <input type="text" name="q" value="{{ search_query|default:'' }}"
+                           class="form-control" placeholder="Search users..."
+                           hx-get="" hx-trigger="keyup changed delay:300ms, search"
+                           hx-target="#search-results" hx-push-url="true" hx-include="this"
+                           autocomplete="off">
+                </div>
+                {% if search_query %}
+                <a href="?" class="btn btn-ghost-secondary btn-sm"
+                   hx-get="?" hx-target="#search-results" hx-push-url="true">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+    <div id="search-results">
+        {% include "usermanager/_user_table.html" %}
+    </div>
+</div>
+
+{% include "smallstack/includes/stat_modal.html" %}
+{% endblock %}

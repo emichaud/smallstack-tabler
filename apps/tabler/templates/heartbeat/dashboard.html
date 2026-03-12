@@ -1,0 +1,269 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Heartbeat Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* django-tables2 sort indicators */
+    .table thead th a { color: var(--tblr-muted, #656d77); text-decoration: none; }
+    .table thead th a:hover { color: var(--tblr-primary, #f59f00); }
+    .table thead th.asc a::after { content: " \25B2"; font-size: 0.65rem; }
+    .table thead th.desc a::after { content: " \25BC"; font-size: 0.65rem; }
+    /* django-tables2 pagination */
+    ul.pagination {
+        display: flex; justify-content: center; gap: 0.25rem;
+        list-style: none !important; padding: 1rem 0 0 !important; margin: 0 !important;
+    }
+    ul.pagination li { list-style: none !important; }
+    ul.pagination li a, ul.pagination li span {
+        display: inline-block; padding: 0.3rem 0.75rem; border-radius: 4px;
+        color: var(--tblr-muted, #656d77); text-decoration: none; font-size: 0.85rem;
+    }
+    ul.pagination li a:hover { color: var(--tblr-primary); background: rgba(var(--tblr-primary-rgb), 0.1); }
+    ul.pagination li.active a, ul.pagination li.active span { background: var(--tblr-primary); color: #1a1c23; }
+
+    /* Timeline bars */
+    .timeline-bar { display: flex; gap: 2px; height: 32px; align-items: stretch; }
+    .timeline-bar .beat { flex: 1; border-radius: 2px; min-width: 2px; position: relative; transition: opacity 0.1s; }
+    .timeline-bar .beat.ok { background: var(--success-fg, #2fb344); opacity: 0.7; }
+    .timeline-bar .beat.fail { background: var(--error-fg, #d63939); opacity: 0.9; }
+    .timeline-bar .beat.missed {
+        background: repeating-linear-gradient(45deg,
+            rgba(214,57,57,0.25), rgba(214,57,57,0.25) 2px,
+            rgba(214,57,57,0.1) 2px, rgba(214,57,57,0.1) 4px);
+        opacity: 0.8;
+    }
+    .timeline-bar .beat.partial { background: linear-gradient(to top, var(--error-fg, #d63939) 40%, var(--success-fg, #2fb344) 40%); opacity: 0.8; }
+    .timeline-bar .beat.pre-epoch { background: var(--tblr-border-color, #2c2e34); opacity: 0.4; }
+    .timeline-bar .beat:hover { opacity: 1; }
+    .timeline-bar .beat .tooltip {
+        display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+        background: var(--tblr-body-color, #c8ccd4); color: var(--tblr-body-bg, #1a1c23);
+        padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; white-space: nowrap; z-index: 10;
+        margin-bottom: 4px; pointer-events: none;
+    }
+    .timeline-bar .beat:hover .tooltip { display: block; }
+    .timeline-bar-24h .beat { min-width: 4px; }
+    .timeline-legend { display: flex; gap: 16px; font-size: 0.75rem; color: var(--tblr-muted); margin-top: 8px; }
+    .timeline-legend .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+    .timeline-legend .swatch.ok { background: var(--success-fg, #2fb344); opacity: 0.7; }
+    .timeline-legend .swatch.fail { background: var(--error-fg, #d63939); }
+    .timeline-legend .swatch.missed {
+        background: repeating-linear-gradient(45deg,
+            rgba(214,57,57,0.25), rgba(214,57,57,0.25) 2px,
+            rgba(214,57,57,0.1) 2px, rgba(214,57,57,0.1) 4px);
+    }
+
+    /* Tab count badge */
+    .tab-count {
+        display: inline-block; padding: 1px 7px; border-radius: 10px;
+        font-size: 0.7rem; font-weight: 700;
+        background: rgba(var(--tblr-primary-rgb), 0.15); color: var(--tblr-primary);
+    }
+
+    /* JSON display */
+    .json-display {
+        background: var(--tblr-bg-surface, #1a1c23); border: 1px solid var(--tblr-border-color, #2c2e34);
+        border-radius: 6px; padding: 1rem; font-family: monospace; font-size: 0.85rem;
+        line-height: 1.6; white-space: pre; overflow-x: auto;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Heartbeat" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Monitoring</div>
+                <h2 class="page-title">Heartbeat Dashboard</h2>
+                <div class="text-secondary mt-1">{{ total_heartbeats|stringformat:"," }} total records &middot; {{ retention_days }}-day retention &middot; {{ expected_interval }}s interval</div>
+            </div>
+            <div class="col-auto d-flex gap-2">
+                <a href="{% url 'heartbeat:status' %}" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v.01"/><path d="M12 8v4"/></svg>
+                    Public Status
+                </a>
+                <a href="{% url 'heartbeat:sla' %}" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 14l2 2 4-4"/></svg>
+                    SLA
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Summary stat cards -->
+<div class="row row-cards mb-3">
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: {% if status == 'operational' %}var(--success-fg){% elif status == 'degraded' %}var(--warning-fg){% elif status == 'down' %}var(--error-fg){% else %}var(--tblr-muted){% endif %};">{{ status_label }}</div>
+                <div class="text-secondary small">Current Status</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: {{ uptime_overall_color }};">{% if uptime_overall != None %}{{ uptime_overall }}%{% else %}&mdash;{% endif %}</div>
+                <div class="text-secondary small">Overall{% if monitoring_days %} ({{ monitoring_days }}d){% endif %}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: {{ uptime_24h_color }};">{% if uptime_24h != None %}{{ uptime_24h }}%{% else %}&mdash;{% endif %}</div>
+                <div class="text-secondary small">Uptime (24h)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: {{ uptime_7d_color }};">{% if uptime_7d != None %}{{ uptime_7d }}%{% else %}&mdash;{% endif %}</div>
+                <div class="text-secondary small">Uptime (7d)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: var(--tblr-primary);">{{ response_time_ms }}<span class="small fw-normal">ms</span></div>
+                <div class="text-secondary small">Last Response</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-2">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="h2 mb-0" style="color: var(--tblr-primary);">{{ avg_response_time }}<span class="small fw-normal">ms</span></div>
+                <div class="text-secondary small">Avg Response</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- View switcher card -->
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <a class="nav-link active" data-bs-toggle="tab" href="#view-timelines" role="tab">Timelines</a>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link" data-bs-toggle="tab" href="#view-log" role="tab">Heartbeat Log</a>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link" data-bs-toggle="tab" href="#view-json" role="tab">JSON</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content">
+            <!-- Timelines -->
+            <div class="tab-pane active show" id="view-timelines" role="tabpanel">
+                {% if timeline_24h %}
+                <h3 class="mb-2" style="font-size: 1rem;">Last 24 Hours</h3>
+                <div class="timeline-bar timeline-bar-24h">
+                    {% for slot in timeline_24h %}
+                    <div class="beat {{ slot.status }}">
+                        <span class="tooltip">{{ slot.hour_label }} &mdash; {% if slot.status == "pre-epoch" %}Not monitored{% elif slot.status == "missed" %}No data{% elif slot.status == "partial" %}{{ slot.ok_count }} OK, {{ slot.fail_count }} fail{% elif slot.status == "fail" %}{{ slot.fail_count }} failure{{ slot.fail_count|pluralize }}{% else %}{{ slot.ok_count }} OK{% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between text-secondary small mt-1">
+                    <span>24h ago</span><span>12h ago</span><span>Now</span>
+                </div>
+                <div class="timeline-legend">
+                    <span><span class="swatch ok"></span> OK</span>
+                    <span><span class="swatch fail"></span> Failure</span>
+                    <span><span class="swatch missed"></span> No data</span>
+                </div>
+                {% endif %}
+
+                {% if timeline %}
+                <h3 class="mt-4 mb-2" style="font-size: 1rem;">Last Hour</h3>
+                <div class="timeline-bar">
+                    {% for beat in timeline %}
+                    <div class="beat {{ beat.status }}">
+                        <span class="tooltip">{{ beat.label }} &mdash; {% if beat.status == "pre-epoch" %}Not monitored{% elif beat.status == "missed" %}No heartbeat{% else %}{{ beat.status|upper }} ({{ beat.response_time_ms }}ms){% endif %}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex justify-content-between text-secondary small mt-1">
+                    <span>60 min ago</span><span>Now</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Heartbeat Log -->
+            <div class="tab-pane" id="view-log" role="tabpanel">
+                <ul class="nav nav-pills mb-3">
+                    <li class="nav-item">
+                        <a class="nav-link{% if active_tab == 'all' %} active{% endif %}"
+                           hx-get="{% url 'heartbeat:dashboard' %}?tab=all"
+                           hx-target="#tab-content" hx-swap="innerHTML"
+                           href="#">All <span class="tab-count">{{ total_heartbeats }}</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link{% if active_tab == 'ok' %} active{% endif %}"
+                           hx-get="{% url 'heartbeat:dashboard' %}?tab=ok"
+                           hx-target="#tab-content" hx-swap="innerHTML"
+                           href="#">OK <span class="tab-count">{{ ok_count }}</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link{% if active_tab == 'fail' %} active{% endif %}"
+                           hx-get="{% url 'heartbeat:dashboard' %}?tab=fail"
+                           hx-target="#tab-content" hx-swap="innerHTML"
+                           href="#">Failures <span class="tab-count" {% if fail_count %}style="background: rgba(214,57,57,0.15); color: #d63939;"{% endif %}>{{ fail_count }}</span></a>
+                    </li>
+                </ul>
+                <div id="tab-content">
+                    {% include tab_partial %}
+                </div>
+            </div>
+
+            <!-- JSON -->
+            <div class="tab-pane" id="view-json" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <code class="text-secondary">GET {% url 'heartbeat:status_json' %}</code>
+                    <button class="btn btn-sm" onclick="copyJson()" id="copy-json-btn">Copy</button>
+                </div>
+                <div class="json-display" id="json-content">{{ status_json }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// htmx tab switching for heartbeat log
+document.querySelectorAll('#view-log .nav-link').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+        e.preventDefault();
+        document.querySelectorAll('#view-log .nav-link').forEach(function(l) { l.classList.remove('active'); });
+        this.classList.add('active');
+    });
+});
+
+function copyJson() {
+    var text = document.getElementById('json-content').textContent;
+    navigator.clipboard.writeText(text);
+    var btn = document.getElementById('copy-json-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+}
+</script>
+{% endblock %}

@@ -15,4 +15,5 @@ app_name = "website"
 urlpatterns = [
     path("", views.home_view, name="home"),
     path("about/", views.about_view, name="about"),
+    path("changelog/", views.changelog_view, name="changelog"),
 ]

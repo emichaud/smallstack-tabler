@@ -1,0 +1,253 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags django_tables2 %}
+
+{% block title %}Timezones{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Clock cards */
+    .tz-clock-time {
+        font-size: 2rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
+    }
+    .tz-clock-tz { color: var(--tblr-primary, #f59f00); }
+    /* Filter buttons */
+    .tz-filter-btn {
+        padding: 0.35rem 0.85rem;
+        font-size: 0.8rem;
+        border: 1px solid var(--tblr-border-color, #2c2e34);
+        border-radius: 4px;
+        background: none;
+        color: var(--tblr-muted, #656d77);
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .tz-filter-btn:hover { border-color: var(--tblr-primary, #f59f00); color: var(--tblr-body-color, #c8ccd4); }
+    .tz-filter-btn.active { border-color: var(--tblr-primary, #f59f00); color: var(--tblr-primary, #f59f00); font-weight: 600; }
+    /* django-tables2 sort indicators */
+    .table thead th a { color: var(--tblr-muted, #656d77); text-decoration: none; }
+    .table thead th a:hover { color: var(--tblr-primary, #f59f00); }
+    /* django-tables2 pagination */
+    ul.pagination {
+        display: flex; justify-content: center; gap: 0.25rem;
+        list-style: none !important; padding: 1rem 0 0 !important; margin: 0 !important;
+    }
+    ul.pagination li { list-style: none !important; }
+    ul.pagination li a, ul.pagination li span {
+        display: inline-block; padding: 0.3rem 0.75rem;
+        border-radius: 4px; color: var(--tblr-muted, #656d77);
+        text-decoration: none; font-size: 0.85rem;
+    }
+    ul.pagination li a:hover { color: var(--tblr-primary); background: rgba(var(--tblr-primary-rgb), 0.1); }
+    ul.pagination li.active a, ul.pagination li.active span { background: var(--tblr-primary); color: #1a1c23; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Users" "manage/users-list" %}
+{% breadcrumb "Timezones" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">User Management</div>
+                <h2 class="page-title">Timezones</h2>
+            </div>
+            <div class="col-auto d-flex gap-3">
+                <div class="text-center">
+                    <div class="h2 mb-0" style="color: var(--tblr-primary);">{{ total_users }}</div>
+                    <div class="text-secondary small text-uppercase">User{{ total_users|pluralize }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="h2 mb-0" style="color: var(--tblr-primary);">{{ unique_timezones }}</div>
+                    <div class="text-secondary small text-uppercase">Timezone{{ unique_timezones|pluralize }}</div>
+                </div>
+                <div class="text-center">
+                    <div class="h2 mb-0" style="color: var(--tblr-primary);">{{ regions|length }}</div>
+                    <div class="text-secondary small text-uppercase">Region{{ regions|length|pluralize }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Live Clocks -->
+<div class="row row-cards mb-3">
+    <div class="col-sm-4">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="text-secondary small text-uppercase mb-1">UTC</div>
+                <div class="tz-clock-time" id="clock-utc">{{ now_utc|date:"H:i:s" }}</div>
+                <div class="text-secondary small" id="clock-utc-ampm">{{ now_utc|date:"g:i A" }}</div>
+                <div class="text-secondary small" id="clock-utc-date">{{ now_utc|date:"l, M d Y" }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="text-secondary small text-uppercase mb-1">Server Time</div>
+                <div class="tz-clock-time" id="clock-server">{{ server_time|date:"H:i:s" }}</div>
+                <div class="text-secondary small" id="clock-server-ampm">{{ server_time|date:"g:i A" }}</div>
+                <div class="text-secondary small" id="clock-server-date">{{ server_time|date:"l, M d Y" }}</div>
+                <div class="tz-clock-tz small">{{ server_tz_name }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-4">
+        <div class="card">
+            <div class="card-body text-center py-3">
+                <div class="text-secondary small text-uppercase mb-1">Your Local Time</div>
+                <div class="tz-clock-time" id="clock-local">--:--:--</div>
+                <div class="text-secondary small" id="clock-local-ampm"></div>
+                <div class="text-secondary small" id="clock-local-date"></div>
+                <div class="tz-clock-tz small" id="clock-local-tz"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters + Search -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Timezone Table</h3>
+        <div class="card-actions">
+            <form method="get" class="d-flex gap-2 align-items-center">
+                <div class="input-icon">
+                    <span class="input-icon-addon">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </span>
+                    <input type="text" name="q" value="{{ search_query|default:'' }}"
+                           class="form-control" placeholder="Search by name, timezone, region..."
+                           hx-get="" hx-trigger="keyup changed delay:300ms, search"
+                           hx-target="#search-results" hx-push-url="true" hx-include="this"
+                           autocomplete="off">
+                </div>
+                {% if search_query %}
+                <a href="?" class="btn btn-ghost-secondary btn-sm"
+                   hx-get="?" hx-target="#search-results" hx-push-url="true">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+    <div class="card-body py-2">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+            <span class="text-secondary small text-uppercase fw-bold">Show:</span>
+            <button type="button" class="tz-filter-btn active" data-filter="all">All</button>
+            <button type="button" class="tz-filter-btn" data-filter="working">Working Hours</button>
+            <button type="button" class="tz-filter-btn" data-filter="off">Off Hours</button>
+            <button type="button" class="tz-filter-btn" data-filter="staff">Staff Only</button>
+            {% for region in regions %}
+            <button type="button" class="tz-filter-btn" data-filter="region-{{ region|slugify }}">{{ region }}</button>
+            {% endfor %}
+        </div>
+    </div>
+    <div id="search-results">
+        {% include "usermanager/_tz_table.html" %}
+    </div>
+</div>
+
+<script>
+// Live clocks
+function ampm(date, tz) {
+    var opts = {hour: 'numeric', minute: '2-digit', hour12: true};
+    if (tz) opts.timeZone = tz;
+    return date.toLocaleTimeString('en-US', opts);
+}
+function tzAbbr(date, tz) {
+    var opts = {timeZoneName: 'short'};
+    if (tz) opts.timeZone = tz;
+    var parts = date.toLocaleTimeString('en-US', opts).split(' ');
+    return parts[parts.length - 1];
+}
+function updateClocks() {
+    var now = new Date();
+    var dateOpts = {weekday: 'long', year: 'numeric', month: 'short', day: 'numeric'};
+
+    // Local clock
+    document.getElementById('clock-local').textContent = now.toLocaleTimeString('en-US', {hour12: false});
+    document.getElementById('clock-local-ampm').textContent = ampm(now) + ' ' + tzAbbr(now);
+    document.getElementById('clock-local-date').textContent = now.toLocaleDateString('en-US', dateOpts);
+    document.getElementById('clock-local-tz').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    // UTC clock
+    document.getElementById('clock-utc').textContent = now.toLocaleTimeString('en-US', {hour12: false, timeZone: 'UTC'});
+    document.getElementById('clock-utc-ampm').textContent = ampm(now, 'UTC') + ' UTC';
+    document.getElementById('clock-utc-date').textContent = now.toLocaleDateString('en-US', Object.assign({timeZone: 'UTC'}, dateOpts));
+
+    // Server clock
+    var serverTz = '{{ server_tz_name }}';
+    try {
+        document.getElementById('clock-server').textContent = now.toLocaleTimeString('en-US', {hour12: false, timeZone: serverTz});
+        document.getElementById('clock-server-ampm').textContent = ampm(now, serverTz) + ' ' + tzAbbr(now, serverTz);
+        document.getElementById('clock-server-date').textContent = now.toLocaleDateString('en-US', Object.assign({timeZone: serverTz}, dateOpts));
+    } catch(e) {}
+}
+updateClocks();
+setInterval(updateClocks, 1000);
+
+// Filters
+(function() {
+    var rows = document.querySelectorAll('#tz-table-wrapper .table tbody tr');
+    var sortedData = [
+        {% for row in sorted_rows %}
+        {workday: {{ row.is_workday|yesno:"true,false" }}, staff: {{ row.is_staff|yesno:"true,false" }}, region: "{{ row.region|slugify }}", tz: "{{ row.tz_name }}"},
+        {% endfor %}
+    ];
+
+    rows.forEach(function(row, i) {
+        if (sortedData[i]) {
+            row.dataset.workday = sortedData[i].workday;
+            row.dataset.staff = sortedData[i].staff;
+            row.dataset.region = sortedData[i].region;
+            row.dataset.tz = sortedData[i].tz;
+        }
+    });
+
+    // Live-update local time cells
+    function updateTableTimes() {
+        var now = new Date();
+        rows.forEach(function(row) {
+            var tz = row.dataset.tz;
+            if (!tz) return;
+            var cell = row.cells[2];
+            if (!cell) return;
+            try {
+                var timeStr = now.toLocaleTimeString('en-US', {
+                    hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz
+                });
+                var abbrStr = tzAbbr(now, tz);
+                cell.innerHTML = '<span style="font-weight:600;font-variant-numeric:tabular-nums;">' + timeStr + ' ' + abbrStr + '</span>';
+            } catch(e) {}
+        });
+    }
+    updateTableTimes();
+    setInterval(updateTableTimes, 1000);
+
+    document.querySelectorAll('.tz-filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tz-filter-btn').forEach(function(b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            var filter = this.dataset.filter;
+            rows.forEach(function(row) {
+                var show = true;
+                if (filter === 'working') show = row.dataset.workday === 'true';
+                else if (filter === 'off') show = row.dataset.workday === 'false';
+                else if (filter === 'staff') show = row.dataset.staff === 'true';
+                else if (filter.startsWith('region-')) show = row.dataset.region === filter.replace('region-', '');
+                row.style.display = show ? '' : 'none';
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

@@ -19,7 +19,7 @@ class HeartbeatTable(tables.Table):
         model = Heartbeat
         fields = ("timestamp", "status", "response_time_ms", "note")
         order_by = "-timestamp"
-        attrs = {"class": "crud-table"}
+        attrs = {"class": "table table-vcenter card-table"}
 
     def render_timestamp(self, value):
         if value:
@@ -43,6 +43,6 @@ class HeartbeatTable(tables.Table):
             return "—"
         truncated = value[:80] + "…" if len(value) > 80 else value
         return format_html(
-            '<span style="font-size:0.85rem;color:var(--body-quiet-color);">{}</span>',
+            '<span style="font-size:0.85rem;color:var(--tblr-muted, #656d77);">{}</span>',
             truncated,
         )

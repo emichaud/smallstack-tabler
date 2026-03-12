@@ -22,6 +22,13 @@ class UserAccountForm(forms.ModelForm):
                 field.widget, (forms.CheckboxInput, forms.Select)
             ):
                 field.widget.attrs.setdefault("placeholder", str(field.help_text))
+            # Add Tabler/Bootstrap form classes
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "form-select")
+            elif isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs.setdefault("class", "form-check-input")
+            elif not isinstance(field.widget, forms.FileInput):
+                field.widget.attrs.setdefault("class", "form-control")
 
 
 class UserProfileForm(forms.ModelForm):
@@ -56,3 +63,8 @@ class UserProfileForm(forms.ModelForm):
                 field.widget, (forms.CheckboxInput, forms.FileInput, forms.Select)
             ):
                 field.widget.attrs.setdefault("placeholder", str(field.help_text))
+            # Add Tabler/Bootstrap form classes
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.setdefault("class", "form-select")
+            elif not isinstance(field.widget, (forms.CheckboxInput, forms.FileInput)):
+                field.widget.attrs.setdefault("class", "form-control")

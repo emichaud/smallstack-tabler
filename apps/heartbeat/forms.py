@@ -9,7 +9,7 @@ class SLAForm(forms.Form):
     started_at = forms.DateTimeField(
         widget=forms.DateTimeInput(attrs={
             "type": "datetime-local",
-            "class": "vTextField",
+            "class": "form-control",
         }),
         help_text="Start tracking uptime from this date/time.",
     )
@@ -20,7 +20,7 @@ class SLAForm(forms.Form):
         max_value=100,
         initial=99.9,
         widget=forms.NumberInput(attrs={
-            "class": "vTextField",
+            "class": "form-control",
             "step": "0.01",
         }),
         help_text="Internal goal (e.g. 99.9%)",
@@ -32,7 +32,7 @@ class SLAForm(forms.Form):
         max_value=100,
         initial=99.5,
         widget=forms.NumberInput(attrs={
-            "class": "vTextField",
+            "class": "form-control",
             "step": "0.01",
         }),
         help_text="Public threshold (e.g. 99.5%)",
@@ -41,7 +41,7 @@ class SLAForm(forms.Form):
         max_length=255,
         required=False,
         widget=forms.TextInput(attrs={
-            "class": "vTextField",
+            "class": "form-control",
             "placeholder": "e.g. After server migration",
         }),
         help_text="Optional note for this reset.",

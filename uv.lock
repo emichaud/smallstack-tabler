@@ -211,6 +211,13 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-django" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0" },
@@ -233,6 +240,13 @@ requires-dist = [
     { name = "whitenoise", specifier = ">=6.6" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "pytest-django", specifier = ">=4.12.0" },
+]
 
 [[package]]
 name = "django-stubs-ext"

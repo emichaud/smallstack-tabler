@@ -1,0 +1,17 @@
+{% load django_tables2 %}
+{% if table %}
+    {% render_table table %}
+{% else %}
+    <div class="card-body">
+        <div class="empty">
+            <p class="empty-title">No users found</p>
+            <p class="empty-subtitle text-secondary">
+                {% if create_view_url %}
+                <a href="{{ create_view_url }}" class="text-primary">Create one now?</a>
+                {% else %}
+                Try adjusting your search.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+{% endif %}

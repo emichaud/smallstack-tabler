@@ -40,7 +40,7 @@ class UserTable(tables.Table):
         model = User
         fields = ("username", "email", "name", "timezone", "is_staff", "is_active")
         order_by = "username"
-        attrs = {"class": "crud-table"}
+        attrs = {"class": "table table-vcenter card-table"}
 
     def render_name(self, record):
         return record.get_full_name() or record.username
@@ -49,7 +49,7 @@ class UserTable(tables.Table):
         profile = getattr(record, "profile", None)
         tz = profile.timezone if profile and profile.timezone else ""
         if not tz:
-            return format_html('<span style="color: var(--body-quiet-color);">{}</span>', "—")
+            return format_html('<span style="color: var(--tblr-muted, #656d77);">{}</span>', "—")
         # Show the city part (e.g. "New York" from "America/New_York")
         city = tz.split("/")[-1].replace("_", " ")
         return format_html(
@@ -69,7 +69,7 @@ class TimezoneTable(tables.Table):
     region = tables.Column(empty_values=(), verbose_name="Region", orderable=True)
 
     class Meta:
-        attrs = {"class": "crud-table"}
+        attrs = {"class": "table table-vcenter card-table"}
         orderable = False
 
     def __init__(self, data, *args, **kwargs):
@@ -83,7 +83,7 @@ class TimezoneTable(tables.Table):
         avatar_html = format_html(
             '<span style="display:inline-flex;align-items:center;justify-content:center;'
             'width:26px;height:26px;border-radius:50%;font-size:0.7rem;font-weight:700;'
-            'background:color-mix(in srgb,var(--primary) 20%,var(--body-bg));color:var(--primary);'
+            'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 20%,var(--tblr-body-bg, #1a1c23));color:var(--tblr-primary, #f59f00);'
             'flex-shrink:0;">{}</span>',
             initial,
         )
@@ -98,7 +98,7 @@ class TimezoneTable(tables.Table):
         if user.is_staff:
             staff_badge = format_html(
                 ' <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:3px;'
-                'background:color-mix(in srgb,var(--primary) 15%,var(--body-bg));color:var(--primary);">{}</span>',
+                'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 15%,var(--tblr-body-bg, #1a1c23));color:var(--tblr-primary, #f59f00);">{}</span>',
                 "staff",
             )
         return format_html(
@@ -135,15 +135,15 @@ class TimezoneTable(tables.Table):
             return format_html(
                 '<span style="display:inline-flex;align-items:center;gap:0.35rem;">'
                 '<span style="width:8px;height:8px;border-radius:50%;background:#ffc107;display:inline-block;"></span>'
-                '<span style="font-size:0.8rem;color:var(--body-quiet-color);">{}</span></span>',
+                '<span style="font-size:0.8rem;color:var(--tblr-muted, #656d77);">{}</span></span>',
                 "Night",
             )
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:0.35rem;">'
             '<span style="width:8px;height:8px;border-radius:50%;'
-            'background:color-mix(in srgb,var(--body-fg) 25%,var(--body-bg));'
+            'background:color-mix(in srgb,var(--tblr-body-color, #c8ccd4) 25%,var(--tblr-body-bg, #1a1c23));'
             'display:inline-block;"></span>'
-            '<span style="font-size:0.8rem;color:var(--body-quiet-color);">{}</span></span>',
+            '<span style="font-size:0.8rem;color:var(--tblr-muted, #656d77);">{}</span></span>',
             "Off Hours",
         )
 

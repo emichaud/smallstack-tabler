@@ -1,0 +1,76 @@
+{% extends "tabler/base.html" %}
+{% load static theme_tags %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Help" "help:index" %}
+{% breadcrumb section.title %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Documentation</div>
+                <h2 class="page-title">{{ section.title }}</h2>
+                {% if section.description %}
+                <div class="text-secondary mt-1">{{ section.description }}</div>
+                {% endif %}
+            </div>
+            <div class="col-auto">
+                <a href="{% url 'help:index' %}" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    All Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if section.pages %}
+<div class="row row-cards">
+    {% for page in section.pages %}
+    <div class="col-sm-6 col-lg-4">
+        <a href="{% url 'help:section_detail' section.slug page.slug %}" class="card card-link card-link-pop">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <span class="avatar avatar-lg me-3 {% cycle 'bg-blue-lt' 'bg-green-lt' 'bg-purple-lt' 'bg-orange-lt' 'bg-red-lt' 'bg-cyan-lt' 'bg-amber-lt' 'bg-teal-lt' 'bg-indigo-lt' %}">
+                        {% if page.icon == "home" %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        {% elif page.icon == "rocket" %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path></svg>
+                        {% else %}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                        {% endif %}
+                    </span>
+                    <div>
+                        <div class="fw-semibold">{{ page.title }}</div>
+                        {% if page.description %}
+                        <div class="text-secondary text-truncate" style="max-width: 200px;">{{ page.description }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <div class="empty">
+        <p class="empty-title">No pages in this section</p>
+        <p class="empty-subtitle text-secondary">Documentation pages will appear here once added.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'smallstack/help/js/help.js' %}"></script>
+{% endblock %}

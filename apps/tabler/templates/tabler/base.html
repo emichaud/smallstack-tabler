@@ -1,0 +1,101 @@
+{% load static theme_tags %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} | {{ brand.name }}</title>
+
+    <!-- Blocking theme script — prevents flash of wrong theme -->
+    <script>
+    (function() {
+        var t = localStorage.getItem('smallstack-theme') || 'dark';
+        if (t === 'dark') {
+            document.body ? document.body.classList.add('theme-dark') : document.addEventListener('DOMContentLoaded', function() { document.body.classList.add('theme-dark'); });
+        }
+        // For immediate application before body exists, store on documentElement
+        document.documentElement.setAttribute('data-bs-theme', t);
+        document.documentElement.dataset.stkTheme = t;
+    })();
+    </script>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
+
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Tabler CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
+
+    <!-- Tabler overrides -->
+    <link rel="stylesheet" href="{% static 'tabler/css/tabler_overrides.css' %}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <script>
+    // Apply theme-dark class immediately on body
+    (function() {
+        var t = localStorage.getItem('smallstack-theme') || 'dark';
+        if (t === 'dark') document.body.classList.add('theme-dark');
+        // Apply layout
+        var layout = localStorage.getItem('smallstack-layout') || 'default';
+        if (layout === 'condensed') {
+            document.body.classList.add('layout-condensed');
+        } else if (layout === 'sticky') {
+            var nav = document.querySelector('.navbar');
+            if (nav) nav.classList.add('navbar-sticky');
+        }
+    })();
+    </script>
+    <div class="page">
+        <!-- Top Navbar -->
+        {% block navbar %}
+        {% include "tabler/includes/navbar.html" %}
+        {% endblock %}
+
+        <div class="page-wrapper">
+            <!-- Page Header -->
+            {% block page_header %}{% endblock %}
+
+            <!-- Messages -->
+            <div class="container-xl">
+                {% include "tabler/includes/messages.html" %}
+            </div>
+
+            <!-- Page Body -->
+            <div class="page-body">
+                <div class="container-xl">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer footer-transparent d-print-none">
+                <div class="container-xl">
+                    <div class="row text-center align-items-center">
+                        <div class="col-12">
+                            <span class="text-secondary">&copy; {% now "Y" %} {{ brand.name }}. Built with <a href="https://github.com/emichaud/django-smallstack" class="link-secondary">SmallStack</a> + <a href="https://tabler.io" class="link-secondary">Tabler</a>.</span>
+                        </div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Theme Settings Panel -->
+    {% include "tabler/includes/settings.html" %}
+
+    <!-- htmx -->
+    <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
+    <!-- Tabler JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+    <!-- Theme switching -->
+    <script src="{% static 'tabler/js/tabler_theme.js' %}"></script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends "registration/tabler_auth_base.html" %}
+
+{% block title %}Sign Up{% endblock %}
+
+{% block auth_content %}
+<h2 class="h2 text-center mb-4">Create Account</h2>
+
+{% if form.errors %}
+<div class="alert alert-danger">Please correct the errors below.</div>
+{% endif %}
+
+<form method="post" autocomplete="off">
+    {% csrf_token %}
+    <div class="mb-3">
+        <label class="form-label" for="id_username">Username</label>
+        <input type="text" name="username" id="id_username" class="form-control"
+               value="{{ form.username.value|default:'' }}"
+               autofocus autocapitalize="none" autocomplete="username" required maxlength="150">
+        {% if form.username.errors %}
+        <div class="invalid-feedback d-block">{{ form.username.errors.0 }}</div>
+        {% endif %}
+        <small class="form-hint">Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.</small>
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="id_password1">Password</label>
+        <input type="password" name="password1" id="id_password1" class="form-control" autocomplete="new-password" required>
+        {% if form.password1.errors %}
+        <div class="invalid-feedback d-block">{{ form.password1.errors.0 }}</div>
+        {% endif %}
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="id_password2">Confirm Password</label>
+        <input type="password" name="password2" id="id_password2" class="form-control" autocomplete="new-password" required>
+        {% if form.password2.errors %}
+        <div class="invalid-feedback d-block">{{ form.password2.errors.0 }}</div>
+        {% endif %}
+    </div>
+    <div class="form-footer">
+        <button type="submit" class="btn btn-primary w-100">Sign Up</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block auth_footer %}
+<div class="text-center text-secondary mt-3">
+    Already have an account? <a href="{% url 'login' %}" tabindex="-1">Sign in</a>
+</div>
+{% endblock %}

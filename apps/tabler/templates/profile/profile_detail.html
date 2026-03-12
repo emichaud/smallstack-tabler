@@ -1,0 +1,81 @@
+{% extends "tabler/base.html" %}
+{% load static theme_tags %}
+
+{% block title %}{{ profile.get_display_name }}{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb profile.get_display_name %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">{{ profile.get_display_name }}</h2>
+            </div>
+            {% if user == profile.user %}
+            <div class="col-auto ms-auto">
+                <a href="{% url 'profile_edit' %}" class="btn btn-primary">Edit Profile</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="mb-3">
+                    {% if profile.profile_photo %}
+                    <span class="avatar avatar-xl" style="background-image: url('{{ profile.profile_photo.url }}');"></span>
+                    {% else %}
+                    <span class="avatar avatar-xl" style="background-color: #f59f00; color: #1a1c23; font-size: 2rem;">
+                        {{ profile.user.username|slice:":1"|upper }}
+                    </span>
+                    {% endif %}
+                </div>
+                <h3 class="card-title mb-1">{{ profile.get_display_name }}</h3>
+                <p class="text-secondary">@{{ profile.user.username }}</p>
+            </div>
+            {% if profile.bio %}
+            <div class="card-body border-top">
+                <p class="mb-0">{{ profile.bio }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Details</h3>
+            </div>
+            <div class="card-body">
+                <div class="datagrid">
+                    {% if profile.location %}
+                    <div class="datagrid-item">
+                        <div class="datagrid-title">Location</div>
+                        <div class="datagrid-content">{{ profile.location }}</div>
+                    </div>
+                    {% endif %}
+                    {% if profile.website %}
+                    <div class="datagrid-item">
+                        <div class="datagrid-title">Website</div>
+                        <div class="datagrid-content"><a href="{{ profile.website }}" target="_blank" rel="noopener">{{ profile.website }}</a></div>
+                    </div>
+                    {% endif %}
+                    <div class="datagrid-item">
+                        <div class="datagrid-title">Joined</div>
+                        <div class="datagrid-content">{{ profile.user.date_joined|date:"F Y" }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -806,6 +806,8 @@ body:not(.theme-dark) .timeline-dot svg { width: 10px; height: 10px; fill: #ffff
     width: 48px;
     height: 48px;
     border-radius: 12px;
+    background: rgba(var(--tblr-primary-rgb, 245, 159, 0), 0.1);
+    color: var(--tblr-primary, #f59f00);
 }
 
 .dropdown-apps-icon svg {

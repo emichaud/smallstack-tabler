@@ -92,42 +92,14 @@
                         {% endif %}
                     </div>
                     <div class="dropdown-apps-grid">
-                        <a href="{% url 'activity:dashboard' %}" class="dropdown-apps-item {% if request.resolver_match.app_name == 'activity' %}active{% endif %}">
-                            <span class="dropdown-apps-icon bg-blue-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        {% for group in nav_items %}{% if group.section == "admin" %}{% for item in group.items %}
+                        <a href="{{ item.url }}" class="dropdown-apps-item {% if item.active %}active{% endif %}">
+                            <span class="dropdown-apps-icon">
+                                {{ item.icon_svg|safe }}
                             </span>
-                            <span class="dropdown-apps-label">Activity</span>
+                            <span class="dropdown-apps-label">{{ item.label }}</span>
                         </a>
-                        <a href="{% url 'heartbeat:dashboard' %}" class="dropdown-apps-item {% if request.resolver_match.app_name == 'heartbeat' %}active{% endif %}">
-                            <span class="dropdown-apps-icon bg-red-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
-                            </span>
-                            <span class="dropdown-apps-label">Status</span>
-                        </a>
-                        <a href="{% url 'smallstack:backups' %}" class="dropdown-apps-item {% if request.resolver_match.app_name == 'smallstack' and request.resolver_match.url_name == 'backups' %}active{% endif %}">
-                            <span class="dropdown-apps-icon bg-green-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
-                            </span>
-                            <span class="dropdown-apps-label">Backups</span>
-                        </a>
-                        <a href="{% url 'manage/users-list' %}" class="dropdown-apps-item">
-                            <span class="dropdown-apps-icon bg-purple-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                            </span>
-                            <span class="dropdown-apps-label">Users</span>
-                        </a>
-                        <a href="{% url 'heartbeat:sla' %}" class="dropdown-apps-item">
-                            <span class="dropdown-apps-icon bg-orange-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                            </span>
-                            <span class="dropdown-apps-label">SLA</span>
-                        </a>
-                        <a href="{% url 'admin:index' %}" class="dropdown-apps-item">
-                            <span class="dropdown-apps-icon bg-dark-lt">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
-                            </span>
-                            <span class="dropdown-apps-label">Admin</span>
-                        </a>
+                        {% endfor %}{% endif %}{% endfor %}
                     </div>
                 </div>
             </div>

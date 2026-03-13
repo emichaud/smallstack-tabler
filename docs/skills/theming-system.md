@@ -137,10 +137,24 @@ SmallStack includes 5 built-in color palettes that override the primary color va
 | `orange` | `#e65100` | `#ff9800` | Warm sunset orange |
 | `purple` | `#7e57c2` | `#b39ddb` | Rich violet tones |
 
-### Two Tiers of Control
+### Palette Precedence
 
-1. **System default** — `SMALLSTACK_COLOR_PALETTE` setting in `base.py` / `.env` (default: `"django"`)
-2. **User override** — `color_palette` field on `UserProfile` (blank = use system default)
+The effective palette is resolved differently on the server and client, but they stay aligned for authenticated users.
+
+**Server-side** — `_get_effective_palette()` in `context_processors.py`:
+
+1. User profile `color_palette` (if set)
+2. `SMALLSTACK_COLOR_PALETTE` setting (from `base.py` / `.env`)
+3. `"django"` (hardcoded fallback)
+
+**Client-side** — `getPreferredPalette()` in `theme.js`:
+
+1. `window.SMALLSTACK.userPalette` (set from server-resolved profile value)
+2. `localStorage('smallstack-palette')` (persists anonymous choices)
+3. `window.SMALLSTACK.colorPalette` (system default from context)
+4. `"django"` (hardcoded fallback)
+
+For authenticated users, JS priority 1 (`userPalette`) is the server-resolved value, so server and client stay in sync. For anonymous users or after a settings change, `localStorage` can hold a stale value from a previous session.
 
 ### How Palettes Work
 
@@ -177,6 +191,8 @@ html[data-palette="purple"][data-theme="dark"] {
 # config/settings/base.py (or in .env)
 SMALLSTACK_COLOR_PALETTE = "purple"  # Options: django, high-contrast, dark-blue, orange, purple
 ```
+
+> **Restart required:** `settings.py` and `.env` changes require a dev server restart to take effect. Template and CSS file changes hot-reload in development, but Python settings do not.
 
 ### Adding a New Palette
 
@@ -394,6 +410,107 @@ When adapting a Tailwind template or React dashboard, map framework-specific pat
 
 For Tailwind `dark:` classes, use `[data-theme="dark"]` selectors — or better, just use CSS variables that adapt automatically. For React components, extract JSX into Django template partials and replace `useState`/`useEffect` data fetching with htmx. See [adding-your-own-theme.md](adding-your-own-theme.md) for detailed guidance.
 
+## Tables
+
+SmallStack has a standard table style that works across light mode, dark mode, and all color palettes. **Always use it.** Do not write custom table CSS — it will look wrong in at least one theme mode.
+
+### The Standard: `.crud-table`
+
+The shared stylesheet lives at `templates/smallstack/crud/_table_styles.html`. Include it and use the `crud-table` class:
+
+```html
+{% block extra_css %}
+{% include "smallstack/crud/_table_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<table class="crud-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Count</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td><a href="{{ item.url }}">{{ item.name }}</a></td>
+            <td>{{ item.status }}</td>
+            <td>{{ item.count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+```
+
+### What `.crud-table` provides
+
+| Element | Style | How |
+|---------|-------|-----|
+| Header row | Tinted background | `color-mix(in srgb, var(--primary) 15%, var(--body-bg))` |
+| Header text | Uppercase, muted | `0.8rem`, `600 weight`, `var(--body-quiet-color)` |
+| Odd rows | Subtle tint | `color-mix(in srgb, var(--primary) 4%, var(--body-bg))` |
+| Even rows | Slightly darker tint | `color-mix(in srgb, var(--primary) 12%, var(--body-bg))` |
+| Hover | Highlighted | `color-mix(in srgb, var(--primary) 20%, var(--body-bg))` |
+| Links | Primary color | `var(--primary)`, underline on hover |
+| Borders | None | All borders explicitly removed with `!important` |
+| Cell padding | Consistent | `10px 16px` for all `th` and `td` |
+
+### Why it works in all themes
+
+Every color is derived from `var(--primary)` and `var(--body-bg)` using `color-mix()`. When the user switches between light/dark mode or changes their color palette, the table automatically adapts — no separate dark mode overrides needed.
+
+### Common mistakes
+
+**Don't do this:**
+```html
+<!-- Custom table with hardcoded colors — breaks in dark mode -->
+<table style="width: 100%; border-collapse: collapse;">
+    <thead>
+        <tr style="background: #f5f5f5;">  <!-- White header in dark mode -->
+```
+
+**Don't do this either:**
+```css
+/* Custom table class that duplicates crud-table behavior */
+.my-table thead tr {
+    background: var(--card-header-bg);  /* Wrong variable — too light in dark mode */
+}
+.my-table td {
+    border-bottom: 1px solid var(--hairline-color);  /* crud-table uses no borders */
+}
+```
+
+**Do this:**
+```html
+{% include "smallstack/crud/_table_styles.html" %}
+<table class="crud-table">...</table>
+```
+
+### When you need custom table styling
+
+If a page needs table styling that differs from `crud-table` (e.g., a modal with a denser layout), derive your colors the same way:
+
+```css
+.my-dense-table thead tr {
+    background-color: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+}
+.my-dense-table tbody tr:nth-child(odd) {
+    background-color: color-mix(in srgb, var(--primary) 4%, var(--body-bg));
+}
+.my-dense-table tbody tr:nth-child(even) {
+    background-color: color-mix(in srgb, var(--primary) 12%, var(--body-bg));
+}
+```
+
+Never use `var(--card-header-bg)`, `var(--card-bg)`, or hardcoded hex values for table backgrounds. The `color-mix()` pattern with `--primary` and `--body-bg` is what makes tables look correct across all theme combinations.
+
+### CRUD views and django-tables2
+
+Tables generated by `CRUDView` (via `{% crud_table %}`) and the explorer app already use `crud-table` automatically. If you're using `django-tables2` with `{% render_table %}`, the CRUD list template includes `_table_styles.html` and the table inherits the styles.
+
 ## Adding New CSS
 
 ### For Global Styles
@@ -512,3 +629,15 @@ See `docs/skills/timezones.md` for the full timezone architecture.
 6. **Keep Django admin CSS** - It provides useful form styling
 7. **Use `var(--primary)` for branded elements** - They'll automatically adapt to palette changes
 8. **Use `{% localtime_tooltip %}` for dates** - It inherits theme variables and works in all modes
+
+## Troubleshooting
+
+### Palette default not applying
+
+If you changed `SMALLSTACK_COLOR_PALETTE` but the UI still shows the old palette:
+
+1. **Restart the dev server** — `settings.py` and `.env` changes require a server restart. Template and CSS changes hot-reload in development, but Python settings do not.
+2. **Check user profile override** — a user's profile `color_palette` takes priority over the system default. Set it to blank (empty string) to fall back to the system default.
+3. **Clear browser localStorage** — open DevTools → Application → Local Storage → delete `smallstack-palette`. This key can hold a stale value from a previous session, especially for anonymous users.
+4. **Verify the palette ID** — valid options: `django`, `high-contrast`, `dark-blue`, `orange`, `purple`. An invalid ID silently falls back to `django`.
+5. **Check `data-palette` in DevTools** — inspect the `<html>` element and confirm the `data-palette` attribute matches what you expect.

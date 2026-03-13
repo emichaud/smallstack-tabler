@@ -38,6 +38,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Explorer must come after django.contrib.admin (discovers admin-registered models)
+    "apps.explorer",
     # Third-party apps
     "django_extensions",
     "django_tables2",
@@ -122,8 +124,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Authentication settings
-LOGIN_URL = "/accounts/login/"
-LOGIN_REDIRECT_URL = "/"
+LOGIN_URL = "/smallstack/accounts/login/"
+LOGIN_REDIRECT_URL = "/smallstack/"
 LOGOUT_REDIRECT_URL = "/"
 
 # Internationalization
@@ -214,7 +216,7 @@ EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.conso
 ACTIVITY_MAX_ROWS = config("ACTIVITY_MAX_ROWS", default=10000, cast=int)
 ACTIVITY_EXCLUDE_PATHS = [
     "/static/", "/media/", "/favicon.ico", "/health/",
-    "/status/", "/admin/jsi18n/", "/__debug__/",
+    "/status/", "/smallstack/status/", "/admin/jsi18n/", "/__debug__/",
 ]
 
 # SQLite Backup
@@ -246,6 +248,7 @@ CONTENT_SECURITY_POLICY = {
         "form-action": ["'self'"],
     }
 }
+
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

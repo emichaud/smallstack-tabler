@@ -8,7 +8,8 @@ These pages are intentionally separated from SmallStack core so you
 can customize them freely without conflicts when pulling upstream updates.
 """
 
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.urls import reverse
 
 
 def home_view(request):
@@ -51,3 +52,28 @@ def changelog_view(request):
             "changelog": get_changelog(),
         },
     )
+
+
+def getting_started_view(request):
+    """Getting Started guide for new users."""
+    return render(request, "website/getting_started.html")
+
+
+def starter_view(request):
+    """Starter page demonstrating available components."""
+    return render(request, "starter.html")
+
+
+def starter_basic_view(request):
+    """A minimal blank page — the simplest possible SmallStack page."""
+    return render(request, "starter/basic.html")
+
+
+def starter_forms_view(request):
+    """Forms starter showing date pickers, alignment, and input patterns."""
+    return render(request, "starter/forms.html")
+
+
+def components_view(request):
+    """Redirect to the components section in help docs."""
+    return redirect(reverse("help:section_index", kwargs={"section": "components"}))

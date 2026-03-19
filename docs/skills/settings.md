@@ -41,13 +41,19 @@ INSTALLED_APPS = [
     "apps.help",
     "apps.tasks",
     "apps.activity",
+    "apps.heartbeat",
+    "apps.usermanager",
     "apps.website",        # Project-specific pages
     # Django built-in
     "django.contrib.admin",
     # ...
+    # Explorer must come after django.contrib.admin
+    "apps.explorer",
     # Third-party
     "django_extensions",
     "django_tasks_db",
+    "django_tables2",
+    "axes",
 ]
 ```
 
@@ -103,8 +109,27 @@ SMALLSTACK_SIDEBAR_OPEN = config("SMALLSTACK_SIDEBAR_OPEN", default=True, cast=b
 SMALLSTACK_SIDEBAR_DEFAULT = config("SMALLSTACK_SIDEBAR_DEFAULT", default="open")
 
 # Show the unified topbar nav even when the sidebar is open
-SMALLSTACK_TOPBAR_NAV_ALWAYS = config("SMALLSTACK_TOPBAR_NAV_ALWAYS", default=False, cast=bool)
+SMALLSTACK_TOPBAR_NAV_ALWAYS = config("SMALLSTACK_TOPBAR_NAV_ALWAYS", default=True, cast=bool)
 ```
+
+### SQLite Performance Tuning
+
+```python
+SQLITE_OPTIONS = {
+    "transaction_mode": "IMMEDIATE",
+    "timeout": 5,
+    "init_command": (
+        "PRAGMA journal_mode=WAL;"
+        "PRAGMA synchronous=NORMAL;"
+        "PRAGMA temp_store=MEMORY;"
+        "PRAGMA mmap_size=134217728;"
+        "PRAGMA journal_size_limit=27103364;"
+        "PRAGMA cache_size=2000;"
+    ),
+}
+```
+
+Referenced by both `development.py` and `production.py` as `"OPTIONS": SQLITE_OPTIONS`. Prevents "database is locked" errors by enabling WAL mode and IMMEDIATE transactions. Do not use `ATOMIC_REQUESTS = True` with this configuration.
 
 ### Activity Tracking
 

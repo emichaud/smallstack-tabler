@@ -9,6 +9,7 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 
 from apps.heartbeat.views import StatusPageView, status_json
+from apps.smallstack.api import api_auth_token
 
 from .views import health_check, legal_page_view
 
@@ -18,11 +19,17 @@ urlpatterns = [
     # All built-in SmallStack URLs (auth, profile, help, activity, heartbeat, backups, usermanager)
     path("smallstack/", include("apps.smallstack.site_urls")),
     # Public convenience aliases — downstream projects can change or remove these.
-    # Status serves directly (public, no login); profile/help redirect to canonical URLs.
+    # Auth aliases let /accounts/login/ work alongside the canonical /smallstack/accounts/login/.
+    # Status serves directly (public, no login); others redirect to canonical URLs.
+    path("accounts/login/", RedirectView.as_view(pattern_name="login", permanent=False), name="public_login"),
+    path("accounts/logout/", RedirectView.as_view(pattern_name="logout", permanent=False), name="public_logout"),
+    path("accounts/signup/", RedirectView.as_view(pattern_name="signup", permanent=False), name="public_signup"),
     path("status/", StatusPageView.as_view(), name="public_status"),
     path("status/json/", status_json, name="public_status_json"),
     path("profile/", RedirectView.as_view(pattern_name="profile", permanent=False), name="public_profile"),
     path("help/", RedirectView.as_view(pattern_name="help:index", permanent=False), name="public_help"),
+    # API auth
+    path("api/auth/token/", api_auth_token, name="api-auth-token"),
     # Admin
     path("admin/", admin.site.urls),
     # Tabler preview pages (design reference)

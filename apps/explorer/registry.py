@@ -383,6 +383,12 @@ class ExplorerSite:
         displays = getattr(admin_class, "explorer_displays", [Table2Display])
         detail_displays = getattr(admin_class, "explorer_detail_displays", [])
 
+        # Form display config
+        form_displays = getattr(admin_class, "explorer_form_displays", [])
+        create_displays = getattr(admin_class, "explorer_create_displays", [])
+        edit_displays = getattr(admin_class, "explorer_edit_displays", [])
+        form_class = getattr(admin_instance, "explorer_form_class", None)
+
         crud_cls = type(
             f"Explorer{model.__name__}CRUDView",
             (CRUDView,),
@@ -398,11 +404,18 @@ class ExplorerSite:
                 "actions": actions,
                 "displays": displays,
                 "detail_displays": detail_displays,
+                "form_displays": form_displays,
+                "create_displays": create_displays,
+                "edit_displays": edit_displays,
+                "form_class": form_class,
                 "preview_fields": preview_fields,
                 "field_transforms": merged_transforms,
                 "breadcrumb_parent": ("Explorer", "explorer-index"),
                 "enable_api": getattr(admin_class, "explorer_enable_api", False),
                 "export_formats": list(getattr(admin_class, "explorer_export_formats", [])),
+                "api_extra_fields": list(getattr(admin_class, "explorer_api_extra_fields", [])),
+                "api_expand_fields": list(getattr(admin_class, "explorer_api_expand_fields", [])),
+                "api_aggregate_fields": list(getattr(admin_class, "explorer_api_aggregate_fields", [])),
             },
         )
 

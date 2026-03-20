@@ -87,44 +87,51 @@ AUTH_USER_MODEL = "accounts.User"
 
 ## URL Configuration
 
+Auth views live inside `apps/smallstack/site_urls.py`, which is mounted at `/smallstack/`:
+
 ```python
-# config/urls.py
-
-from django.contrib.auth import views as auth_views
-from apps.accounts.views import SignupView
-
-urlpatterns = [
-    # Custom signup
-    path("accounts/signup/", SignupView.as_view(), name="signup"),
-
-    # Django's built-in auth views
-    path("accounts/", include("django.contrib.auth.urls")),
-
-    # This includes:
-    # - accounts/login/
-    # - accounts/logout/
-    # - accounts/password_reset/
-    # - accounts/password_reset/done/
-    # - accounts/reset/<uidb64>/<token>/
-    # - accounts/reset/done/
-    # - accounts/password_change/
-    # - accounts/password_change/done/
-]
+# apps/smallstack/site_urls.py (relevant lines)
+path("accounts/", include("django.contrib.auth.urls")),
+path("accounts/signup/", SignupView.as_view(), name="signup"),
 ```
+
+This produces canonical auth URLs under `/smallstack/accounts/`:
+
+| URL | Name | Purpose |
+|-----|------|---------|
+| `/smallstack/accounts/login/` | `login` | Login form |
+| `/smallstack/accounts/logout/` | `logout` | Logout |
+| `/smallstack/accounts/signup/` | `signup` | Registration |
+| `/smallstack/accounts/password_reset/` | `password_reset` | Password reset flow |
+
+### Public Auth Aliases
+
+`config/urls.py` also registers convenience redirects so `/accounts/login/` works for downstream projects that want cleaner public URLs:
+
+```python
+# config/urls.py (public convenience aliases)
+path("accounts/login/", RedirectView.as_view(pattern_name="login", permanent=False)),
+path("accounts/logout/", RedirectView.as_view(pattern_name="logout", permanent=False)),
+path("accounts/signup/", RedirectView.as_view(pattern_name="signup", permanent=False)),
+```
+
+Downstream projects can remove these aliases or replace them with direct views.
 
 ## Auth Settings
 
 ```python
 # config/settings/base.py
 
-LOGIN_URL = "/accounts/login/"
-LOGIN_REDIRECT_URL = "/"
+LOGIN_URL = "/smallstack/accounts/login/"
+LOGIN_REDIRECT_URL = "/smallstack/"
 LOGOUT_REDIRECT_URL = "/"
 
 # Auth feature flags (default True, configurable via .env)
 SMALLSTACK_LOGIN_ENABLED = config("SMALLSTACK_LOGIN_ENABLED", default=True, cast=bool)
 SMALLSTACK_SIGNUP_ENABLED = config("SMALLSTACK_SIGNUP_ENABLED", default=True, cast=bool)
 ```
+
+Downstream projects that use the public aliases can override `LOGIN_URL` to `/accounts/login/` in their settings.
 
 ## Auth Feature Flags
 
@@ -388,6 +395,46 @@ Access in templates:
     <img src="{{ user.profile.profile_photo.url }}">
 {% endif %}
 ```
+
+## API Authentication
+
+SmallStack includes Bearer token authentication for the REST API layer. See the `api` skill for full details.
+
+### Token Creation
+
+```bash
+# Via CLI
+uv run python manage.py create_api_token <username>
+```
+
+### Programmatic Login (SPA / Mobile)
+
+```
+POST /api/auth/token/
+Content-Type: application/json
+
+{"username": "alice", "password": "secret123"}
+
+→ 200: {"token": "aBcD1234...", "user": {"id": 1, "username": "alice", "is_staff": true}}
+→ 401: {"error": "Invalid credentials"}
+```
+
+The endpoint uses Django's `authenticate()` under the hood, so custom auth backends (e.g., email login) work automatically.
+
+### Using the Token
+
+```bash
+curl -H "Authorization: Bearer <token>" https://example.com/api/manage/widgets/
+```
+
+### What's Not Included (By Design)
+
+- No JSON signup endpoint — signup stays HTML or admin-provisioned
+- No JSON password reset — stays HTML/email flow
+- No token refresh — create a new one if needed
+- No logout endpoint — client discards the token
+
+These are intentionally omitted to keep SmallStack simple. If you need full REST auth flows, add `dj-rest-auth` — it coexists without conflicts.
 
 ## Best Practices
 

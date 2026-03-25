@@ -200,9 +200,146 @@ ul.pagination li.active span {
 
 
 /* --------------------------------------------------------------------------
+   Bare Element Defaults (inside .content-wrapper)
+   --------------------------------------------------------------------------
+   Ensure that plain HTML elements dropped into block content look themed
+   without requiring specific CSS classes. A developer writing <button>,
+   <input>, <select>, or <label> should get reasonable SmallStack styling
+   out of the box. Class-based components (.btn-primary, .crud-form, etc.)
+   provide more refined styling and should be preferred.
+   -------------------------------------------------------------------------- */
+
+/* Buttons: use :where() for zero specificity so any class (.btn-primary,
+   .tab-btn, .filter-toggle, .crud-modal-btn-*, etc.) naturally overrides. */
+:where(.content-wrapper) button,
+:where(.content-wrapper) input[type="submit"],
+:where(.content-wrapper) input[type="button"] {
+    background: var(--primary);
+    color: var(--button-fg);
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background 0.15s;
+}
+
+:where(.content-wrapper) button:hover,
+:where(.content-wrapper) input[type="submit"]:hover,
+:where(.content-wrapper) input[type="button"]:hover {
+    background: var(--primary-hover);
+}
+
+/* Form inputs: use :where() so .crud-form rules (higher specificity) override. */
+:where(.content-wrapper) input[type="text"],
+:where(.content-wrapper) input[type="email"],
+:where(.content-wrapper) input[type="url"],
+:where(.content-wrapper) input[type="number"],
+:where(.content-wrapper) input[type="password"],
+:where(.content-wrapper) input[type="date"],
+:where(.content-wrapper) input[type="datetime-local"],
+:where(.content-wrapper) input[type="tel"],
+:where(.content-wrapper) input[type="search"],
+:where(.content-wrapper) select,
+:where(.content-wrapper) textarea {
+    width: 100%;
+    min-height: var(--control-height, 36px);
+    padding: 0.7rem 0.9rem;
+    font-size: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--body-fg) 20%, var(--body-bg));
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--body-fg) 5%, var(--body-bg));
+    color: var(--body-fg);
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+:where(.content-wrapper) input::placeholder,
+:where(.content-wrapper) textarea::placeholder {
+    color: var(--body-quiet-color);
+    opacity: 0.6;
+}
+
+:where(.content-wrapper) input:focus,
+:where(.content-wrapper) select:focus,
+:where(.content-wrapper) textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+:where(.content-wrapper) textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+:where(.content-wrapper) select {
+    appearance: auto;
+    min-height: var(--control-height, 36px);
+}
+
+:where(.content-wrapper) input[type="checkbox"] {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--primary);
+}
+
+:where(.content-wrapper) input[type="file"] {
+    width: 100%;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    border: 1px dashed color-mix(in srgb, var(--body-fg) 20%, var(--body-bg));
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--body-fg) 3%, var(--body-bg));
+    color: var(--body-fg);
+    cursor: pointer;
+}
+
+:where(.content-wrapper) input[type="file"]:hover {
+    border-color: var(--primary);
+}
+
+:where(.content-wrapper) input[type="file"]::file-selector-button {
+    background: var(--primary);
+    color: var(--button-fg);
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 0.75rem;
+    transition: background 0.15s;
+}
+
+:where(.content-wrapper) input[type="file"]::file-selector-button:hover {
+    background: var(--primary-hover);
+}
+
+:where(.content-wrapper) label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--body-fg);
+}
+
+[data-theme="dark"] :where(.content-wrapper) select {
+    color-scheme: dark;
+}
+
+[data-theme="dark"] :where(.content-wrapper) select option {
+    background: var(--card-bg);
+    color: var(--body-fg);
+}
+
+
+/* --------------------------------------------------------------------------
    Forms
    --------------------------------------------------------------------------
-   Use class="crud-form" on <form> elements for themed styling.
+   Use class="crud-form" on <form> elements for more refined form styling
+   with field grouping, help text, error states, and layout.
    -------------------------------------------------------------------------- */
 
 .crud-form .crud-field {
@@ -248,6 +385,7 @@ ul.pagination li.active span {
 .crud-form select,
 .crud-form textarea {
     width: 100%;
+    min-height: var(--control-height, 36px);
     padding: 0.7rem 0.9rem;
     font-size: 0.9rem;
     border: 1px solid color-mix(in srgb, var(--body-fg) 20%, var(--body-bg));
@@ -280,7 +418,7 @@ ul.pagination li.active span {
 /* Select dropdowns */
 .crud-form select {
     appearance: auto;
-    min-height: 2.6rem;
+    min-height: var(--control-height, 36px);
     color-scheme: dark light;
 }
 
@@ -326,6 +464,23 @@ ul.pagination li.active span {
 
 .crud-form input[type="file"]:hover {
     border-color: var(--primary);
+}
+
+.crud-form input[type="file"]::file-selector-button {
+    background: var(--primary);
+    color: var(--button-fg);
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 0.75rem;
+    transition: background 0.15s;
+}
+
+.crud-form input[type="file"]::file-selector-button:hover {
+    background: var(--primary-hover);
 }
 
 /* Image preview */
@@ -726,6 +881,9 @@ ul.pagination li.active span {
 }
 
 .tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px 20px;
     background: none;
     border: none;
@@ -735,11 +893,13 @@ ul.pagination li.active span {
     font-weight: 500;
     color: var(--body-quiet-color);
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+    border-radius: var(--radius-sm, 4px) var(--radius-sm, 4px) 0 0;
 }
 
 .tab-btn:hover {
     color: var(--body-fg);
+    background-color: color-mix(in srgb, var(--body-fg) 5%, transparent);
 }
 
 .tab-btn.active {
@@ -763,6 +923,47 @@ ul.pagination li.active span {
 }
 
 .tab-panel.active {
+    display: block;
+}
+
+/* View switcher — larger variant for top-level section switching */
+
+.view-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--hairline-color, color-mix(in srgb, var(--body-fg) 10%, var(--body-bg)));
+    margin-bottom: 0;
+}
+
+.view-btn {
+    padding: 12px 24px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--body-quiet-color);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+    border-radius: var(--radius-sm, 4px) var(--radius-sm, 4px) 0 0;
+}
+
+.view-btn:hover {
+    color: var(--body-fg);
+    background-color: color-mix(in srgb, var(--body-fg) 5%, transparent);
+}
+
+.view-btn.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.view-panel {
+    display: none;
+}
+
+.view-panel.active {
     display: block;
 }
 
@@ -910,7 +1111,9 @@ ul.pagination li.active span {
    Buttons (extending Django admin's .button class)
    -------------------------------------------------------------------------- */
 
-.btn-primary {
+.btn-primary,
+a.btn-primary:link,
+a.btn-primary:visited {
     background: var(--primary);
     color: var(--button-fg);
     padding: 0.5rem 1rem;
@@ -930,7 +1133,9 @@ ul.pagination li.active span {
     text-decoration: none;
 }
 
-.btn-outline {
+.btn-outline,
+a.btn-outline:link,
+a.btn-outline:visited {
     background: transparent;
     color: var(--body-quiet-color);
     padding: 0.5rem 1rem;
@@ -950,7 +1155,9 @@ ul.pagination li.active span {
     text-decoration: none;
 }
 
-.btn-danger {
+.btn-danger,
+a.btn-danger:link,
+a.btn-danger:visited {
     background: var(--delete-button-bg, #dc3545);
     color: #fff;
     padding: 0.5rem 1rem;
@@ -967,6 +1174,147 @@ ul.pagination li.active span {
     opacity: 0.9;
 }
 
+.btn-secondary,
+a.btn-secondary:link,
+a.btn-secondary:visited {
+    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    color: var(--primary);
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-block;
+    transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+    background: color-mix(in srgb, var(--primary) 25%, var(--body-bg));
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+
+/* --------------------------------------------------------------------------
+   Action Cards (icon + label, used in page headers)
+   -------------------------------------------------------------------------- */
+
+.action-cards {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.action-card {
+    border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    border-radius: var(--radius-md, 8px);
+    background: var(--card-bg, var(--body-bg));
+    min-width: 160px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.action-card:hover {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 8%, var(--card-bg, var(--body-bg)));
+}
+
+.action-card-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+}
+
+.action-card-icon {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    fill: var(--primary);
+}
+
+.action-card-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--primary);
+}
+
+.action-card-subtitle {
+    color: var(--body-quiet-color);
+    font-size: 0.75rem;
+}
+
+/* Color variants */
+.action-card-success {
+    border-color: color-mix(in srgb, var(--success-fg) 40%, transparent);
+}
+
+.action-card-success:hover {
+    border-color: var(--success-fg);
+    background: color-mix(in srgb, var(--success-fg) 6%, var(--card-bg, var(--body-bg)));
+}
+
+.action-card-success .action-card-icon { fill: var(--success-fg); }
+.action-card-success .action-card-title { color: var(--success-fg); }
+
+.action-card-danger {
+    border-color: color-mix(in srgb, var(--delete-button-bg, #dc3545) 40%, transparent);
+}
+
+.action-card-danger:hover {
+    border-color: var(--delete-button-bg, #dc3545);
+    background: color-mix(in srgb, var(--delete-button-bg, #dc3545) 6%, var(--card-bg, var(--body-bg)));
+}
+
+.action-card-danger .action-card-icon { fill: var(--delete-button-bg, #dc3545); }
+.action-card-danger .action-card-title { color: var(--delete-button-bg, #dc3545); }
+
+/* Non-clickable status variant */
+.action-card-static {
+    cursor: default;
+}
+
+
+/* --------------------------------------------------------------------------
+   Filter Toggles (small pill buttons for inline filtering)
+   -------------------------------------------------------------------------- */
+
+.filter-toggles {
+    display: flex;
+    gap: 4px;
+}
+
+.filter-toggle {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, var(--body-fg) 20%, var(--body-bg));
+    border-radius: var(--radius-sm, 4px);
+    background: var(--card-bg, var(--body-bg));
+    color: var(--body-fg);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.filter-toggle:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.filter-toggle.active {
+    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+
 
 /* --------------------------------------------------------------------------
    Utility: uppercase label
@@ -978,4 +1326,163 @@ ul.pagination li.active span {
     text-transform: uppercase;
     letter-spacing: 0.3px;
     color: var(--body-quiet-color);
+}
+
+
+/* --------------------------------------------------------------------------
+   List Toolbar (search, filters, display palette)
+   --------------------------------------------------------------------------
+   Sits inside .card-body above the table/display area. Only renders when
+   search_fields or filter_fields are configured on the CRUDView.
+   -------------------------------------------------------------------------- */
+
+.list-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 12px 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--hairline-color);
+}
+
+/* Search input */
+.list-toolbar-search {
+    position: relative;
+    width: 200px;
+    flex-shrink: 1;
+    min-width: 140px;
+}
+
+.list-toolbar-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--body-quiet-color);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.list-toolbar-search-input {
+    width: 100%;
+    height: var(--control-height, 36px);
+    min-height: var(--control-height, 36px);
+    padding: 0 10px 0 32px !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-sm, 4px) !important;
+    background: var(--body-bg) !important;
+    color: var(--body-fg) !important;
+    font-size: 0.8rem !important;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.list-toolbar-search-input:focus {
+    border-color: var(--primary);
+}
+
+.list-toolbar-search-input::placeholder {
+    color: var(--body-quiet-color);
+}
+
+/* Filter controls — inline with search */
+.list-toolbar-filters {
+    display: contents;
+}
+
+.list-toolbar-filter-select,
+.list-toolbar-filter-text {
+    height: var(--control-height, 36px);
+    min-height: var(--control-height, 36px);
+    padding: 4px 8px !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-sm, 4px) !important;
+    background: var(--body-bg) !important;
+    color: var(--body-fg) !important;
+    font-size: 0.75rem !important;
+    transition: border-color 0.15s;
+    cursor: pointer;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: auto;
+}
+
+.list-toolbar-filter-text {
+    width: 140px;
+}
+
+.list-toolbar-filter-select:focus,
+.list-toolbar-filter-text:focus {
+    border-color: var(--primary) !important;
+}
+
+/* Spacer pushes right-side content */
+.list-toolbar-spacer {
+    flex: 1;
+}
+
+/* Result count */
+.list-toolbar-count {
+    font-size: 0.75rem;
+    color: var(--body-quiet-color);
+    white-space: nowrap;
+}
+
+/* Clear button */
+.list-toolbar-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.75rem;
+    color: var(--body-quiet-color);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm, 4px);
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s;
+}
+
+.list-toolbar-clear:hover {
+    color: var(--body-fg);
+    background: color-mix(in srgb, var(--primary) 10%, var(--body-bg));
+}
+
+/* Display palette (used in toolbar and standalone) */
+.display-palette {
+    display: inline-flex;
+    gap: 0.25rem;
+}
+
+.display-palette-btn {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    background: var(--card-bg) !important;
+    color: var(--body-fg) !important;
+    transition: background 0.15s, color 0.15s;
+}
+
+.display-palette-btn.active {
+    background: var(--primary) !important;
+    color: var(--button-fg) !important;
+}
+
+.display-palette-btn:hover:not(.active) {
+    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg)) !important;
+}
+
+/* Responsive: stack on small screens */
+@media (max-width: 768px) {
+    .list-toolbar {
+        flex-wrap: wrap;
+    }
+    .list-toolbar-search {
+        width: 100%;
+    }
+    .list-toolbar-filters {
+        flex-wrap: wrap;
+    }
 }

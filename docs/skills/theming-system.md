@@ -91,6 +91,9 @@ Core layout and component variables are defined in `static/smallstack/css/theme.
     --topbar-height: 56px;
     --sidebar-width: 250px;
 
+    /* Controls */
+    --control-height: 36px;
+
     /* Effects */
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -269,27 +272,27 @@ localStorage.setItem('smallstack-theme', 'dark');
 
 ## UI Components
 
-### Cards
+SmallStack provides a full component library in `static/smallstack/css/components.css`. **See [admin-page-styling.md](admin-page-styling.md) for the definitive reference** with all CSS classes, code examples, and anti-patterns.
 
-```html
-<div class="card">
-    <div class="card-header">
-        <h2>Card Title</h2>
-    </div>
-    <div class="card-body">
-        Card content here
-    </div>
-</div>
-```
+Quick summary of available classes:
 
-### Buttons
+| Category | Classes |
+|----------|---------|
+| Buttons | `.btn-primary`, `.btn-secondary`, `.btn-outline`, `.btn-danger`, `.btn-sm` |
+| Form buttons | `.btn-save`, `.btn-cancel` (inside `.crud-form`) |
+| Tables | `.crud-table`, `.table-plain` |
+| Cards | `.card`, `.card-header`, `.card-body` |
+| Stat cards | `.stat-cards`, `.stat-card`, `.stat-card-value`, `.stat-card-label`, `.stat-card-clickable` |
+| Action cards | `.action-card`, `.action-card-success`, `.action-card-danger`, `.action-card-static` |
+| Badges | `.badge-success`, `.badge-warning`, `.badge-error`, `.badge-info` |
+| Tabs | `.tab-bar`, `.tab-btn`, `.tab-panel`, `.tab-count` |
+| View switcher | `.view-bar`, `.view-btn`, `.view-panel` |
+| Filter toggles | `.filter-toggles`, `.filter-toggle` |
+| Page header | `.page-header-bleed`, `.page-header-with-actions`, `.page-header-actions` |
+| Forms | `.crud-form`, `.crud-field`, `.crud-label`, `.crud-actions` |
+| Search | `.search-input` |
 
-```html
-<button class="button">Default</button>
-<button class="button button-primary">Primary</button>
-<button class="button button-secondary">Secondary</button>
-<a href="#" class="button">Link Button</a>
-```
+A copy-paste starter template is at `templates/smallstack/starter.html`.
 
 ### Messages/Alerts
 
@@ -298,16 +301,6 @@ localStorage.setItem('smallstack-theme', 'dark');
 <div class="message error">Error message</div>
 <div class="message warning">Warning message</div>
 <div class="message info">Info message</div>
-```
-
-### Forms
-
-```html
-<div class="form-group">
-    <label for="field">Label</label>
-    <input type="text" id="field" class="vTextField">
-    <span class="helptext">Help text</span>
-</div>
 ```
 
 ## Adding Sidebar Navigation Items
@@ -412,86 +405,33 @@ For Tailwind `dark:` classes, use `[data-theme="dark"]` selectors — or better,
 
 ## Tables
 
-SmallStack has a standard table style that works across light mode, dark mode, and all color palettes. **Always use it.** Do not write custom table CSS — it will look wrong in at least one theme mode.
-
-### The Standard: `.crud-table`
-
-The shared stylesheet lives at `templates/smallstack/crud/_table_styles.html`. Include it and use the `crud-table` class:
+SmallStack's `.crud-table` class handles all table styling across light mode, dark mode, and all palettes. **Always use it.** The styles are in `static/smallstack/css/components.css` — no `{% include %}` needed.
 
 ```html
-{% block extra_css %}
-{% include "smallstack/crud/_table_styles.html" %}
-{% endblock %}
-
-{% block content %}
 <table class="crud-table">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Count</th>
-        </tr>
-    </thead>
+    <thead><tr><th>Name</th><th>Status</th></tr></thead>
     <tbody>
         {% for item in items %}
         <tr>
             <td><a href="{{ item.url }}">{{ item.name }}</a></td>
             <td>{{ item.status }}</td>
-            <td>{{ item.count }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
-{% endblock %}
 ```
 
-### What `.crud-table` provides
+For lighter tables inside dashboard cards (no alternating rows), use `class="table-plain"`.
 
-| Element | Style | How |
-|---------|-------|-----|
-| Header row | Tinted background | `color-mix(in srgb, var(--primary) 15%, var(--body-bg))` |
-| Header text | Uppercase, muted | `0.8rem`, `600 weight`, `var(--body-quiet-color)` |
-| Odd rows | Subtle tint | `color-mix(in srgb, var(--primary) 4%, var(--body-bg))` |
-| Even rows | Slightly darker tint | `color-mix(in srgb, var(--primary) 12%, var(--body-bg))` |
-| Hover | Highlighted | `color-mix(in srgb, var(--primary) 20%, var(--body-bg))` |
-| Links | Primary color | `var(--primary)`, underline on hover |
-| Borders | None | All borders explicitly removed with `!important` |
-| Cell padding | Consistent | `10px 16px` for all `th` and `td` |
+See [admin-page-styling.md](admin-page-styling.md#tables) for the full table reference and anti-patterns.
 
 ### Why it works in all themes
 
 Every color is derived from `var(--primary)` and `var(--body-bg)` using `color-mix()`. When the user switches between light/dark mode or changes their color palette, the table automatically adapts — no separate dark mode overrides needed.
 
-### Common mistakes
+### Custom table styling
 
-**Don't do this:**
-```html
-<!-- Custom table with hardcoded colors — breaks in dark mode -->
-<table style="width: 100%; border-collapse: collapse;">
-    <thead>
-        <tr style="background: #f5f5f5;">  <!-- White header in dark mode -->
-```
-
-**Don't do this either:**
-```css
-/* Custom table class that duplicates crud-table behavior */
-.my-table thead tr {
-    background: var(--card-header-bg);  /* Wrong variable — too light in dark mode */
-}
-.my-table td {
-    border-bottom: 1px solid var(--hairline-color);  /* crud-table uses no borders */
-}
-```
-
-**Do this:**
-```html
-{% include "smallstack/crud/_table_styles.html" %}
-<table class="crud-table">...</table>
-```
-
-### When you need custom table styling
-
-If a page needs table styling that differs from `crud-table` (e.g., a modal with a denser layout), derive your colors the same way:
+If a page needs table styling that differs from `crud-table`, derive your colors the same way:
 
 ```css
 .my-dense-table thead tr {
@@ -505,11 +445,11 @@ If a page needs table styling that differs from `crud-table` (e.g., a modal with
 }
 ```
 
-Never use `var(--card-header-bg)`, `var(--card-bg)`, or hardcoded hex values for table backgrounds. The `color-mix()` pattern with `--primary` and `--body-bg` is what makes tables look correct across all theme combinations.
+Never use `var(--card-header-bg)`, `var(--card-bg)`, or hardcoded hex values for table backgrounds.
 
 ### CRUD views and django-tables2
 
-Tables generated by `CRUDView` (via `{% crud_table %}`) and the explorer app already use `crud-table` automatically. If you're using `django-tables2` with `{% render_table %}`, the CRUD list template includes `_table_styles.html` and the table inherits the styles.
+Tables generated by `CRUDView` (via `{% crud_table %}`) and the explorer app already use `crud-table` automatically. If you're using `django-tables2` with `{% render_table %}`, the CRUD list template includes the styles and the table inherits them.
 
 ## Adding New CSS
 
@@ -629,6 +569,8 @@ See `docs/skills/timezones.md` for the full timezone architecture.
 6. **Keep Django admin CSS** - It provides useful form styling
 7. **Use `var(--primary)` for branded elements** - They'll automatically adapt to palette changes
 8. **Use `{% localtime_tooltip %}` for dates** - It inherits theme variables and works in all modes
+9. **Beat `a:visited` on button classes** - Any class that sets `color` on an `<a>` must include `a.<class>:link, a.<class>:visited` selectors; otherwise the global `a:visited { color: var(--link-color) }` rule wins and can make text invisible. See [admin-page-styling.md](admin-page-styling.md#visited-link-specificity-rule) for details.
+10. **Use background tint for tab/button hover states** - Never use color-only hover on tabs or navigation buttons — text becomes invisible in light themes. Always pair with `background-color: color-mix(in srgb, var(--body-fg) 5%, transparent)`. See [admin-page-styling.md](admin-page-styling.md#tab-hover-styling) for the pattern.
 
 ## Troubleshooting
 
@@ -641,3 +583,11 @@ If you changed `SMALLSTACK_COLOR_PALETTE` but the UI still shows the old palette
 3. **Clear browser localStorage** — open DevTools → Application → Local Storage → delete `smallstack-palette`. This key can hold a stale value from a previous session, especially for anonymous users.
 4. **Verify the palette ID** — valid options: `django`, `high-contrast`, `dark-blue`, `orange`, `purple`. An invalid ID silently falls back to `django`.
 5. **Check `data-palette` in DevTools** — inspect the `<html>` element and confirm the `data-palette` attribute matches what you expect.
+
+### Button text invisible or wrong color
+
+If an `<a>` with a button class (`.btn-primary`, etc.) shows invisible or palette-colored text instead of white, the global `a:visited` rule is winning. The fix is to add `:link`/`:visited` selectors — see [admin-page-styling.md](admin-page-styling.md#visited-link-specificity-rule). This is already handled for all built-in button classes; it only affects custom button classes you add.
+
+### CDN stylesheets not applying
+
+SmallStack's Content Security Policy (CSP) controls which external resources the browser will load. By default, CDN **stylesheets, fonts, and images** are allowed over HTTPS. CDN **scripts** are blocked (`script-src` is `'self'` only). If a CDN stylesheet isn't working, check the browser console for CSP violations. See `config/settings/base.py` for the full policy and [adding-your-own-theme.md](adding-your-own-theme.md#content-security-policy) for details.

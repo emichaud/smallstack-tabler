@@ -12,82 +12,11 @@
     .crud-table thead th a:hover { color: var(--primary); }
     .crud-table thead th.asc a::after { content: " \25B2"; font-size: 0.65rem; }
     .crud-table thead th.desc a::after { content: " \25BC"; font-size: 0.65rem; }
-    /* django-tables2 pagination */
-    ul.pagination {
-        display: flex; justify-content: center; gap: 0.25rem;
-        list-style: none !important; padding: 1rem 0 0 !important; margin: 0 !important;
-    }
-    ul.pagination li { list-style: none !important; }
-    ul.pagination li a,
-    ul.pagination li span {
-        display: inline-block; padding: 0.3rem 0.75rem;
-        border-radius: var(--radius-sm, 4px); color: var(--body-quiet-color);
-        text-decoration: none; font-size: 0.85rem;
-    }
-    ul.pagination li a:hover {
-        color: var(--primary);
-        background: color-mix(in srgb, var(--primary) 10%, var(--body-bg));
-    }
-    ul.pagination li.active a,
-    ul.pagination li.active span {
-        background: var(--primary); color: var(--button-fg);
-    }
     .tab-bar {
-        display: flex;
-        gap: 0;
-        border-bottom: 2px solid var(--hairline-color);
+        margin-top: 12px;
         margin-bottom: 0;
-    }
-    .tab-btn {
-        padding: 10px 20px;
-        background: none;
-        border: none;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -2px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: var(--body-quiet-color);
-        transition: color 0.15s, border-color 0.15s;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .tab-btn:hover { color: var(--body-fg); }
-    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-    .tab-count {
-        display: inline-block;
-        padding: 1px 7px;
-        border-radius: 10px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        background: color-mix(in srgb, var(--primary) 15%, var(--card-bg));
-        color: var(--primary);
     }
 
-    /* Top-level view switcher */
-    .view-bar {
-        display: flex;
-        gap: 0;
-        border-bottom: 2px solid var(--hairline-color);
-        margin-bottom: 0;
-    }
-    .view-btn {
-        padding: 12px 24px;
-        background: none;
-        border: none;
-        border-bottom: 3px solid transparent;
-        margin-bottom: -2px;
-        cursor: pointer;
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: var(--body-quiet-color);
-        transition: color 0.15s, border-color 0.15s;
-    }
-    .view-btn:hover { color: var(--body-fg); }
-    .view-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-    .view-panel { display: none; }
-    .view-panel.active { display: block; }
 
     /* Timeline styles (from status page) */
     .timeline-bar {
@@ -203,8 +132,8 @@
 </style>
 {% endblock %}
 
-{% block content %}
-<div class="page-header-with-actions" style="background: color-mix(in srgb, var(--primary) 15%, var(--body-bg)); margin: -24px -24px 24px -24px; padding: 24px; border-radius: 8px 8px 0 0;">
+{% block page_header %}
+<div class="page-header-bleed page-header-with-actions">
     <div class="page-header-content">
         <h1>Heartbeat Dashboard</h1>
         <p class="page-subtitle">{{ total_heartbeats|stringformat:"," }} total records &middot; {{ retention_days }}-day retention &middot; {{ expected_interval }}s interval</p>
@@ -223,7 +152,9 @@
         </a>
     </div>
 </div>
+{% endblock %}
 
+{% block content %}
 <!-- Summary stats -->
 <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px;">
     <div class="card">
@@ -270,14 +201,14 @@
 <div class="card">
     <div class="card-header" style="padding-bottom: 0;">
         <div class="view-bar">
-            <button class="view-btn active" onclick="switchView('timelines', this)">Timelines</button>
-            <button class="view-btn" onclick="switchView('log', this)">Heartbeat Log</button>
-            <button class="view-btn" onclick="switchView('json', this)">JSON</button>
+            <button class="view-btn{% if active_view == 'timelines' %} active{% endif %}" onclick="switchView('timelines', this)">Timelines</button>
+            <button class="view-btn{% if active_view == 'log' %} active{% endif %}" onclick="switchView('log', this)">Heartbeat Log</button>
+            <button class="view-btn{% if active_view == 'json' %} active{% endif %}" onclick="switchView('json', this)">JSON</button>
         </div>
     </div>
 
     <!-- Timelines panel -->
-    <div id="view-timelines" class="view-panel active">
+    <div id="view-timelines" class="view-panel{% if active_view == 'timelines' %} active{% endif %}">
         <div class="card-body">
             {% if timeline_24h %}
             <h3 style="margin: 0 0 12px 0; font-size: 1rem;">Last 24 Hours</h3>
@@ -319,7 +250,7 @@
     </div>
 
     <!-- Heartbeat Log panel -->
-    <div id="view-log" class="view-panel">
+    <div id="view-log" class="view-panel{% if active_view == 'log' %} active{% endif %}">
         <div class="card-body" style="padding: 0 0 0 0;">
             <div style="padding: 0 16px;">
                 <div class="tab-bar">
@@ -355,7 +286,7 @@
     </div>
 
     <!-- JSON panel -->
-    <div id="view-json" class="view-panel">
+    <div id="view-json" class="view-panel{% if active_view == 'json' %} active{% endif %}">
         <div class="card-body">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div style="font-size: 0.8rem; color: var(--body-quiet-color);">

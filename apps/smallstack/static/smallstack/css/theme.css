@@ -55,7 +55,7 @@
     --info-bg: #d9edf7;
     --info-fg: #31708f;
 
-    /* Button colors */
+    /* Button colors — button-fg must contrast with --primary/--button-bg */
     --button-bg: #417690;
     --button-fg: #ffffff;
     --button-hover-bg: #205067;
@@ -88,6 +88,9 @@
     /* Transitions */
     --transition-fast: 0.15s ease;
     --transition-normal: 0.3s ease;
+
+    /* Controls */
+    --control-height: 36px;
 
     /* Border radius */
     --radius-sm: 4px;
@@ -192,9 +195,21 @@ a:visited {
     transition: color var(--transition-fast);
 }
 
+/* Override Django 6.0 admin base.css blanket underline rule.
+   Django's a:not(... #content-main.app-list a ...) has specificity (1,1,2),
+   so we must match it exactly. Source order wins since theme.css loads after. */
+a:not(
+    [role="button"],
+    #header a,
+    #nav-sidebar a,
+    #content-main.app-list a,
+    .object-tools a
+) {
+    text-decoration: none;
+}
+
 a:hover {
     color: var(--link-hover);
-    text-decoration: underline;
 }
 
 /* ============================================
@@ -713,7 +728,9 @@ body.sidebar-closed .main-content {
     height: 100%;
 }
 
-.topbar .auth-link {
+.topbar .auth-link,
+.topbar .auth-link:link,
+.topbar .auth-link:visited {
     color: var(--header-fg);
     padding: 8px 16px;
     border-radius: var(--radius-sm);
@@ -730,12 +747,8 @@ body.sidebar-closed .main-content {
 
 .topbar .auth-link.btn-primary {
     background-color: var(--primary);
-    color: #ffffff;
+    color: var(--button-fg);
     border: none;
-}
-
-[data-theme="dark"] .topbar .auth-link.btn-primary {
-    color: #000000;
 }
 
 .topbar .auth-link.btn-primary:hover {
@@ -1121,12 +1134,14 @@ body[data-topbar-nav="hidden"] .topbar-nav-auto {
     margin-bottom: 20px;
 }
 
-.breadcrumb-list {
+.breadcrumb {
     list-style: none;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    padding: 0;
+    margin: 0;
 }
 
 .breadcrumb-item {
@@ -1155,6 +1170,10 @@ body[data-topbar-nav="hidden"] .topbar-nav-auto {
 
 .messages-container {
     margin-bottom: 20px;
+}
+
+.messages-container:empty {
+    display: none;
 }
 
 .message {
@@ -1307,7 +1326,9 @@ body[data-topbar-nav="hidden"] .topbar-nav-auto {
     text-decoration: none;
 }
 
-.button-primary {
+.button-primary,
+.button-primary:link,
+.button-primary:visited {
     background-color: var(--button-bg);
     border-color: var(--button-bg);
     color: var(--button-fg);
@@ -1343,6 +1364,7 @@ body[data-topbar-nav="hidden"] .topbar-nav-auto {
 .form-group textarea,
 .form-group select {
     width: 100%;
+    min-height: var(--control-height, 36px);
     padding: 10px 12px;
     border: 1px solid var(--input-border);
     border-radius: var(--radius-sm);
@@ -1896,6 +1918,13 @@ body.sidebar-closed .site-footer {
     gap: 20px;
 }
 
+/* Full-bleed header — used inside {% block page_header %} (outside .content-wrapper) */
+.page-header-bleed {
+    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    margin: -20px -20px 20px -20px;
+    padding: 24px;
+}
+
 .page-header-content h1 {
     font-size: 1.75rem;
     font-weight: 600;
@@ -2412,7 +2441,7 @@ a.button.button-secondary:hover {
     padding: 32px 36px;
     margin-bottom: 28px;
     text-align: center;
-    color: #ffffff;
+    color: var(--button-fg);
     position: relative;
     overflow: hidden;
 }
@@ -2436,7 +2465,7 @@ a.button.button-secondary:hover {
 .hero-badge {
     display: inline-block;
     background-color: rgba(255, 255, 255, 0.2);
-    color: #ffffff;
+    color: var(--button-fg);
     padding: 5px 14px;
     border-radius: 20px;
     font-size: 0.8rem;
@@ -2450,7 +2479,7 @@ a.button.button-secondary:hover {
     font-size: 2rem;
     font-weight: 700;
     margin-bottom: 10px;
-    color: #ffffff;
+    color: var(--button-fg);
 }
 
 .hero-logo {
@@ -2492,14 +2521,14 @@ a.button.button-secondary:hover {
 
 .hero-actions .button-secondary {
     background-color: transparent;
-    color: #ffffff;
+    color: var(--button-fg);
     border-color: rgba(255, 255, 255, 0.5);
 }
 
 .hero-actions .button-secondary:hover {
     background-color: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.8);
-    color: #ffffff;
+    color: var(--button-fg);
 }
 
 [data-theme="dark"] .hero-section {
@@ -2905,10 +2934,10 @@ a.button.button-secondary:hover {
 
 .paginator {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    padding: 12px 16px;
-    border-top: 1px solid var(--card-border);
+    gap: 8px;
+    padding: 1rem 0 0;
     font-size: 0.85rem;
 }
 
@@ -2918,20 +2947,21 @@ a.button.button-secondary:hover {
 
 .paginator-pages {
     display: flex;
+    justify-content: center;
     align-items: center;
-    gap: 4px;
+    gap: 0.25rem;
 }
 
-.paginator-link {
+.paginator-link,
+a.paginator-link:link,
+a.paginator-link:visited {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    height: 32px;
-    padding: 0 6px;
-    border: 1px solid var(--card-border);
+    padding: 0.3rem 0.75rem;
     border-radius: var(--radius-sm);
-    color: var(--body-fg);
+    background: none;
+    color: var(--body-quiet-color);
     text-decoration: none;
     font-size: 0.85rem;
     transition: all var(--transition-fast);
@@ -2939,13 +2969,13 @@ a.button.button-secondary:hover {
 }
 
 .paginator-link:hover {
-    background-color: var(--sidebar-hover-bg);
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, var(--body-bg));
     text-decoration: none;
 }
 
 .paginator-link.active {
-    background-color: var(--primary);
-    border-color: var(--primary);
+    background: var(--primary);
     color: var(--button-fg);
     cursor: default;
 }
@@ -2954,17 +2984,9 @@ a.button.button-secondary:hover {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    height: 32px;
+    padding: 0.3rem 0.25rem;
     color: var(--body-quiet-color);
     font-size: 0.85rem;
-}
-
-@media (max-width: 480px) {
-    .paginator {
-        flex-direction: column;
-        gap: 8px;
-    }
 }
 
 /* ============================================

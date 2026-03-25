@@ -24,7 +24,11 @@ import enum
 import warnings
 
 from django import forms
-from django.http import Http404
+from django.contrib import messages
+from django.db import IntegrityError
+from django.db.models import ProtectedError, RestrictedError
+from django.http import Http404, HttpResponse
+from django.shortcuts import redirect as _redirect
 from django.urls import path, reverse
 from django.views.generic import (
     CreateView,
@@ -84,6 +88,7 @@ class _CRUDContextMixin:
                 "object_verbose_name": str(meta.verbose_name).capitalize(),
                 "object_verbose_name_plural": str(meta.verbose_name_plural).capitalize(),
                 "url_base": url_base,
+                "url_namespace": cfg.namespace,
                 "list_fields": cfg._get_list_fields(),
                 "detail_fields": cfg._get_detail_fields(),
                 "link_field": cfg._get_link_field(),
@@ -100,10 +105,13 @@ class _CRUDContextMixin:
             context["breadcrumb_parent_label"] = label
             context["breadcrumb_parent_url_name"] = url_name
         if Action.CREATE in cfg.actions:
-            context["create_view_url"] = reverse(f"{url_base}-create")
+            context["create_view_url"] = cfg._reverse(f"{url_base}-create")
         if Action.LIST in cfg.actions:
-            context["list_view_url"] = reverse(f"{url_base}-list")
-            context["list_view_url_name"] = f"{url_base}-list"
+            context["list_view_url"] = cfg._reverse(f"{url_base}-list")
+            list_name = f"{url_base}-list"
+            if cfg.namespace:
+                list_name = f"{cfg.namespace}:{list_name}"
+            context["list_view_url_name"] = list_name
         return context
 
 
@@ -294,8 +302,7 @@ class _CRUDCreateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, CreateView):
         return self._inject_display_context(context, obj=None)
 
     def get_success_url(self):
-        url_base = self.crud_config._get_url_base()
-        return reverse(f"{url_base}-list")
+        return self.crud_config._reverse(f"{self.crud_config._get_url_base()}-list")
 
 
 class _CRUDUpdateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, UpdateView):
@@ -319,8 +326,9 @@ class _CRUDUpdateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, UpdateView):
         return self._inject_display_context(context, obj=self.object)
 
     def get_success_url(self):
-        url_base = self.crud_config._get_url_base()
-        return reverse(f"{url_base}-detail", kwargs={"pk": self.object.pk})
+        return self.crud_config._reverse(
+            f"{self.crud_config._get_url_base()}-detail", kwargs={"pk": self.object.pk}
+        )
 
 
 class _CRUDDeleteBase(_CRUDContextMixin, DeleteView):
@@ -331,8 +339,29 @@ class _CRUDDeleteBase(_CRUDContextMixin, DeleteView):
         return self.crud_config._get_queryset()
 
     def get_success_url(self):
-        url_base = self.crud_config._get_url_base()
-        return reverse(f"{url_base}-list")
+        return self.crud_config._reverse(f"{self.crud_config._get_url_base()}-list")
+
+    def post(self, request, *args, **kwargs):
+        try:
+            return super().post(request, *args, **kwargs)
+        except (ProtectedError, RestrictedError) as e:
+            protected = getattr(e, "protected_objects", None) or getattr(e, "restricted_objects", set())
+            model_name = type(next(iter(protected))).__name__ if protected else "other records"
+            count = len(protected)
+            msg = (
+                f"Cannot delete — {count} {model_name} "
+                f"record{'s' if count != 1 else ''} still linked."
+            )
+        except IntegrityError:
+            msg = "Cannot delete — a database constraint prevented this action."
+        except Exception:
+            msg = "Delete failed — an unexpected error occurred."
+        else:
+            return  # unreachable, but keeps linters happy
+        if getattr(request, "htmx", False) or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return HttpResponse(msg, status=409)
+        messages.error(request, msg)
+        return _redirect(self.get_success_url())
 
 
 class _CRUDFieldPreviewBase(_CRUDContextMixin, DetailView):
@@ -452,6 +481,7 @@ class CRUDView:
 
     # View/routing
     url_base = None
+    namespace: str | None = None  # URL namespace for child ExplorerSite instances
     paginate_by = None
     mixins = []
     actions = [Action.LIST, Action.CREATE, Action.DETAIL, Action.UPDATE, Action.DELETE]
@@ -493,6 +523,13 @@ class CRUDView:
         if cls.url_base:
             return cls.url_base
         return cls.model._meta.model_name
+
+    @classmethod
+    def _reverse(cls, url_name: str, **kwargs) -> str:
+        """Reverse a URL name, prepending namespace if set."""
+        if cls.namespace:
+            return reverse(f"{cls.namespace}:{url_name}", **kwargs)
+        return reverse(url_name, **kwargs)
 
     @classmethod
     def _get_list_fields(cls):
@@ -667,26 +704,35 @@ class CRUDView:
 
     @classmethod
     def _get_template_names(cls, suffix):
-        """Return template list: app-specific override first, then default.
+        """Return template list with instance → app → default fallback.
 
-        Templates are namespaced under {app_label}/crud/ to avoid collisions
-        with public-facing templates that use Django's standard naming
-        convention ({app_label}/{model_name}_{suffix}.html).
+        Resolution order (first match wins):
+        1. {namespace}/crud/{model}_{suffix}.html  — instance-specific override
+        2. {app_label}/crud/{model}_{suffix}.html  — shared custom template
+        3. smallstack/crud/object_{suffix}.html     — default
 
-        For "create" and "edit" suffixes, falls back to "form" for backward
-        compatibility — existing {model}_form.html overrides still work.
+        Named Explorer instances inherit shared custom templates from step 2
+        automatically. Only add a step-1 template when an instance needs its
+        own version of a view for that model.
         """
         app_label = cls.model._meta.app_label
         model_name = cls.model._meta.model_name
 
-        templates = [f"{app_label}/crud/{model_name}_{suffix}.html"]
+        templates = []
 
-        # Fallback: create/edit → form (backward compat)
+        # Instance-specific override (only for named child sites)
+        if cls.namespace:
+            templates.append(f"{cls.namespace}/crud/{model_name}_{suffix}.html")
+            if suffix in ("create", "edit"):
+                templates.append(f"{cls.namespace}/crud/{model_name}_form.html")
+
+        # Shared app-level custom template
+        templates.append(f"{app_label}/crud/{model_name}_{suffix}.html")
         if suffix in ("create", "edit"):
             templates.append(f"{app_label}/crud/{model_name}_form.html")
 
+        # Default
         templates.append(f"smallstack/crud/object_{suffix}.html")
-
         if suffix in ("create", "edit"):
             templates.append("smallstack/crud/object_form.html")
 

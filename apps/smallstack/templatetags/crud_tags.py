@@ -71,6 +71,13 @@ def _get_field_label(model, field_name):
         return field_name.replace("_", " ").capitalize()
 
 
+def _ns_reverse(url_name: str, namespace: str | None = None, **kwargs) -> str:
+    """Reverse a URL name, prepending namespace if set."""
+    if namespace:
+        return reverse(f"{namespace}:{url_name}", **kwargs)
+    return reverse(url_name, **kwargs)
+
+
 @register.inclusion_tag("smallstack/crud/includes/table.html", takes_context=True)
 def crud_table(context):
     """Render a CRUD list table from context variables.
@@ -86,6 +93,7 @@ def crud_table(context):
     url_base = context.get("url_base", "")
     crud_actions = context.get("crud_actions", [])
     field_transforms = context.get("field_transforms", {})
+    url_namespace = context.get("url_namespace")
 
     # Resolve model from first object or from context
     model = object_list[0].__class__ if object_list else None
@@ -120,20 +128,20 @@ def crud_table(context):
                 }
             )
 
-        detail_url = reverse(f"{url_base}-detail", kwargs={"pk": obj.pk}) if has_detail else None
+        detail_url = _ns_reverse(f"{url_base}-detail", url_namespace, kwargs={"pk": obj.pk}) if has_detail else None
 
         actions = []
         if has_update:
             actions.append(
                 {
-                    "url": reverse(f"{url_base}-update", kwargs={"pk": obj.pk}),
+                    "url": _ns_reverse(f"{url_base}-update", url_namespace, kwargs={"pk": obj.pk}),
                     "label": "Edit",
                 }
             )
         if has_delete:
             actions.append(
                 {
-                    "url": reverse(f"{url_base}-delete", kwargs={"pk": obj.pk}),
+                    "url": _ns_reverse(f"{url_base}-delete", url_namespace, kwargs={"pk": obj.pk}),
                     "label": "Delete",
                     "is_delete": True,
                 }
@@ -155,14 +163,15 @@ def crud_table(context):
     }
 
 
-@register.simple_tag
-def field_preview_url(url_base, obj, field_name):
+@register.simple_tag(takes_context=True)
+def field_preview_url(context, url_base, obj, field_name):
     """Return the URL for a field preview endpoint.
 
     Usage: {% field_preview_url url_base obj "field_name" %}
     """
-    return reverse(
+    return _ns_reverse(
         f"{url_base}-field-preview",
+        context.get("url_namespace"),
         kwargs={"pk": obj.pk, "field_name": field_name},
     )
 
@@ -191,8 +200,9 @@ def field_preview(url_base, obj, field_name, threshold=None):
     needs_truncation = len(text) > threshold
     truncated = text[:threshold].rstrip() if needs_truncation else text
 
-    preview_url = reverse(
+    preview_url = _ns_reverse(
         f"{url_base}-field-preview",
+        namespace=None,
         kwargs={"pk": obj.pk, "field_name": field_name},
     )
 
@@ -217,6 +227,27 @@ def field_transform(context, obj, field_name, transform_name, url_base=None, **o
         context = context.new({"url_base": url_base})
     field_transforms = {field_name: (transform_name, options) if options else transform_name}
     return _get_field_value(obj, field_name, field_transforms, context)
+
+
+@register.filter
+def ns(base_name, namespace):
+    """Build the correct Explorer URL name for the current site context.
+
+    In custom CRUD templates that may be rendered by either the root Explorer
+    or a namespaced child site, use this instead of hardcoding URL names::
+
+        {% load crud_tags %}
+        {% url "construction/client-list"|ns:url_namespace %}
+
+    Root explorer (url_namespace is None/empty): prepends ``explorer/``
+    → ``explorer/construction/client-list``
+
+    Child site (url_namespace is e.g. ``"estimating"``): prepends namespace
+    → ``estimating:construction/client-list``
+    """
+    if namespace:
+        return f"{namespace}:{base_name}"
+    return f"explorer/{base_name}"
 
 
 @register.inclusion_tag("smallstack/crud/includes/form.html", takes_context=True)

@@ -7,8 +7,8 @@
 
 {% comment %}Table styles are in components.css{% endcomment %}
 
-{% block content %}
-<div class="page-header-with-actions" style="background: color-mix(in srgb, var(--primary) 15%, var(--body-bg)); margin: -24px -24px 24px -24px; padding: 24px; border-radius: 8px 8px 0 0;">
+{% block page_header %}
+<div class="page-header-bleed page-header-with-actions">
     <div class="page-header-content">
         <h1>Activity</h1>
         <p class="page-subtitle">Site overview — {{ total_requests|stringformat:"," }} tracked requests, {{ max_rows|stringformat:"," }} max</p>
@@ -19,7 +19,9 @@
         </nav>
     </div>
 </div>
+{% endblock %}
 
+{% block content %}
 <!-- ── Top-level stats ──────────────────────────────────────────── -->
 <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px;">
     <div class="card stat-card-clickable"
@@ -82,7 +84,7 @@
     <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Request Activity</h2>
-            <a href="{% url 'activity:requests' %}" class="button button-small button-secondary">View All</a>
+            <a href="{% url 'activity:requests' %}" class="btn-outline btn-sm">View All</a>
         </div>
         <div class="card-body" style="padding: 0;">
             {% if top_paths %}
@@ -123,7 +125,7 @@
     <div class="card" style="display: flex; flex-direction: column;">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Users</h2>
-            <a href="{% url 'activity:users' %}" class="button button-small button-secondary">View All</a>
+            <a href="{% url 'activity:users' %}" class="btn-outline btn-sm">View All</a>
         </div>
         <div class="card-body" style="padding: 0; flex: 1; display: flex; flex-direction: column;">
             {% if top_theme_bar %}
@@ -175,12 +177,12 @@
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 16px;">
             <h2 style="margin: 0;">Latest Requests</h2>
-            <div style="display: flex; gap: 4px;" id="request-filter-tabs">
-                <button type="button" class="button button-small" style="font-size: 0.75rem; padding: 4px 10px;" data-tab="all" onclick="showRequestTab('all')">All</button>
-                <button type="button" class="button button-small button-secondary" style="font-size: 0.75rem; padding: 4px 10px;" data-tab="errors" onclick="showRequestTab('errors')">Errors</button>
+            <div class="filter-toggles" id="request-filter-tabs">
+                <button type="button" class="filter-toggle active" data-tab="all" onclick="showRequestTab('all')">All</button>
+                <button type="button" class="filter-toggle" data-tab="errors" onclick="showRequestTab('errors')">Errors</button>
             </div>
         </div>
-        <a href="{% url 'activity:requests' %}" class="button button-small button-secondary">View All</a>
+        <a href="{% url 'activity:requests' %}" class="btn-outline btn-sm">View All</a>
     </div>
     <div class="card-body" style="padding: 0; overflow-x: auto;">
         <table class="table-plain" id="requests-all" style="width: 100%; border-collapse: collapse;">
@@ -246,11 +248,7 @@ function showRequestTab(tab) {
     document.getElementById('requests-all').style.display = tab === 'all' ? '' : 'none';
     document.getElementById('requests-errors').style.display = tab === 'errors' ? '' : 'none';
     document.querySelectorAll('#request-filter-tabs button').forEach(function(btn) {
-        if (btn.dataset.tab === tab) {
-            btn.classList.remove('button-secondary');
-        } else {
-            btn.classList.add('button-secondary');
-        }
+        btn.classList.toggle('active', btn.dataset.tab === tab);
     });
 }
 </script>

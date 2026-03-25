@@ -26,29 +26,7 @@
         border: none !important;
     }
     .tab-bar {
-        display: flex;
-        gap: 0;
-        border-bottom: 2px solid var(--hairline-color);
         margin-bottom: 24px;
-    }
-    .tab-btn {
-        padding: 10px 20px;
-        background: none;
-        border: none;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -2px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: var(--body-quiet-color);
-        transition: color 0.15s, border-color 0.15s;
-    }
-    .tab-btn:hover {
-        color: var(--body-fg);
-    }
-    .tab-btn.active {
-        color: var(--primary);
-        border-bottom-color: var(--primary);
     }
 
     /* Themed table headers for tab content */
@@ -68,9 +46,9 @@
 </style>
 {% endblock %}
 
-{% block content %}
+{% block page_header %}
 <!-- Page Header -->
-<div class="page-header-with-actions" style="background: color-mix(in srgb, var(--primary) 15%, var(--body-bg)); margin: -24px -24px 24px -24px; padding: 24px; border-radius: 8px 8px 0 0; display: flex; align-items: center; justify-content: space-between;">
+<div class="page-header-bleed page-header-with-actions" style="display: flex; align-items: center; justify-content: space-between;">
     <div class="page-header-content">
         <h1>User Activity</h1>
         <nav style="margin-top: 0.5rem; font-size: 0.8rem;">
@@ -92,7 +70,9 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block content %}
 <!-- Theme Usage Bars -->
 {% if theme_bars %}
 <div class="card theme-usage-card" style="margin-bottom: 20px;">

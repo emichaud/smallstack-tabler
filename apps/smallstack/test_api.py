@@ -25,9 +25,7 @@ User = get_user_model()
 
 @pytest.fixture
 def staff_user(db) -> User:
-    return User.objects.create_user(
-        username="apistaff", email="api@example.com", password="testpass123", is_staff=True
-    )
+    return User.objects.create_user(username="apistaff", email="api@example.com", password="testpass123", is_staff=True)
 
 
 @pytest.fixture
@@ -154,9 +152,7 @@ class TestSerializeExtraFields:
     """Test that api_extra_fields are included in serialization."""
 
     def test_extra_fields_appended(self, db):
-        hb = Heartbeat.objects.create(
-            timestamp=timezone.now(), status="ok", response_time_ms=42
-        )
+        hb = Heartbeat.objects.create(timestamp=timezone.now(), status="ok", response_time_ms=42)
         data = _serialize(hb, ["status"], extra_fields=["response_time_ms", "timestamp"])
         assert "id" in data
         assert data["status"] == "ok"
@@ -164,16 +160,12 @@ class TestSerializeExtraFields:
         assert data["timestamp"] is not None  # ISO string
 
     def test_no_extra_fields(self, db):
-        hb = Heartbeat.objects.create(
-            timestamp=timezone.now(), status="ok", response_time_ms=42
-        )
+        hb = Heartbeat.objects.create(timestamp=timezone.now(), status="ok", response_time_ms=42)
         data = _serialize(hb, ["status"])
         assert "response_time_ms" not in data
 
     def test_extra_fields_none(self, db):
-        hb = Heartbeat.objects.create(
-            timestamp=timezone.now(), status="ok", response_time_ms=42
-        )
+        hb = Heartbeat.objects.create(timestamp=timezone.now(), status="ok", response_time_ms=42)
         data = _serialize(hb, ["status"], extra_fields=None)
         assert "response_time_ms" not in data
 
@@ -223,9 +215,7 @@ class TestAPIPaginationIntegration:
         url = reverse(HEARTBEAT_API_LIST)
         response = client.get(url, {"page": "last"}, **auth_header)
         data = response.json()
-        page_size = len(
-            client.get(url, {"page": "1"}, **auth_header).json()["results"]
-        )
+        page_size = len(client.get(url, {"page": "1"}, **auth_header).json()["results"])
         remainder = 53 % page_size
         if remainder == 0:
             assert len(data["results"]) == page_size
@@ -305,9 +295,7 @@ class TestAPIPaginationIntegration:
 
     def test_single_page_dataset(self, client, staff_user, db, auth_header):
         """With fewer items than page_size, everything is on page 1."""
-        Heartbeat.objects.create(
-            timestamp=timezone.now(), status="ok", response_time_ms=100
-        )
+        Heartbeat.objects.create(timestamp=timezone.now(), status="ok", response_time_ms=100)
         url = reverse(HEARTBEAT_API_LIST)
         response = client.get(url, **auth_header)
         data = response.json()
@@ -444,18 +432,14 @@ class TestSerializeFKExpansion:
     def test_expand_with_extra_fields(self):
         related = _FakeRelated(pk=3, name="Alice")
         obj = _FakeObj(pk=1, name="Token", owner=related)
-        data = _serialize(
-            obj, ["name"], extra_fields=["owner"], expand_fields={"owner"}
-        )
+        data = _serialize(obj, ["name"], extra_fields=["owner"], expand_fields={"owner"})
         assert data["owner"] == {"id": 3, "name": "Alice"}
 
     def test_multiple_fk_expansion(self):
         cat = _FakeRelated(pk=7, name="Electronics")
         owner = _FakeRelated(pk=3, name="Alice")
         obj = _FakeObj(pk=1, category=cat, owner=owner, name="Widget")
-        data = _serialize(
-            obj, ["name", "category", "owner"], expand_fields={"category", "owner"}
-        )
+        data = _serialize(obj, ["name", "category", "owner"], expand_fields={"category", "owner"})
         assert data["category"] == {"id": 7, "name": "Electronics"}
         assert data["owner"] == {"id": 3, "name": "Alice"}
 
@@ -630,9 +614,7 @@ class TestDateFilteringIntegration:
         gte = (now - timezone.timedelta(days=5, hours=12)).isoformat()
         lte = (now - timezone.timedelta(days=1, hours=12)).isoformat()
         url = reverse(HEARTBEAT_API_LIST)
-        response = client.get(
-            url, {"timestamp__gte": gte, "timestamp__lte": lte}, **auth_header
-        )
+        response = client.get(url, {"timestamp__gte": gte, "timestamp__lte": lte}, **auth_header)
         data = response.json()
         assert data["count"] == 4
 
@@ -658,16 +640,20 @@ class TestAggregationIntegration:
     def mixed_heartbeats(self, db):
         """Create heartbeats with varied status and response times."""
         now = timezone.now()
-        objs = [
-            Heartbeat(timestamp=now - timezone.timedelta(minutes=i), status="ok", response_time_ms=100)
-            for i in range(5)
-        ] + [
-            Heartbeat(timestamp=now - timezone.timedelta(minutes=10 + i), status="fail", response_time_ms=500)
-            for i in range(3)
-        ] + [
-            Heartbeat(timestamp=now - timezone.timedelta(minutes=20 + i), status="ok", response_time_ms=200)
-            for i in range(2)
-        ]
+        objs = (
+            [
+                Heartbeat(timestamp=now - timezone.timedelta(minutes=i), status="ok", response_time_ms=100)
+                for i in range(5)
+            ]
+            + [
+                Heartbeat(timestamp=now - timezone.timedelta(minutes=10 + i), status="fail", response_time_ms=500)
+                for i in range(3)
+            ]
+            + [
+                Heartbeat(timestamp=now - timezone.timedelta(minutes=20 + i), status="ok", response_time_ms=200)
+                for i in range(2)
+            ]
+        )
         return Heartbeat.objects.bulk_create(objs)
 
     def test_count_by_status(self, client, staff_user, mixed_heartbeats, auth_header):
@@ -701,9 +687,7 @@ class TestAggregationIntegration:
     def test_min_max_response_time(self, client, staff_user, mixed_heartbeats, auth_header):
         """?min= and ?max= should return extremes."""
         url = reverse(HEARTBEAT_API_LIST)
-        response = client.get(
-            url, {"min": "response_time_ms", "max": "response_time_ms"}, **auth_header
-        )
+        response = client.get(url, {"min": "response_time_ms", "max": "response_time_ms"}, **auth_header)
         data = response.json()
         assert data["min_response_time_ms"] == 100
         assert data["max_response_time_ms"] == 500
@@ -730,9 +714,7 @@ class TestAggregationIntegration:
     def test_count_by_with_filter(self, client, staff_user, mixed_heartbeats, auth_header):
         """Aggregation composes with filters."""
         url = reverse(HEARTBEAT_API_LIST)
-        response = client.get(
-            url, {"status": "ok", "count_by": "status"}, **auth_header
-        )
+        response = client.get(url, {"status": "ok", "count_by": "status"}, **auth_header)
         data = response.json()
         assert data["count"] == 7
         assert data["counts"] == {"ok": 7}
@@ -740,9 +722,7 @@ class TestAggregationIntegration:
     def test_sum_with_filter(self, client, staff_user, mixed_heartbeats, auth_header):
         """Sum composes with filters."""
         url = reverse(HEARTBEAT_API_LIST)
-        response = client.get(
-            url, {"status": "fail", "sum": "response_time_ms"}, **auth_header
-        )
+        response = client.get(url, {"status": "fail", "sum": "response_time_ms"}, **auth_header)
         data = response.json()
         assert data["sum_response_time_ms"] == 1500  # 3 * 500
 
@@ -751,21 +731,19 @@ class TestAggregationIntegration:
         url = reverse(HEARTBEAT_API_LIST)
         response = client.get(url, {"count_by": "nonexistent"}, **auth_header)
         assert response.status_code == 400
-        assert "not in filter_fields" in response.json()["error"]
+        assert "not in filter_fields" in response.json()["errors"]["__all__"][0]
 
     def test_sum_invalid_field_returns_400(self, client, staff_user, db, auth_header):
         """sum on a field not in api_aggregate_fields should return 400."""
         url = reverse(HEARTBEAT_API_LIST)
         response = client.get(url, {"sum": "status"}, **auth_header)
         assert response.status_code == 400
-        assert "not in api_aggregate_fields" in response.json()["error"]
+        assert "not in api_aggregate_fields" in response.json()["errors"]["__all__"][0]
 
     def test_empty_queryset_aggregation(self, client, staff_user, db, auth_header):
         """Aggregation on empty queryset returns None/zero, not errors."""
         url = reverse(HEARTBEAT_API_LIST)
-        response = client.get(
-            url, {"sum": "response_time_ms", "count_by": "status"}, **auth_header
-        )
+        response = client.get(url, {"sum": "response_time_ms", "count_by": "status"}, **auth_header)
         data = response.json()
         assert data["sum_response_time_ms"] is None
         assert data["counts"] == {}
@@ -792,9 +770,7 @@ class TestAuthTokenEndpoint:
 
     @pytest.fixture
     def regular_user(self, db):
-        return User.objects.create_user(
-            username="alice", email="alice@example.com", password="goodpass123"
-        )
+        return User.objects.create_user(username="alice", email="alice@example.com", password="goodpass123")
 
     def test_valid_credentials_returns_token(self, client, regular_user):
         """Valid username + password returns 200 with token and user info."""
@@ -818,7 +794,7 @@ class TestAuthTokenEndpoint:
             content_type="application/json",
         )
         assert response.status_code == 401
-        assert response.json()["error"] == "Invalid credentials"
+        assert response.json()["errors"]["__all__"][0] == "Invalid credentials"
 
     def test_nonexistent_user_returns_401(self, client, db):
         """Non-existent username returns 401."""
@@ -831,9 +807,7 @@ class TestAuthTokenEndpoint:
 
     def test_inactive_user_returns_401(self, client, db):
         """Inactive user returns 401."""
-        User.objects.create_user(
-            username="inactive", password="pass123", is_active=False
-        )
+        User.objects.create_user(username="inactive", password="pass123", is_active=False)
         response = client.post(
             AUTH_TOKEN_URL,
             json.dumps({"username": "inactive", "password": "pass123"}),
@@ -859,9 +833,7 @@ class TestAuthTokenEndpoint:
 
     def test_invalid_json_returns_400(self, client, db):
         """Malformed JSON returns 400."""
-        response = client.post(
-            AUTH_TOKEN_URL, "not json", content_type="application/json"
-        )
+        response = client.post(AUTH_TOKEN_URL, "not json", content_type="application/json")
         assert response.status_code == 400
 
     def test_get_method_not_allowed(self, client, db):
@@ -893,3 +865,521 @@ class TestAuthTokenEndpoint:
         )
         data = response.json()
         assert data["user"]["is_staff"] is True
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Schema endpoint
+# ---------------------------------------------------------------------------
+
+SCHEMA_URL = "/api/schema/"
+
+
+class TestSchemaEndpoint:
+    """Integration tests for GET /api/schema/."""
+
+    def test_schema_returns_200_no_auth(self, client, db):
+        """GET without auth returns 200."""
+        response = client.get(SCHEMA_URL)
+        assert response.status_code == 200
+
+    def test_schema_contains_heartbeat(self, client, db):
+        """Heartbeat should appear in the endpoints list."""
+        response = client.get(SCHEMA_URL)
+        data = response.json()
+        models = [ep["model"] for ep in data["endpoints"]]
+        assert "Heartbeat" in models
+
+    def test_schema_endpoint_keys(self, client, db):
+        """Each endpoint should have the expected keys."""
+        response = client.get(SCHEMA_URL)
+        data = response.json()
+        expected_keys = {
+            "url", "model", "methods", "fields", "list_fields",
+            "detail_fields", "search_fields", "filter_fields",
+            "expand_fields", "aggregate_fields", "extra_fields",
+            "export_formats",
+        }
+        for ep in data["endpoints"]:
+            assert set(ep.keys()) == expected_keys
+
+    def test_schema_auth_section(self, client, db):
+        """Auth dict should list all auth endpoints."""
+        response = client.get(SCHEMA_URL)
+        data = response.json()
+        assert "auth" in data
+        assert data["auth"]["login"] == "/api/auth/token/"
+        assert data["auth"]["logout"] == "/api/auth/logout/"
+        assert data["auth"]["register"] == "/api/auth/register/"
+        assert data["auth"]["me"] == "/api/auth/me/"
+        assert data["auth"]["password"] == "/api/auth/password/"
+        assert data["auth"]["password_requirements"] == "/api/auth/password-requirements/"
+        assert data["auth"]["users"] == "/api/auth/users/"
+        assert data["auth"]["token_refresh"] == "/api/auth/token/refresh/"
+
+    def test_schema_methods_match_actions(self, client, db):
+        """Methods should reflect the Action enum for heartbeat."""
+        response = client.get(SCHEMA_URL)
+        data = response.json()
+        heartbeat_ep = next(ep for ep in data["endpoints"] if ep["model"] == "Heartbeat")
+        # Heartbeat has default actions (LIST, CREATE, DETAIL, UPDATE, DELETE)
+        assert "GET" in heartbeat_ep["methods"]
+        assert "POST" in heartbeat_ep["methods"]
+
+    def test_schema_post_405(self, client, db):
+        """POST to schema endpoint returns 405."""
+        response = client.post(SCHEMA_URL)
+        assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: OPTIONS field metadata
+# ---------------------------------------------------------------------------
+
+
+class TestOptionsEndpoint:
+    """Integration tests for OPTIONS on CRUDView API endpoints."""
+
+    def test_options_no_auth_required(self, client, db):
+        """OPTIONS returns 200 without auth."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.options(url)
+        assert response.status_code == 200
+
+    def test_options_has_fields(self, client, db):
+        """Response contains a fields dict."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.options(url)
+        data = response.json()
+        assert "fields" in data
+        assert isinstance(data["fields"], dict)
+
+    def test_options_field_types(self, client, db):
+        """Correct types for known heartbeat fields."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.options(url)
+        data = response.json()
+        fields = data["fields"]
+        assert fields["timestamp"]["type"] == "datetime"
+        assert fields["status"]["type"] == "choice"
+        assert fields["response_time_ms"]["type"] == "integer"
+        assert fields["note"]["type"] == "string"
+
+    def test_options_extra_fields_readonly(self, client, db):
+        """api_extra_fields should have read_only: true."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.options(url)
+        data = response.json()
+        # Heartbeat doesn't have api_extra_fields by default,
+        # but check that form fields don't have read_only
+        for name in ("timestamp", "status", "response_time_ms"):
+            assert "read_only" not in data["fields"][name]
+
+    def test_options_includes_methods(self, client, db):
+        """Response should have a methods list."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.options(url)
+        data = response.json()
+        assert "methods" in data
+        assert isinstance(data["methods"], list)
+        assert "GET" in data["methods"]
+
+    def test_options_on_detail_endpoint(self, client, db):
+        """OPTIONS on the detail endpoint also works without auth."""
+        # Use the detail URL pattern name
+        url = reverse("explorer-monitoring-heartbeat-api-detail", kwargs={"pk": 1})
+        response = client.options(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert "fields" in data
+        assert "methods" in data
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for user management and token refresh tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def auth_level_token(staff_user) -> tuple[APIToken, str]:
+    """Create an auth-level manual token."""
+    return APIToken.create_token(staff_user, name="Auth Token", access_level="auth")
+
+
+@pytest.fixture
+def auth_level_header(auth_level_token) -> dict[str, str]:
+    """Authorization header for auth-level token."""
+    _, raw_key = auth_level_token
+    return {"HTTP_AUTHORIZATION": f"Bearer {raw_key}"}
+
+
+@pytest.fixture
+def sample_users(db) -> list:
+    """Create 15 users for list/search pagination testing."""
+    users = []
+    for i in range(15):
+        users.append(
+            User.objects.create_user(
+                username=f"testuser{i:02d}",
+                email=f"testuser{i:02d}@example.com",
+                password="testpass123",
+                first_name=f"First{i:02d}",
+                last_name=f"Last{i:02d}",
+            )
+        )
+    return users
+
+
+@pytest.fixture
+def login_token_and_header(db):
+    """Create a user with a login token, return (user, token, raw_key, header)."""
+    from datetime import timedelta
+
+    user = User.objects.create_user(username="loginuser", password="testpass123", email="login@example.com")
+    raw_key, prefix, hashed = APIToken._generate_raw_key()
+    token = APIToken.objects.create(
+        user=user, name="Login token", prefix=prefix, hashed_key=hashed,
+        token_type="login", access_level="", expires_at=timezone.now() + timedelta(hours=24),
+    )
+    header = {"HTTP_AUTHORIZATION": f"Bearer {raw_key}"}
+    return user, token, raw_key, header
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: User list endpoint
+# ---------------------------------------------------------------------------
+
+USERS_URL = "/api/auth/users/"
+
+
+class TestUserListEndpoint:
+    """Integration tests for GET /api/auth/users/."""
+
+    def test_list_requires_auth_level_token(self, client, staff_user, auth_header, db):
+        """Staff-level token returns 403."""
+        response = client.get(USERS_URL, **auth_header)
+        assert response.status_code == 403
+
+    def test_list_returns_paginated_users(self, client, staff_user, sample_users, auth_level_header):
+        """Returns paginated response with correct shape."""
+        response = client.get(USERS_URL, **auth_level_header)
+        assert response.status_code == 200
+        data = response.json()
+        assert "count" in data
+        assert "page" in data
+        assert "total_pages" in data
+        assert "results" in data
+        assert "next" in data
+        assert "previous" in data
+
+    def test_list_extended_user_fields(self, client, staff_user, sample_users, auth_level_header):
+        """Extended fields present in response."""
+        response = client.get(USERS_URL, **auth_level_header)
+        data = response.json()
+        user_data = data["results"][0]
+        assert "first_name" in user_data
+        assert "last_name" in user_data
+        assert "is_active" in user_data
+        assert "date_joined" in user_data
+
+    def test_list_search_by_username(self, client, staff_user, sample_users, auth_level_header):
+        """?q= filters by username."""
+        response = client.get(USERS_URL, {"q": "testuser05"}, **auth_level_header)
+        data = response.json()
+        assert data["count"] == 1
+        assert data["results"][0]["username"] == "testuser05"
+
+    def test_list_search_by_email(self, client, staff_user, sample_users, auth_level_header):
+        """?q= filters by email."""
+        response = client.get(USERS_URL, {"q": "testuser03@"}, **auth_level_header)
+        data = response.json()
+        assert data["count"] == 1
+        assert data["results"][0]["email"] == "testuser03@example.com"
+
+    def test_list_search_no_match(self, client, staff_user, sample_users, auth_level_header):
+        """No match returns empty results."""
+        response = client.get(USERS_URL, {"q": "nonexistent_xyz"}, **auth_level_header)
+        data = response.json()
+        assert data["count"] == 0
+        assert data["results"] == []
+
+    def test_list_pagination(self, client, staff_user, sample_users, auth_level_header):
+        """page_size and page params work."""
+        response = client.get(USERS_URL, {"page_size": "5", "page": "2"}, **auth_level_header)
+        data = response.json()
+        assert data["page"] == 2
+        assert len(data["results"]) == 5
+
+    def test_list_unauthenticated_returns_401(self, client, db):
+        """No auth returns 401."""
+        response = client.get(USERS_URL)
+        assert response.status_code == 401
+
+    def test_list_post_method_not_allowed(self, client, staff_user, auth_level_header, db):
+        """POST returns 405."""
+        response = client.post(USERS_URL, **auth_level_header)
+        assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: User detail endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestUserDetailEndpoint:
+    """Integration tests for GET /api/auth/users/<id>/."""
+
+    def test_detail_returns_user(self, client, staff_user, auth_level_header, sample_users):
+        """GET returns extended user data."""
+        target = sample_users[0]
+        response = client.get(f"{USERS_URL}{target.pk}/", **auth_level_header)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["username"] == target.username
+        assert "first_name" in data
+        assert "date_joined" in data
+
+    def test_detail_not_found(self, client, staff_user, auth_level_header, db):
+        """Non-existent user returns 404."""
+        response = client.get(f"{USERS_URL}99999/", **auth_level_header)
+        assert response.status_code == 404
+
+    def test_detail_requires_auth_level_token(self, client, staff_user, auth_header, sample_users):
+        """Staff token returns 403."""
+        target = sample_users[0]
+        response = client.get(f"{USERS_URL}{target.pk}/", **auth_header)
+        assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: User update endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestUserUpdateEndpoint:
+    """Integration tests for PATCH /api/auth/users/<id>/."""
+
+    def test_update_email(self, client, staff_user, auth_level_header, sample_users):
+        """PATCH updates email."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"email": "new@example.com"}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 200
+        assert response.json()["email"] == "new@example.com"
+
+    def test_update_multiple_fields(self, client, staff_user, auth_level_header, sample_users):
+        """Updates first_name, last_name, is_staff."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"first_name": "New", "last_name": "Name", "is_staff": True}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["first_name"] == "New"
+        assert data["last_name"] == "Name"
+        assert data["is_staff"] is True
+
+    def test_update_disallowed_field_username(self, client, staff_user, auth_level_header, sample_users):
+        """username is not allowed in PATCH."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"username": "hacked"}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 400
+        assert "username" in response.json()["errors"]
+
+    def test_update_disallowed_field_password(self, client, staff_user, auth_level_header, sample_users):
+        """password is not allowed in PATCH."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"password": "hacked"}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 400
+        assert "password" in response.json()["errors"]
+
+    def test_update_not_found(self, client, staff_user, auth_level_header, db):
+        """Non-existent user returns 404."""
+        response = client.patch(
+            f"{USERS_URL}99999/",
+            json.dumps({"email": "x@x.com"}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 404
+
+    def test_update_requires_auth_level_token(self, client, staff_user, auth_header, sample_users):
+        """Staff token returns 403."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"email": "x@x.com"}),
+            content_type="application/json",
+            **auth_header,
+        )
+        assert response.status_code == 403
+
+    def test_update_invalid_json(self, client, staff_user, auth_level_header, sample_users):
+        """Invalid JSON returns 400."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            "not json",
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 400
+
+    def test_update_is_active_toggle(self, client, staff_user, auth_level_header, sample_users):
+        """Deactivate user via is_active: false."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({"is_active": False}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 200
+        assert response.json()["is_active"] is False
+
+    def test_update_empty_body(self, client, staff_user, auth_level_header, sample_users):
+        """Empty body returns 200 with unchanged user."""
+        target = sample_users[0]
+        response = client.patch(
+            f"{USERS_URL}{target.pk}/",
+            json.dumps({}),
+            content_type="application/json",
+            **auth_level_header,
+        )
+        assert response.status_code == 200
+        assert response.json()["username"] == target.username
+
+
+# ---------------------------------------------------------------------------
+# Integration tests: Token refresh endpoint
+# ---------------------------------------------------------------------------
+
+TOKEN_REFRESH_URL = "/api/auth/token/refresh/"
+
+
+class TestTokenRefreshEndpoint:
+    """Integration tests for POST /api/auth/token/refresh/."""
+
+    def test_refresh_returns_new_token(self, client, login_token_and_header):
+        """Refresh returns a new token."""
+        user, token, old_key, header = login_token_and_header
+        response = client.post(TOKEN_REFRESH_URL, **header)
+        assert response.status_code == 200
+        data = response.json()
+        assert "token" in data
+        assert data["token"] != old_key
+        assert data["user"]["id"] == user.pk
+        assert "expires_at" in data
+
+    def test_refresh_old_token_stops_working(self, client, login_token_and_header):
+        """Old key returns 401 after refresh."""
+        user, token, old_key, header = login_token_and_header
+        client.post(TOKEN_REFRESH_URL, **header)
+        # Old key should fail
+        response = client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {old_key}")
+        assert response.status_code == 401
+
+    def test_refresh_new_token_works(self, client, login_token_and_header):
+        """New key authenticates successfully."""
+        user, token, old_key, header = login_token_and_header
+        refresh_resp = client.post(TOKEN_REFRESH_URL, **header)
+        new_key = refresh_resp.json()["token"]
+        response = client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {new_key}")
+        assert response.status_code == 200
+        assert response.json()["id"] == user.pk
+
+    def test_refresh_extends_expiry(self, client, login_token_and_header):
+        """expires_at should be in the future."""
+        from datetime import datetime
+
+        user, token, old_key, header = login_token_and_header
+        response = client.post(TOKEN_REFRESH_URL, **header)
+        data = response.json()
+        expires = datetime.fromisoformat(data["expires_at"])
+        assert expires > timezone.now()
+
+    def test_refresh_custom_expires_hours(self, client, login_token_and_header):
+        """Custom expires_hours is respected."""
+        from datetime import datetime, timedelta
+
+        user, token, old_key, header = login_token_and_header
+        response = client.post(
+            TOKEN_REFRESH_URL,
+            json.dumps({"expires_hours": 48}),
+            content_type="application/json",
+            **header,
+        )
+        data = response.json()
+        expires = datetime.fromisoformat(data["expires_at"])
+        # Should be roughly 48 hours from now (within 5 min tolerance)
+        expected = timezone.now() + timedelta(hours=48)
+        assert abs((expires - expected).total_seconds()) < 300
+
+    def test_refresh_expires_hours_capped(self, client, login_token_and_header, settings):
+        """expires_hours capped at SMALLSTACK_LOGIN_TOKEN_MAX_HOURS."""
+        from datetime import datetime, timedelta
+
+        settings.SMALLSTACK_LOGIN_TOKEN_MAX_HOURS = 72
+        user, token, old_key, header = login_token_and_header
+        response = client.post(
+            TOKEN_REFRESH_URL,
+            json.dumps({"expires_hours": 9999}),
+            content_type="application/json",
+            **header,
+        )
+        data = response.json()
+        expires = datetime.fromisoformat(data["expires_at"])
+        expected = timezone.now() + timedelta(hours=72)
+        assert abs((expires - expected).total_seconds()) < 300
+
+    def test_refresh_manual_token_rejected(self, client, staff_user, auth_header, db):
+        """Manual token returns 403."""
+        response = client.post(TOKEN_REFRESH_URL, **auth_header)
+        assert response.status_code == 403
+
+    def test_refresh_expired_token_returns_401(self, client, db):
+        """Expired login token returns 401."""
+        from datetime import timedelta
+
+        user = User.objects.create_user(username="expired", password="pass123")
+        raw_key, prefix, hashed = APIToken._generate_raw_key()
+        APIToken.objects.create(
+            user=user, name="Expired", prefix=prefix, hashed_key=hashed,
+            token_type="login", access_level="",
+            expires_at=timezone.now() - timedelta(hours=1),
+        )
+        response = client.post(TOKEN_REFRESH_URL, HTTP_AUTHORIZATION=f"Bearer {raw_key}")
+        assert response.status_code == 401
+
+    def test_refresh_unauthenticated_returns_401(self, client, db):
+        """No auth returns 401."""
+        response = client.post(TOKEN_REFRESH_URL)
+        assert response.status_code == 401
+
+    def test_refresh_get_method_not_allowed(self, client, db):
+        """GET returns 405."""
+        response = client.get(TOKEN_REFRESH_URL)
+        assert response.status_code == 405
+
+    def test_refresh_empty_body_uses_defaults(self, client, login_token_and_header):
+        """Empty body uses default expiry."""
+        user, token, old_key, header = login_token_and_header
+        response = client.post(TOKEN_REFRESH_URL, **header)
+        assert response.status_code == 200
+        assert "token" in response.json()

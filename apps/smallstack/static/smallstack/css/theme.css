@@ -1021,7 +1021,8 @@ a.topbar-nav-link.active::after {
     width: 100%;
     background: none;
     border: none;
-    font: inherit;
+    font-size: 1rem;
+    font-family: inherit;
     /* Inherits .nav-link styles via class */
 }
 
@@ -1169,7 +1170,8 @@ body[data-topbar-nav="hidden"] .topbar-nav-auto {
    ============================================ */
 
 .messages-container {
-    margin-bottom: 20px;
+    margin: 0 -20px 20px -20px;
+    padding: 0 20px;
 }
 
 .messages-container:empty {

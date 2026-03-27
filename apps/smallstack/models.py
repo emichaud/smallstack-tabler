@@ -69,12 +69,28 @@ class APIToken(models.Model):
     TOKEN_LENGTH = 40
     PREFIX_LENGTH = 8
 
+    TOKEN_TYPE_CHOICES = [
+        ("login", "Login"),
+        ("manual", "Manual"),
+    ]
+    ACCESS_LEVEL_CHOICES = [
+        ("auth", "Auth"),
+        ("staff", "Staff"),
+        ("readonly", "Readonly"),
+    ]
+
     name = models.CharField(max_length=100)
     prefix = models.CharField(max_length=8, db_index=True)
     hashed_key = models.CharField(max_length=64)
+    description = models.TextField(blank=True, default="")
+    token_type = models.CharField(max_length=10, choices=TOKEN_TYPE_CHOICES, default="manual")
+    access_level = models.CharField(max_length=10, choices=ACCESS_LEVEL_CHOICES, default="staff", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    request_count = models.PositiveIntegerField(default=0)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -87,30 +103,56 @@ class APIToken(models.Model):
     def __str__(self):
         return f"{self.name} ({self.prefix}…) — {self.user}"
 
+    def revoke(self):
+        """Soft-delete: deactivate and record revocation time."""
+        self.is_active = False
+        self.revoked_at = timezone.now()
+        self.save(update_fields=["is_active", "revoked_at"])
+
+    def is_valid(self) -> bool:
+        """Check if token is active and not expired."""
+        if not self.is_active:
+            return False
+        if self.expires_at and timezone.now() > self.expires_at:
+            return False
+        return True
+
     @classmethod
-    def create_token(cls, user, name="API Token"):
-        """Create a new token. Returns (token_instance, raw_key)."""
+    def _generate_raw_key(cls):
+        """Generate a raw API key and return (raw_key, prefix, hashed_key)."""
         raw_key = secrets.token_urlsafe(cls.TOKEN_LENGTH)
         prefix = raw_key[: cls.PREFIX_LENGTH]
         hashed = hashlib.sha256(raw_key.encode()).hexdigest()
+        return raw_key, prefix, hashed
+
+    @classmethod
+    def create_token(
+        cls, user, name="API Token", description="", expires_at=None,
+        token_type="manual", access_level="staff",
+    ):
+        """Create a new token. Returns (token_instance, raw_key)."""
+        raw_key, prefix, hashed = cls._generate_raw_key()
         token = cls.objects.create(
-            user=user, name=name, prefix=prefix, hashed_key=hashed
+            user=user, name=name, prefix=prefix, hashed_key=hashed,
+            description=description, expires_at=expires_at,
+            token_type=token_type, access_level=access_level,
         )
         return token, raw_key
 
     @classmethod
     def authenticate(cls, raw_key):
-        """Validate a raw key. Returns the user or None."""
+        """Validate a raw key. Returns (user, token) or (None, None)."""
         if not raw_key or len(raw_key) < cls.PREFIX_LENGTH:
-            return None
+            return None, None
         prefix = raw_key[: cls.PREFIX_LENGTH]
         hashed = hashlib.sha256(raw_key.encode()).hexdigest()
         try:
-            token = cls.objects.select_related("user").get(
-                prefix=prefix, hashed_key=hashed, is_active=True
-            )
+            token = cls.objects.select_related("user").get(prefix=prefix, hashed_key=hashed, is_active=True)
         except cls.DoesNotExist:
-            return None
+            return None, None
+        if not token.is_valid():
+            return None, None
         token.last_used_at = timezone.now()
-        token.save(update_fields=["last_used_at"])
-        return token.user
+        token.request_count = models.F("request_count") + 1
+        token.save(update_fields=["last_used_at", "request_count"])
+        return token.user, token

@@ -56,7 +56,15 @@ URL names: `{url_base}-api-list` and `{url_base}-api-detail`.
 curl -H "Authorization: Bearer aBcD1234efGh..." https://example.com/api/manage/widgets/
 ```
 
-Create a token via CLI: `uv run python manage.py create_api_token <username>`. The raw key is printed once — copy it immediately. It is validated via `APIToken.authenticate(raw_key)` which looks up by prefix + SHA-256 hash.
+Create a token via CLI:
+
+```bash
+uv run python manage.py create_api_token <username>                      # default: staff
+uv run python manage.py create_api_token <username> --access-level auth  # auth-level (register, password mgmt)
+uv run python manage.py create_api_token <username> --access-level readonly
+```
+
+The raw key is printed once — copy it immediately. It is validated via `APIToken.authenticate(raw_key)` which looks up by prefix + SHA-256 hash.
 
 ### Token Authentication Endpoint
 
@@ -66,36 +74,341 @@ For SPAs and mobile apps that need programmatic login:
 POST /api/auth/token/
 Content-Type: application/json
 
-{"username": "alice", "password": "secret123"}
+{"username": "alice", "password": "secret123", "expires_hours": 24}
 
 Success → 200:
 {
     "token": "aBcD1234...",
-    "user": {"id": 1, "username": "alice", "is_staff": true}
+    "user": {"id": 1, "username": "alice", "is_staff": true},
+    "expires_at": "2026-03-27T14:00:00+00:00"
 }
 
-Bad credentials → 401: {"error": "Invalid credentials"}
-Missing fields → 400: {"error": "username and password are required"}
+Bad credentials → 401: {"errors": {"__all__": ["Invalid credentials"]}}
+Missing fields → 400: {"errors": {"__all__": ["username and password are required"]}}
 ```
 
 This endpoint:
+- **Upserts** — finds existing active login token for the user, regenerates the key, and updates expiry. The old raw key immediately stops working. One login token per user.
+- `expires_hours` is optional (default: `SMALLSTACK_LOGIN_TOKEN_EXPIRY_HOURS`, capped at `SMALLSTACK_LOGIN_TOKEN_MAX_HOURS`)
+- Response includes `expires_at` (ISO 8601)
 - Validates credentials via Django's `authenticate()`
-- Creates a new APIToken and returns the raw key
 - Respects `axes` rate limiting (same backend as HTML login)
 - Is `@csrf_exempt` for cross-origin use
-
-**By design, there is no signup, password reset, or logout endpoint.** Signup stays HTML/admin-provisioned. Password reset stays HTML/email. To "logout", the client discards the token.
+- To logout, call `POST /api/auth/logout/` to revoke server-side, or call this endpoint again to replace the key.
 
 ### Session (Browser)
 
 If the user is logged in via Django session, API endpoints work without a token.
 
+## Token Types & Access Levels
+
+### Token Types
+
+| Type | Created By | Purpose |
+|------|-----------|---------|
+| `login` | `POST /api/auth/token/` or `POST /api/auth/register/` | User session token. One per user (upserted). Has expiry. No access level — inherits user permissions. |
+| `manual` | Token Manager UI or `create_token()` management command | System/service tokens. Can have an access level. No expiry unless explicitly set. |
+
+### Access Levels (Manual Tokens Only)
+
+| Access Level | CRUDView Read | CRUDView Write | Auth Management APIs |
+|-------------|--------------|----------------|---------------------|
+| `auth` | Yes | Yes | Yes (register, password, deactivate) |
+| `staff` | Yes | Yes | No (403) |
+| `readonly` | Yes | No (403) | No (403) |
+
+Login tokens have no access level — they inherit the authenticated user's permissions (staff status, per-object checks, etc.).
+
+## Auth Management API
+
+These endpoints handle user lifecycle operations. All are `@csrf_exempt` for cross-origin use.
+
+| Endpoint | Auth Required | Purpose |
+|----------|--------------|---------|
+| `POST /api/auth/token/` | None (credentials) | Login — upsert token |
+| `POST /api/auth/logout/` | Any Bearer | Revoke caller's token |
+| `POST /api/auth/register/` | Auth-level token | Create user + login token |
+| `GET /api/auth/me/` | Any Bearer | Get current user info |
+| `POST /api/auth/password/` | Any Bearer | Change own password |
+| `GET /api/auth/password-requirements/` | None (public) | List password validation rules |
+| `POST /api/auth/users/<id>/password/` | Auth-level token | System password change |
+| `POST /api/auth/users/<id>/deactivate/` | Auth-level token | Deactivate user + revoke tokens |
+| `GET /api/auth/users/` | Auth-level token | List/search users |
+| `GET /api/auth/users/<id>/` | Auth-level token | User detail |
+| `PATCH /api/auth/users/<id>/` | Auth-level token | Update user fields |
+| `POST /api/auth/token/refresh/` | Login Bearer | Refresh login token |
+
+### POST /api/auth/logout/
+
+Revokes the caller's token server-side. The token immediately stops working.
+
+```
+POST /api/auth/logout/
+Authorization: Bearer <any-token>
+
+Success → 200: {"message": "Logged out"}
+```
+
+### POST /api/auth/register/
+
+Creates a new user (always non-staff, non-superuser) and returns a login token. Requires an auth-level Bearer token and `SMALLSTACK_API_REGISTER_ENABLED=True`.
+
+```
+POST /api/auth/register/
+Authorization: Bearer <auth-level-token>
+Content-Type: application/json
+
+{"username": "alice", "password": "secret123", "email": "alice@example.com"}
+
+Success → 201:
+{
+    "token": "aBcD1234...",
+    "user": {"id": 2, "username": "alice", "is_staff": false},
+    "expires_at": "2026-03-27T14:00:00+00:00"
+}
+
+Duplicate username → 400: {"errors": {"username": ["A user with that username already exists."]}}
+Registration disabled → 403: {"errors": {"__all__": ["Registration is disabled"]}}
+```
+
+### GET /api/auth/me/
+
+Returns the authenticated user's profile. Works with any Bearer token.
+
+```
+GET /api/auth/me/
+Authorization: Bearer <any-token>
+
+→ 200: {"id": 1, "username": "alice", "is_staff": true}
+```
+
+### POST /api/auth/password/
+
+Self-service password change. Requires the current password.
+
+```
+POST /api/auth/password/
+Authorization: Bearer <any-token>
+Content-Type: application/json
+
+{"current_password": "old123", "new_password": "new456"}
+
+Success → 200: {"message": "Password updated"}
+Wrong password → 400: {"errors": {"__all__": ["Current password is incorrect"]}}
+```
+
+### POST /api/auth/users/\<id\>/password/
+
+System password change (no current password required). Requires an auth-level token.
+
+```
+POST /api/auth/users/5/password/
+Authorization: Bearer <auth-level-token>
+Content-Type: application/json
+
+{"new_password": "new456"}
+
+Success → 200: {"message": "Password updated"}
+User not found → 404: {"errors": {"__all__": ["User not found"]}}
+```
+
+### POST /api/auth/users/\<id\>/deactivate/
+
+Deactivates a user account and revokes all their active tokens. Requires an auth-level token.
+
+```
+POST /api/auth/users/5/deactivate/
+Authorization: Bearer <auth-level-token>
+
+Success → 200: {"message": "User deactivated"}
+User not found → 404: {"errors": {"__all__": ["User not found"]}}
+```
+
+### GET /api/auth/password-requirements/
+
+Returns the active Django password validation rules as a list of human-readable strings. No authentication required — useful for showing requirements in registration/password-change forms before submission.
+
+```
+GET /api/auth/password-requirements/
+
+→ 200:
+{
+    "requirements": [
+        "Your password must contain at least 8 characters.",
+        "Your password can't be a commonly used password.",
+        "Your password can't be entirely numeric."
+    ]
+}
+```
+
+### GET /api/auth/users/
+
+List and search users. Requires an auth-level token. Returns paginated results with extended user fields.
+
+```
+GET /api/auth/users/?q=alice&page=1&page_size=25
+Authorization: Bearer <auth-level-token>
+
+→ 200:
+{
+    "count": 1,
+    "page": 1,
+    "total_pages": 1,
+    "next": null,
+    "previous": null,
+    "results": [
+        {
+            "id": 2, "username": "alice", "email": "alice@example.com",
+            "is_staff": false, "first_name": "Alice", "last_name": "Smith",
+            "is_active": true, "date_joined": "2026-03-20T14:00:00+00:00"
+        }
+    ]
+}
+```
+
+Query parameters:
+- `?q=` — searches `username` and `email` (case-insensitive contains)
+- `?page=` / `?page_size=` — pagination (same semantics as CRUDView list)
+
+### GET /api/auth/users/\<id\>/
+
+User detail. Returns extended user JSON (same fields as list results).
+
+```
+GET /api/auth/users/2/
+Authorization: Bearer <auth-level-token>
+
+→ 200:
+{
+    "id": 2, "username": "alice", "email": "alice@example.com",
+    "is_staff": false, "first_name": "Alice", "last_name": "Smith",
+    "is_active": true, "date_joined": "2026-03-20T14:00:00+00:00"
+}
+```
+
+### PATCH /api/auth/users/\<id\>/
+
+Update user fields. Only these fields are allowed: `email`, `first_name`, `last_name`, `is_staff`, `is_active`. Unknown fields return 400 with per-field errors.
+
+```
+PATCH /api/auth/users/2/
+Authorization: Bearer <auth-level-token>
+Content-Type: application/json
+
+{"first_name": "Alice", "is_staff": true}
+
+Success → 200: (updated user JSON)
+Unknown field → 400: {"errors": {"username": ["Field 'username' is not allowed"]}}
+Duplicate email → 400: {"errors": {"email": ["A user with that email already exists."]}}
+```
+
+Empty body `{}` returns 200 with the unchanged user.
+
+### POST /api/auth/token/refresh/
+
+Refresh a login token — regenerates the key and extends the expiry. The old key immediately stops working. Only login tokens can be refreshed; manual tokens are rejected with 403.
+
+```
+POST /api/auth/token/refresh/
+Authorization: Bearer <login-token>
+Content-Type: application/json
+
+{"expires_hours": 48}   ← optional
+
+Success → 200:
+{
+    "token": "newKey1234...",
+    "user": {"id": 1, "username": "alice", "is_staff": false},
+    "expires_at": "2026-03-29T14:00:00+00:00"
+}
+
+Manual token → 403: {"errors": {"__all__": ["Only login tokens can be refreshed"]}}
+Expired token → 401: {"errors": {"__all__": ["Invalid token"]}}
+```
+
+- `expires_hours` defaults to `SMALLSTACK_LOGIN_TOKEN_EXPIRY_HOURS`, capped at `SMALLSTACK_LOGIN_TOKEN_MAX_HOURS`
+- Response shape matches the login endpoint (`POST /api/auth/token/`)
+- Expired tokens are rejected at the auth layer (401) — they cannot be refreshed
+
+### GET /api/schema/
+
+Returns a schema of all registered CRUDView API endpoints and auth endpoints. No authentication required.
+
+```
+GET /api/schema/
+
+→ 200:
+{
+    "endpoints": [
+        {
+            "url": "/api/explorer/monitoring/heartbeat/",
+            "model": "Heartbeat",
+            "methods": ["DELETE", "GET", "PATCH", "POST", "PUT"],
+            "fields": ["timestamp", "status", "response_time_ms", "note"],
+            "list_fields": [...],
+            "detail_fields": [...],
+            "search_fields": [...],
+            "filter_fields": [...],
+            "expand_fields": [...],
+            "aggregate_fields": [...],
+            "extra_fields": [...],
+            "export_formats": [...]
+        }
+    ],
+    "auth": {
+        "login": "/api/auth/token/",
+        "logout": "/api/auth/logout/",
+        "register": "/api/auth/register/",
+        "me": "/api/auth/me/",
+        "password": "/api/auth/password/",
+        "password_requirements": "/api/auth/password-requirements/",
+        "users": "/api/auth/users/",
+        "token_refresh": "/api/auth/token/refresh/"
+    }
+}
+```
+
+### OPTIONS on CRUDView Endpoints
+
+`OPTIONS` on any CRUDView API endpoint returns field types and constraints without authentication. Useful for building dynamic forms.
+
+```
+OPTIONS /api/explorer/monitoring/heartbeat/
+
+→ 200:
+{
+    "fields": {
+        "timestamp": {"type": "datetime", "required": true},
+        "status": {"type": "choice", "required": true, "choices": [["ok", "Ok"], ["fail", "Fail"]]},
+        "response_time_ms": {"type": "integer", "required": true, "min_value": 0}
+    },
+    "methods": ["DELETE", "GET", "PATCH", "POST", "PUT"]
+}
+```
+
+Field types include: `string`, `text`, `integer`, `float`, `decimal`, `boolean`, `date`, `datetime`, `time`, `email`, `url`, `choice`, `fk`, `file`. Extra fields (from `api_extra_fields`) are marked `read_only: true`.
+
+### Architecture Notes
+
+**Single-session token upsert:** The login endpoint (`POST /api/auth/token/`) maintains one active login token per user. Calling it again regenerates the key and immediately invalidates the previous one. This is a security feature — not a bug. Clients should store the token and re-authenticate when it expires rather than expecting multiple concurrent sessions.
+
+**Registration requires auth-level token by design:** The `POST /api/auth/register/` endpoint requires an auth-level Bearer token because registration is a privileged, system-initiated operation — not public self-service. Auth-level tokens belong on servers, never in browser JavaScript. For frontend apps that need user registration, use a backend proxy:
+
+1. React/frontend calls YOUR backend's registration endpoint (no token in the browser)
+2. Your backend holds the auth-level token server-side
+3. Your backend calls SmallStack's `/api/auth/register/` on behalf of the user
+
+**Token lifecycle:** Login → token → use → refresh (extends session) → logout (revokes). Login tokens are for user sessions (one per user, upserted). Manual tokens are for system/service use (can have access levels). Auth-level tokens gate privileged operations like user management and registration.
+
+**Staff requirement for CRUD APIs:** CRUDViews that use `StaffRequiredMixin` (the default in most SmallStack examples) return 403 for non-staff users. Newly registered users are always non-staff. To give API users access to CRUD endpoints, either promote them to staff via Django admin, or use `LoginRequiredMixin` instead of `StaffRequiredMixin` on CRUDViews that should be accessible to all authenticated users.
+
 ## Permission Checking
 
 1. **Authentication** — Bearer token or session. Returns 401 if neither.
 2. **Mixin permissions** — Inspects `crud_config.mixins` for `StaffRequiredMixin`. Returns 403 if user is not staff.
-3. **Per-object permissions** — `crud_config.can_update(obj, request)` and `crud_config.can_delete(obj, request)` checked on detail endpoint.
-4. **Action checks** — Returns 405 if the HTTP method's action isn't in `crud_config.actions`.
+3. **Access level enforcement** — Manual tokens with `readonly` access level are blocked from POST/PUT/PATCH/DELETE on CRUDView endpoints (403). Staff tokens can read+write CRUDView endpoints but cannot access auth management APIs. Auth tokens can do everything.
+4. **Per-object permissions** — `crud_config.can_update(obj, request)` and `crud_config.can_delete(obj, request)` checked on detail endpoint.
+5. **Action checks** — Returns 405 if the HTTP method's action isn't in `crud_config.actions`.
 
 ## Request/Response Format
 
@@ -218,13 +531,16 @@ Success: 204 No Content
 
 ### Error Responses
 
+All errors use a consistent format: `{"errors": {"__all__": ["message"]}}` for general errors, or `{"errors": {"field": ["message"]}}` for field-specific validation errors. Frontend code only needs to handle one shape.
+
 | Status | Body | When |
 |--------|------|------|
-| 400 | `{"errors": form.errors}` | Validation failure |
-| 401 | `{"error": "Invalid token"}` | Bad Bearer token |
-| 403 | `{"error": "Staff access required"}` | Non-staff user |
-| 404 | `{"error": "Not found"}` | Object doesn't exist |
-| 405 | `{"error": "Method not allowed"}` | Action not in `actions` |
+| 400 | `{"errors": {"field": ["message"]}}` | Field validation failure |
+| 400 | `{"errors": {"__all__": ["message"]}}` | General validation error |
+| 401 | `{"errors": {"__all__": ["Invalid token"]}}` | Bad Bearer token |
+| 403 | `{"errors": {"__all__": ["Staff access required"]}}` | Non-staff user |
+| 404 | `{"errors": {"__all__": ["Not found"]}}` | Object doesn't exist |
+| 405 | `{"errors": {"__all__": ["Method not allowed"]}}` | Action not in `actions` |
 
 ## Serialization
 
@@ -387,6 +703,9 @@ The API layer calls these CRUDView methods:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `SMALLSTACK_API_PREFIX` | `"api/"` | URL prefix for all API endpoints |
+| `SMALLSTACK_LOGIN_TOKEN_EXPIRY_HOURS` | `24` | Default expiry for login tokens |
+| `SMALLSTACK_LOGIN_TOKEN_MAX_HOURS` | `168` | Maximum expiry hours (caps `expires_hours` parameter) |
+| `SMALLSTACK_API_REGISTER_ENABLED` | `False` | Enable `POST /api/auth/register/` endpoint |
 
 ### CRUDView API Attributes
 
@@ -423,6 +742,8 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
 This is already wired up in `config/settings/base.py` — no code changes needed. The middleware is installed and reads from the environment variable. By default (empty string), no cross-origin requests are allowed.
+
+**Dev mode auto-config:** In development (`DEBUG=True`), if no `CORS_ALLOWED_ORIGINS` are set, SmallStack automatically allows requests from any `localhost` or `127.0.0.1` port. This means React on port 3000, Vite on port 5173, etc. all work out of the box with no configuration needed.
 
 For production, set the actual frontend domain:
 

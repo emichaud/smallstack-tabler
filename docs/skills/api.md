@@ -10,9 +10,13 @@ The API is opt-in per CRUDView. When enabled, `get_urls()` generates JSON list a
 
 ```
 apps/smallstack/
-├── api.py                 # build_api_urls(), auth, serialization, export, aggregation
+├── api.py                 # build_api_urls(), auth, serialization, export, aggregation, docs views
 ├── openapi.py             # build_openapi_spec() — OpenAPI 3.0.3 generator
 ├── crud.py                # CRUDView — enable_api flag, get_urls() integration
+├── middleware.py           # RequestIDMiddleware — X-Request-ID on every response
+├── templates/smallstack/api/
+│   ├── swagger.html       # Swagger UI (CDN-loaded, /api/docs/)
+│   └── redoc.html         # ReDoc (CDN-loaded, /api/redoc/)
 ```
 
 ## How It Works
@@ -423,6 +427,27 @@ The spec includes:
 
 Import into Swagger UI, Postman, or use with code generators like `openapi-typescript` or `openapi-generator`.
 
+### Interactive API Documentation
+
+SmallStack includes built-in Swagger UI and ReDoc pages — no Python packages needed:
+
+| URL | Tool | Purpose |
+|-----|------|---------|
+| `/api/docs/` | Swagger UI | Interactive "try it out" explorer |
+| `/api/redoc/` | ReDoc | Clean, readable API reference |
+
+Both load from CDN and consume the OpenAPI spec at `/api/schema/openapi.json`. Templates are at `apps/smallstack/templates/smallstack/api/`. The views set a per-response CSP to allow `cdn.jsdelivr.net`. See the `api-discovery.md` skill for details.
+
+### Request ID (X-Request-ID)
+
+Every API response includes an `X-Request-ID` header. The `RequestIDMiddleware` (first in the middleware stack) either reuses an incoming `X-Request-ID` from a load balancer or generates `req_{uuid}`. The ID is:
+
+- Stored on `request.id` for use in any downstream code
+- Returned in the `X-Request-ID` response header
+- Recorded in `RequestLog.request_id` by `ActivityMiddleware`
+
+This allows correlating client-reported errors to specific server-side log entries. Clients should capture and log the `X-Request-ID` from error responses for debugging.
+
 ### Architecture Notes
 
 **Single-session token upsert:** The login endpoint (`POST /api/auth/token/`) maintains one active login token per user. Calling it again regenerates the key and immediately invalidates the previous one. This is a security feature — not a bug. Clients should store the token and re-authenticate when it expires rather than expecting multiple concurrent sessions.
@@ -581,6 +606,28 @@ DELETE api/manage/widgets/1/
 
 Success: 204 No Content
 ```
+
+### Bulk Operations
+
+Bulk delete and update use a single endpoint. Bulk delete is enabled by default.
+
+```
+POST api/manage/widgets/bulk/
+Content-Type: application/json
+
+# Bulk delete
+{"action": "delete", "ids": [1, 2, 3]}
+
+Success: {"deleted": [1, 2, 3], "errors": {}, "message": "Deleted 3 items"}
+Partial: {"deleted": [1, 3], "errors": {"2": "Cannot delete: referenced by other records"}, "message": "Deleted 2 items, 1 error"}
+
+# Bulk update (requires "update" in bulk_actions)
+{"action": "update", "ids": [1, 2, 3], "fields": {"status": "closed"}}
+
+Success: {"updated": [1, 2, 3], "errors": {}, "message": "Updated 3 items"}
+```
+
+Each object is processed individually — failures don't block other objects. Controlled by `bulk_actions` on CRUDView or `explorer_bulk_actions` on ModelAdmin (default: `["delete"]`).
 
 ### Error Responses
 
@@ -804,12 +851,31 @@ For production, set the actual frontend domain:
 CORS_ALLOWED_ORIGINS=https://app.example.com
 ```
 
+## Custom (Non-CRUD) Endpoints
+
+Not every endpoint fits the CRUD pattern. For actions, integrations, reports, and multi-model workflows, use the `api_view` decorator instead of `enable_api`. It provides the same auth, error handling, and JSON conventions without requiring a CRUDView.
+
+```python
+from apps.smallstack.api import api_view, api_error
+
+@api_view(methods=["POST"], require_staff=True)
+def run_sync(request):
+    target = request.json.get("target")
+    if not target:
+        return api_error("target is required", 400)
+    count = sync_external_system(target)
+    return {"synced": count}
+```
+
+See **`custom-api-endpoints.md`** for the full reference: parameters, return conventions, error handling, and examples.
+
 ## Best Practices
 
 1. **Use `enable_api` only on CRUDViews that need external access** — not every model needs an API
-2. **Token management** — create tokens via CLI, auth endpoint, or Django admin
-3. **Permissions cascade** — API respects the same `mixins` as HTML views. A warning is emitted if `enable_api=True` with no mixins.
-4. **No third-party dependency** — built on stock Django views, not DRF
-5. **CSRF exempt** — API views use `@csrf_exempt` (required for external API clients)
-6. **Filters apply to exports and aggregates** — `?q=search&format=csv` exports only matching rows; `?status=done&sum=hours` aggregates only matching rows
-7. **Designed to be replaced** — if you need DRF, delete `api.py` and write viewsets; filters, tokens, and models transfer directly. No conflicts with DRF, dj-rest-auth, or allauth.
+2. **Use `@api_view` for non-CRUD endpoints** — actions, webhooks, reports, orchestration. See `custom-api-endpoints.md`.
+3. **Token management** — create tokens via CLI, auth endpoint, or Django admin
+4. **Permissions cascade** — API respects the same `mixins` as HTML views. A warning is emitted if `enable_api=True` with no mixins.
+5. **No third-party dependency** — built on stock Django views, not DRF
+6. **CSRF exempt** — API views use `@csrf_exempt` (required for external API clients)
+7. **Filters apply to exports and aggregates** — `?q=search&format=csv` exports only matching rows; `?status=done&sum=hours` aggregates only matching rows
+8. **Designed to be replaced** — if you need DRF, delete `api.py` and write viewsets; filters, tokens, and models transfer directly. No conflicts with DRF, dj-rest-auth, or allauth.

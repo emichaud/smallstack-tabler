@@ -27,7 +27,7 @@ from django import forms
 from django.contrib import messages
 from django.db import IntegrityError
 from django.db.models import ProtectedError, RestrictedError
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, QueryDict
 from django.shortcuts import redirect as _redirect
 from django.urls import path, reverse
 from django.views.generic import (
@@ -56,6 +56,11 @@ class Action(enum.Enum):
     DETAIL = "detail"
     UPDATE = "update"
     DELETE = "delete"
+
+
+class BulkAction(enum.Enum):
+    DELETE = "delete"
+    UPDATE = "update"
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +161,10 @@ def _apply_ordering(qs, request, crud_config):
 
 def _apply_list_filters(qs, request, crud_config):
     """Apply query-param filters to a queryset using configured filter_fields."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
     filter_fields = crud_config._resolve_filter_fields()
     if not filter_fields:
         return qs
@@ -163,19 +172,44 @@ def _apply_list_filters(qs, request, crud_config):
         value = request.GET.get(field_name, "").strip()
         if not value:
             continue
-        # Boolean fields: accept true/false/1/0
         try:
             model_field = crud_config.model._meta.get_field(field_name)
-            from django.db import models as _m
-
-            if isinstance(model_field, _m.BooleanField):
-                if value.lower() in ("true", "1", "yes"):
-                    qs = qs.filter(**{field_name: True})
-                elif value.lower() in ("false", "0", "no"):
-                    qs = qs.filter(**{field_name: False})
-                continue
         except Exception:
-            pass
+            continue
+        from django.db import models as _m
+
+        # Boolean fields: accept true/false/1/0
+        if isinstance(model_field, _m.BooleanField):
+            if value.lower() in ("true", "1", "yes"):
+                qs = qs.filter(**{field_name: True})
+            elif value.lower() in ("false", "0", "no"):
+                qs = qs.filter(**{field_name: False})
+            continue
+
+        # Date/DateTime fields: preset filters
+        if isinstance(model_field, (_m.DateField, _m.DateTimeField)):
+            today = timezone.localdate()
+            is_datetime = isinstance(model_field, _m.DateTimeField)
+            lookup_prefix = f"{field_name}__date" if is_datetime else field_name
+            if value == "today":
+                qs = qs.filter(**{lookup_prefix: today})
+            elif value == "yesterday":
+                qs = qs.filter(**{lookup_prefix: today - timedelta(days=1)})
+            elif value == "week":
+                qs = qs.filter(**{f"{lookup_prefix}__gte": today - timedelta(days=7)})
+            elif value == "month":
+                qs = qs.filter(**{f"{lookup_prefix}__month": today.month, f"{lookup_prefix}__year": today.year})
+            elif value == "year":
+                qs = qs.filter(**{f"{lookup_prefix}__year": today.year})
+            continue
+
+        # Text-type fields: use icontains for substring matching
+        if isinstance(model_field, (_m.CharField, _m.TextField)):
+            meta = _build_filter_meta(crud_config.model, field_name)
+            if meta and meta["type"] == "text":
+                qs = qs.filter(**{f"{field_name}__icontains": value})
+                continue
+
         qs = qs.filter(**{field_name: value})
     return qs
 
@@ -183,15 +217,12 @@ def _apply_list_filters(qs, request, crud_config):
 def _build_toolbar_context(request, crud_config):
     """Build context dict for the list toolbar template.
 
-    The toolbar shows when any of: search_fields, filter_fields, or
-    multiple list displays are configured.
+    The toolbar shows when search_fields or filter_fields are configured.
     """
     search_fields = crud_config._resolve_search_fields()
     filter_fields = crud_config._resolve_filter_fields()
-    has_multiple_displays = len(crud_config._get_displays()) > 1
-
-    if not search_fields and not filter_fields and not has_multiple_displays:
-        return {"show_toolbar": False}
+    if not search_fields and not filter_fields:
+        return {"show_toolbar": False, "toolbar_filters": [], "toolbar_has_active_filter": False}
 
     # Build filter metadata for the template
     filters = []
@@ -236,9 +267,19 @@ def _build_filter_meta(model, field_name):
         "label": str(getattr(field, "verbose_name", field_name)).capitalize(),
     }
 
-    # Date/DateTime fields — skip for now (future: date range picker)
+    # Date/DateTime fields → preset dropdown
     if isinstance(field, (_m.DateField, _m.DateTimeField)):
-        return None
+        meta["type"] = "choice"
+        meta["is_date"] = True
+        meta["choices"] = [
+            ("", "All"),
+            ("today", "Today"),
+            ("yesterday", "Yesterday"),
+            ("week", "Past 7 days"),
+            ("month", "This month"),
+            ("year", "This year"),
+        ]
+        return meta
 
     # Boolean fields → toggle (All / Yes / No)
     if isinstance(field, (_m.BooleanField,)):
@@ -326,6 +367,10 @@ class _CRUDContextMixin:
                 # Legacy keys for backward compat with custom templates
                 "field_formatters": cfg.field_formatters,
                 "preview_fields": cfg.preview_fields,
+                # Bulk operations
+                "enable_bulk": bool(cfg.bulk_actions),
+                "bulk_actions": [a.value for a in cfg.bulk_actions],
+                "bulk_url": cfg._reverse(f"{url_base}-bulk") if cfg.bulk_actions else "",
             }
         )
         # Optional parent breadcrumb: (label, url_name) tuple
@@ -351,9 +396,9 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
             # Toolbar search/filter: return the list content partial
             if htmx_target == "crud-list-content":
                 return self.crud_config._get_template_names("list_content")
-            # Display swap via HTMX: return just the display template
+            # Display area swap (pagination, display switch): return just the display template
             display = self._get_active_display()
-            if display and self.request.GET.get("display"):
+            if display and (self.request.GET.get("display") or htmx_target == "crud-display-area"):
                 return [display.template_name]
             return self.crud_config._get_template_names("list_partial")
         return self.crud_config._get_template_names("list")
@@ -398,6 +443,15 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
         # Total count for toolbar (before pagination, after search/filter)
         qs = self.get_queryset()
         context["toolbar_total_count"] = qs.count()
+
+        # List accessories — pass UNFILTERED queryset so stats reflect totals
+        if cfg.list_accessories:
+            full_qs = cfg._get_queryset()
+            full_qs = cfg.get_list_queryset(full_qs, self.request)
+            rendered = []
+            for accessory in cfg.list_accessories:
+                rendered.append(accessory.render(full_qs, cfg, self.request))
+            context["list_accessories_html"] = rendered
 
         # Try display protocol first (when displays are configured)
         display = self._get_active_display()
@@ -602,6 +656,262 @@ class _CRUDDeleteBase(_CRUDContextMixin, DeleteView):
         return _redirect(self.get_success_url())
 
 
+class _CRUDBulkActionView:
+    """Handles bulk delete and bulk update operations via POST.
+
+    Processes objects individually to respect per-object permission hooks
+    and catch ProtectedError per row.
+    """
+
+    crud_config = None
+
+    @classmethod
+    def as_view(cls):
+        from django.views import View
+
+        config = cls.crud_config
+
+        class BulkView(View):
+            def post(self, request, *args, **kwargs):
+                import json as _json
+
+                # Parse request body (JSON or form data)
+                content_type = request.content_type or ""
+                if "json" in content_type:
+                    try:
+                        body = _json.loads(request.body)
+                    except (ValueError, _json.JSONDecodeError):
+                        return HttpResponse(
+                            _json.dumps({"error": "Invalid JSON"}),
+                            status=400,
+                            content_type="application/json",
+                        )
+                    action = body.get("action", "")
+                    ids = body.get("ids", [])
+                    fields_data = body.get("fields", {})
+                else:
+                    action = request.POST.get("action", "")
+                    ids = request.POST.getlist("ids[]") or request.POST.getlist("ids")
+                    fields_data = {}
+
+                # Validate IDs
+                try:
+                    ids = [int(pk) for pk in ids]
+                except (ValueError, TypeError):
+                    return HttpResponse(
+                        _json.dumps({"error": "Invalid IDs"}),
+                        status=400,
+                        content_type="application/json",
+                    )
+
+                if not ids:
+                    return HttpResponse(
+                        _json.dumps({"error": "No IDs provided"}),
+                        status=400,
+                        content_type="application/json",
+                    )
+
+                if action == "delete":
+                    return self._bulk_delete(request, ids, config)
+                elif action == "update":
+                    return self._bulk_update(request, ids, fields_data, config)
+                else:
+                    return HttpResponse(
+                        _json.dumps({"error": f"Unknown action: {action}"}),
+                        status=400,
+                        content_type="application/json",
+                    )
+
+            def _bulk_delete(self, request, ids, cfg):
+                import json as _json
+
+                if BulkAction.DELETE not in cfg.bulk_actions:
+                    return HttpResponse(
+                        _json.dumps({"error": "Bulk delete not enabled"}),
+                        status=403,
+                        content_type="application/json",
+                    )
+
+                qs = cfg._get_queryset().filter(pk__in=ids)
+                objects = {obj.pk: obj for obj in qs}
+                deleted_ids = []
+                errors = {}
+
+                for pk in ids:
+                    obj = objects.get(pk)
+                    if obj is None:
+                        errors[str(pk)] = "Not found"
+                        continue
+                    if not cfg.can_delete(obj, request):
+                        errors[str(pk)] = "Permission denied"
+                        continue
+                    try:
+                        obj.delete()
+                        deleted_ids.append(pk)
+                    except (ProtectedError, RestrictedError) as e:
+                        protected = getattr(e, "protected_objects", None) or getattr(e, "restricted_objects", set())
+                        name = type(next(iter(protected))).__name__ if protected else "other records"
+                        cnt = len(protected)
+                        s = "s" if cnt != 1 else ""
+                        errors[str(pk)] = f"Cannot delete — {cnt} {name} record{s} still linked."
+                    except IntegrityError:
+                        errors[str(pk)] = "Cannot delete — a database constraint prevented this action."
+                    except Exception:
+                        errors[str(pk)] = "Delete failed — an unexpected error occurred."
+
+                msg = f"Deleted {len(deleted_ids)} of {len(ids)}"
+
+                return HttpResponse(
+                    _json.dumps({"deleted": deleted_ids, "errors": errors, "message": msg}),
+                    content_type="application/json",
+                )
+
+            def _bulk_update(self, request, ids, fields_data, cfg):
+                import json as _json
+
+                if BulkAction.UPDATE not in cfg.bulk_actions:
+                    return HttpResponse(
+                        _json.dumps({"error": "Bulk update not enabled"}),
+                        status=403,
+                        content_type="application/json",
+                    )
+
+                if not fields_data:
+                    return HttpResponse(
+                        _json.dumps({"error": "No fields provided"}),
+                        status=400,
+                        content_type="application/json",
+                    )
+
+                # Validate field names
+                allowed = set(cfg.can_bulk_update_fields())
+                invalid = set(fields_data.keys()) - allowed
+                if invalid:
+                    return HttpResponse(
+                        _json.dumps({"error": f"Fields not allowed for bulk update: {', '.join(sorted(invalid))}"}),
+                        status=400,
+                        content_type="application/json",
+                    )
+
+                qs = cfg._get_queryset().filter(pk__in=ids)
+                objects = {obj.pk: obj for obj in qs}
+                updated = []
+                errors = {}
+
+                for pk in ids:
+                    obj = objects.get(pk)
+                    if obj is None:
+                        errors[str(pk)] = "Not found"
+                        continue
+                    if not cfg.can_update(obj, request):
+                        errors[str(pk)] = "Permission denied"
+                        continue
+
+                    # Build PATCH-style form: merge existing values with new fields
+                    from django.forms.models import model_to_dict
+
+                    existing = model_to_dict(obj, fields=cfg.fields or [])
+                    merged = QueryDict(mutable=True)
+                    for key, value in existing.items():
+                        if value is None:
+                            merged[key] = ""
+                        elif isinstance(value, list):
+                            merged.setlist(key, [str(v) for v in value])
+                        else:
+                            merged[key] = str(value)
+                    for key, value in fields_data.items():
+                        merged[key] = str(value) if value is not None else ""
+
+                    form_class = cfg.form_class or cfg._make_form_class()
+                    form = form_class(merged, instance=obj)
+                    if form.is_valid():
+                        obj = form.save()
+                        cfg.on_form_valid(request, form, obj, is_create=False)
+                        updated.append(pk)
+                    else:
+                        errors[str(pk)] = {k: [str(e) for e in v] for k, v in form.errors.items()}
+
+                total = len(ids)
+                updated_count = len(updated)
+                msg = f"Updated {updated_count} of {total}"
+
+                return HttpResponse(
+                    _json.dumps({"updated": updated, "errors": errors, "message": msg}),
+                    content_type="application/json",
+                )
+
+        # Apply mixins
+        bases = tuple(config.mixins) + (BulkView,)
+        view_cls = type(f"{config.model.__name__}BulkActionView", bases, {})
+        return view_cls.as_view()
+
+
+def _make_bulk_update_form_view(crud_config):
+    """Create a view that returns HTML for the bulk update field picker."""
+    from django.views import View
+
+    config = crud_config
+
+    class BulkUpdateFormView(View):
+        def get(self, request, *args, **kwargs):
+            from django.utils.html import escape
+
+            allowed_fields = config.can_bulk_update_fields()
+            form_class = config.form_class or config._make_form_class()
+            form = form_class()
+
+            html_parts = []
+            for field_name in allowed_fields:
+                if field_name not in form.fields:
+                    continue
+                field = form.fields[field_name]
+                label = field.label or field_name.replace("_", " ").capitalize()
+                attrs = {
+                    "id": f"id_bulk_{field_name}",
+                    "class": "vTextField",
+                    "style": "width: 100%;",
+                }
+                widget_html = field.widget.render(
+                    f"bulk_{field_name}",
+                    None,
+                    attrs=attrs,
+                )
+
+                esc_name = escape(field_name)
+                esc_label = escape(label)
+                html_parts.append(
+                    '<div class="bulk-field-row">'
+                    '<label class="bulk-field-label">'
+                    f'<input type="checkbox" class="bulk-field-toggle"'
+                    f' data-field="{esc_name}">'
+                    f" {esc_label}"
+                    "</label>"
+                    '<div class="bulk-field-widget"'
+                    ' style="display: none; margin-top: 0.5rem;">'
+                    f"{widget_html}"
+                    "</div>"
+                    "</div>"
+                )
+
+            html_parts.append(
+                "<script>"
+                'document.querySelectorAll("#bulk-update-fields .bulk-field-toggle").forEach(function(cb) {'
+                '  cb.addEventListener("change", function() {'
+                '    var widget = this.closest("div").querySelector(".bulk-field-widget");'
+                '    widget.style.display = this.checked ? "block" : "none";'
+                "  });"
+                "});"
+                "</script>"
+            )
+
+            return HttpResponse("".join(html_parts))
+
+    # Apply mixins
+    bases = tuple(config.mixins) + (BulkUpdateFormView,)
+    view_cls = type(f"{config.model.__name__}BulkUpdateFormView", bases, {})
+    return view_cls.as_view()
+
+
 class _CRUDFieldPreviewBase(_CRUDContextMixin, DetailView):
     """Server-rendered field preview partial, loaded via HTMX."""
 
@@ -720,7 +1030,7 @@ class CRUDView:
     # View/routing
     url_base = None
     namespace: str | None = None  # URL namespace for child ExplorerSite instances
-    paginate_by = None
+    paginate_by = 25
     mixins = []
     actions = [Action.LIST, Action.CREATE, Action.DETAIL, Action.UPDATE, Action.DELETE]
     breadcrumb_parent = None  # Optional (label, url_name) for parent breadcrumb
@@ -729,12 +1039,16 @@ class CRUDView:
     displays = []  # List of ListDisplay classes/instances. Empty = legacy auto-detect.
     default_display = None  # Defaults to first in displays
     detail_displays = []  # List of DetailDisplay classes/instances
+    list_accessories = []  # ListAccessory instances rendered above the toolbar
 
     # Form displays
     form_displays = []  # FormDisplay classes/instances (both create + edit)
     create_displays = []  # Create-only (overrides form_displays for create)
     edit_displays = []  # Edit-only (overrides form_displays for edit)
     default_form_display = None  # Defaults to first in resolved list
+
+    # Bulk operations
+    bulk_actions = []  # Opt-in: [BulkAction.DELETE, BulkAction.UPDATE]
 
     # API
     enable_api = False  # Opt-in: generate JSON API endpoints alongside HTML views
@@ -802,7 +1116,19 @@ class CRUDView:
                     flat.extend(opts.get("fields", []))
                 if flat:
                     return flat
-        return cls.fields
+        # Detail is read-only — show all concrete fields, not just form fields.
+        # This ensures fields like TextField notes or auto_now_add timestamps
+        # appear even when they aren't in list_display.
+        from django.db.models import AutoField, BigAutoField, Field, ForeignKey
+
+        all_fields = []
+        for f in cls.model._meta.get_fields():
+            if not isinstance(f, (Field, ForeignKey)):
+                continue
+            if isinstance(f, (AutoField, BigAutoField)):
+                continue
+            all_fields.append(f.name)
+        return all_fields or cls.fields
 
     @classmethod
     def _get_link_field(cls):
@@ -831,7 +1157,9 @@ class CRUDView:
     def _get_detail_displays(cls):
         """Return list of display instances for the detail view."""
         if not cls.detail_displays:
-            return []
+            from .displays import DetailGridDisplay
+
+            return [DetailGridDisplay()]
         return [d() if isinstance(d, type) else d for d in cls.detail_displays]
 
     @classmethod
@@ -900,8 +1228,16 @@ class CRUDView:
             return list(cls.filter_fields)
         if cls.admin_class:
             raw = getattr(cls.admin_class, "list_filter", [])
-            # list_filter can contain strings or (field, FilterClass) tuples
-            return [f if isinstance(f, str) else f[0] for f in raw]
+            # list_filter can contain strings, (field, FilterClass) tuples,
+            # or bare filter classes — skip classes we can't resolve to a field name
+            resolved = []
+            for f in raw:
+                if isinstance(f, str):
+                    resolved.append(f)
+                elif isinstance(f, (list, tuple)) and f:
+                    resolved.append(f[0])
+                # bare filter classes (e.g. IsLockedOutFilter) are skipped
+            return resolved
         return []
 
     @classmethod
@@ -935,6 +1271,11 @@ class CRUDView:
     def on_form_valid(cls, request, form, obj, is_create=False):
         """Hook called after successful create/update. Override for side effects."""
         pass
+
+    @classmethod
+    def can_bulk_update_fields(cls):
+        """Return list of field names allowed for bulk update. Override to restrict."""
+        return cls.fields or []
 
     @classmethod
     def _get_queryset(cls):
@@ -1068,6 +1409,23 @@ class CRUDView:
         if Action.CREATE in cls.actions:
             view = cls._make_view(_CRUDCreateBase)
             urls.append(path(f"{url_base}/new/", view.as_view(), name=f"{url_base}-create"))
+
+        # Bulk action endpoints (opt-in) — must be before <pk>/ detail catch-all
+        if cls.bulk_actions:
+            bulk_view_cls = type(
+                f"{cls.model.__name__}BulkAction",
+                (_CRUDBulkActionView,),
+                {"crud_config": cls},
+            )
+            urls.append(path(f"{url_base}/bulk/", bulk_view_cls.as_view(), name=f"{url_base}-bulk"))
+            if BulkAction.UPDATE in cls.bulk_actions:
+                urls.append(
+                    path(
+                        f"{url_base}/bulk/update-form/",
+                        _make_bulk_update_form_view(cls),
+                        name=f"{url_base}-bulk-update-form",
+                    )
+                )
 
         if Action.DETAIL in cls.actions:
             view = cls._make_view(_CRUDDetailBase)

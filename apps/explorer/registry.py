@@ -12,14 +12,12 @@ import dataclasses
 import logging
 from typing import TYPE_CHECKING
 
-import django_tables2 as tables
 from django.db.models import AutoField, BigAutoField, Field, ForeignKey
 from django.urls import path, reverse
 from django.utils.text import slugify
 
-from apps.smallstack.crud import Action, CRUDView
+from apps.smallstack.crud import Action, BulkAction, CRUDView
 from apps.smallstack.mixins import StaffRequiredMixin
-from apps.smallstack.tables import ActionsColumn, DetailLinkColumn
 
 if TYPE_CHECKING:
     from django import forms
@@ -211,50 +209,23 @@ def _resolve_readonly_from_admin(modeladmin):
     return False
 
 
+def _resolve_bulk_actions(admin_class):
+    """Map explorer_bulk_actions strings to BulkAction enum values.
+
+    Defaults to ["delete"] (matching Django admin behavior) unless
+    explicitly set to [] to opt out.
+    """
+    raw = getattr(admin_class, "explorer_bulk_actions", ["delete"])
+    _mapping = {"delete": BulkAction.DELETE, "update": BulkAction.UPDATE}
+    return [_mapping[a] for a in raw if a in _mapping]
+
+
 def _resolve_group(model, modeladmin):
     """Determine the display group for a model."""
     group = getattr(modeladmin, "explorer_group", None)
     if group:
         return group
     return model._meta.app_label.replace("_", " ").title()
-
-
-def _build_auto_table(
-    model: type[models.Model],
-    list_fields: list[str],
-    url_base: str,
-    actions: list[Action],
-    namespace: str | None = None,
-) -> type[tables.Table]:
-    """Auto-generate a django-tables2 Table class with sortable columns.
-
-    The first field becomes a DetailLinkColumn (if DETAIL action exists),
-    and an ActionsColumn is appended (if UPDATE or DELETE exist).
-    """
-    has_detail = Action.DETAIL in actions
-    has_update = Action.UPDATE in actions
-    has_delete = Action.DELETE in actions
-
-    link_field = list_fields[0] if list_fields else None
-    attrs = {}
-
-    for field_name in list_fields:
-        if field_name == link_field and has_detail:
-            attrs[field_name] = DetailLinkColumn(url_base=url_base, namespace=namespace)
-        else:
-            attrs[field_name] = tables.Column()
-
-    if has_update or has_delete:
-        attrs["actions"] = ActionsColumn(url_base=url_base, edit=has_update, delete=has_delete, namespace=namespace)
-
-    meta_attrs = {
-        "model": model,
-        "fields": list(list_fields),
-        "attrs": {"class": "crud-table"},
-    }
-    attrs["Meta"] = type("Meta", (), meta_attrs)
-
-    return type(f"Explorer{model.__name__}Table", (tables.Table,), attrs)
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +371,7 @@ class ExplorerSite:
 
     def _build_one(self, model, group_key, admin_class, admin_site):
         """Build a single CRUDView subclass and register its ModelInfo."""
-        from apps.smallstack.displays import Table2Display
+        from apps.smallstack.displays import TableDisplay
 
         group_slug = slugify(group_key)
         model_name = model._meta.model_name
@@ -442,9 +413,7 @@ class ExplorerSite:
         }
         form_fields = [f for f in resolved_fields if f in editable_names]
 
-        # Auto-generate a django-tables2 Table for sortable columns
         namespace = self._name
-        table_class = _build_auto_table(model, resolved_fields, url_base, actions, namespace=namespace)
 
         # Merge transforms: explorer_preview_fields → "preview", then explicit wins
         preview_fields = getattr(admin_instance, "explorer_preview_fields", [])
@@ -455,9 +424,10 @@ class ExplorerSite:
         merged_transforms.update(explorer_transforms)
 
         paginate_by = getattr(admin_instance, "explorer_paginate_by", 10)
+        column_widths = getattr(admin_instance, "explorer_column_widths", None)
 
         # Display config: admin class can specify explorer_displays / explorer_detail_displays
-        displays = getattr(admin_class, "explorer_displays", [Table2Display])
+        displays = getattr(admin_class, "explorer_displays", [TableDisplay])
         detail_displays = getattr(admin_class, "explorer_detail_displays", [])
 
         # Form display config
@@ -489,7 +459,6 @@ class ExplorerSite:
                 "url_base": url_base,
                 "namespace": namespace,
                 "paginate_by": paginate_by,
-                "table_class": table_class,
                 "mixins": [StaffRequiredMixin],
                 "actions": actions,
                 "displays": displays,
@@ -500,12 +469,15 @@ class ExplorerSite:
                 "form_class": form_class,
                 "preview_fields": preview_fields,
                 "field_transforms": merged_transforms,
+                "column_widths": column_widths,
                 "breadcrumb_parent": breadcrumb_parent,
                 "enable_api": getattr(admin_class, "explorer_enable_api", False),
                 "export_formats": list(getattr(admin_class, "explorer_export_formats", [])),
                 "api_extra_fields": list(getattr(admin_class, "explorer_api_extra_fields", [])),
                 "api_expand_fields": list(getattr(admin_class, "explorer_api_expand_fields", [])),
                 "api_aggregate_fields": list(getattr(admin_class, "explorer_api_aggregate_fields", [])),
+                "list_accessories": list(getattr(admin_class, "explorer_list_accessories", [])),
+                "bulk_actions": _resolve_bulk_actions(admin_class),
             },
         )
 

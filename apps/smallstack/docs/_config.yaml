@@ -88,6 +88,12 @@ pages:
     icon: "palette"
     category: "Theming"
 
+  - slug: theme-color-reference
+    title: "Theme Color Quick Reference"
+    description: "Every CSS variable with current light/dark values and an AI prompt template for generating new palettes"
+    icon: "palette"
+    category: "Theming"
+
   - slug: adding-your-own-theme
     title: "Adding Your Own Theme"
     description: "Add a custom CSS framework alongside SmallStack's built-in theme"
@@ -214,6 +220,12 @@ pages:
     icon: "settings"
     category: "Development"
 
+  - slug: api-documentation
+    title: "API Documentation (Swagger & ReDoc)"
+    description: "Interactive API docs with Swagger UI and ReDoc — no packages required"
+    icon: "code"
+    category: "Development"
+
   - slug: explorer-rest-api
     title: "Explorer REST API"
     description: "Auto-generated JSON API with authentication, search, filtering, and CSV/JSON export"
@@ -255,6 +267,12 @@ pages:
     description: "Visual dashboard for scheduling, running, and downloading database backups"
     icon: "database"
     category: "Built-in Tools"
+
+  - slug: debug-toolbar
+    title: "Debug Toolbar"
+    description: "Enable Django Debug Toolbar for SQL profiling, template inspection, and request debugging"
+    icon: "terminal"
+    category: "Development"
 
   - slug: logging-audit
     title: "Logging & Audit Trail"

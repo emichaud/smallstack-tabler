@@ -11,6 +11,36 @@
 
 
 /* --------------------------------------------------------------------------
+   HTMX Swap Transitions
+   --------------------------------------------------------------------------
+   Fade-out on swap, fade-in on settle. Requires hx-swap="… swap:150ms" so
+   the htmx-swapping class stays long enough for the CSS transition.
+   -------------------------------------------------------------------------- */
+
+#crud-display-area {
+    transition: opacity 150ms ease;
+}
+
+#crud-display-area.htmx-swapping {
+    opacity: 0;
+}
+
+
+/* --------------------------------------------------------------------------
+   Stable Table Height
+   --------------------------------------------------------------------------
+   Uses --paginate-by CSS custom property (set on #crud-display-area via
+   template) to keep the container at a consistent min-height regardless
+   of how many rows the current page has. Only applies when a .crud-table
+   is present (cards are excluded).
+   -------------------------------------------------------------------------- */
+
+#crud-display-area:has(.crud-table) {
+    min-height: calc(7.7rem + var(--paginate-by, 0) * 2.7rem);
+}
+
+
+/* --------------------------------------------------------------------------
    Tables
    --------------------------------------------------------------------------
    Use class="crud-table" on any <table> for themed styling.
@@ -34,6 +64,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Checkbox and actions columns should never truncate */
+.crud-table td:has(.bulk-select-row),
+.crud-table td.crud-actions-cell {
+    overflow: visible;
+    text-overflow: clip;
 }
 
 /* Reset inherited admin/tables2 backgrounds */
@@ -96,6 +133,7 @@
     border: none !important;
     padding: 10px 16px;
     font-size: 0.85rem;
+    text-align: left;
 }
 
 .crud-table tbody tr:hover,
@@ -120,7 +158,10 @@
 
 /* Table action cells */
 .crud-actions-cell {
-    text-align: right;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
     white-space: nowrap;
 }
 
@@ -559,6 +600,90 @@ ul.pagination li.active span {
 .crud-form .crud-actions .btn-cancel:hover {
     color: var(--body-fg);
 }
+
+/* --------------------------------------------------------------------------
+   Grid Form Layout (label left, field right — matches detail grid)
+   --------------------------------------------------------------------------
+   Add class="crud-form-grid" alongside "crud-form" to switch from stacked
+   to a two-column grid where labels sit left and inputs sit right, matching
+   the detail grid display pattern.
+   -------------------------------------------------------------------------- */
+
+.crud-form-grid {
+    border: 1px solid color-mix(in srgb, var(--body-fg) 12%, var(--body-bg));
+    border-radius: var(--radius-sm, 6px);
+    overflow: hidden;
+}
+
+.crud-form-grid .crud-field {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.35fr) 1fr;
+    border-bottom: 1px solid color-mix(in srgb, var(--body-fg) 12%, var(--body-bg));
+    margin-bottom: 0;
+}
+
+.crud-form-grid .crud-field:last-of-type {
+    border-bottom: none;
+}
+
+.crud-form-grid .crud-field-label {
+    padding: 0.7rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--body-fg);
+    background: color-mix(in srgb, var(--body-fg) 5%, var(--body-bg));
+    border-right: 1px solid color-mix(in srgb, var(--body-fg) 12%, var(--body-bg));
+    display: flex;
+    align-items: center;
+}
+
+.crud-form-grid .crud-field-label .required {
+    color: var(--delete-button-bg, #dc3545);
+    margin-left: 0.15rem;
+}
+
+.crud-form-grid .crud-field-input {
+    padding: 0.5rem 0.9rem;
+    background: color-mix(in srgb, var(--body-fg) 2%, var(--body-bg));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+}
+
+.crud-form-grid .crud-field-input input[type="text"],
+.crud-form-grid .crud-field-input input[type="email"],
+.crud-form-grid .crud-field-input input[type="url"],
+.crud-form-grid .crud-field-input input[type="number"],
+.crud-form-grid .crud-field-input input[type="password"],
+.crud-form-grid .crud-field-input input[type="date"],
+.crud-form-grid .crud-field-input input[type="datetime-local"],
+.crud-form-grid .crud-field-input input[type="tel"],
+.crud-form-grid .crud-field-input input[type="search"],
+.crud-form-grid .crud-field-input select,
+.crud-form-grid .crud-field-input textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.crud-form-grid .crud-field-input .crud-checkbox {
+    padding: 0.2rem 0;
+}
+
+.crud-form-grid .crud-field.has-error .crud-field-label {
+    color: var(--delete-button-bg, #dc3545);
+}
+
+@media (max-width: 600px) {
+    .crud-form-grid .crud-field {
+        grid-template-columns: 1fr;
+    }
+    .crud-form-grid .crud-field-label {
+        border-right: none;
+        border-bottom: 1px solid color-mix(in srgb, var(--body-fg) 12%, var(--body-bg));
+    }
+}
+
 
 /* Date/datetime input wrapper */
 .crud-date-wrapper {
@@ -1133,8 +1258,11 @@ a.btn-primary:visited {
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 500;
+    line-height: 1.2;
     text-decoration: none;
     display: inline-block;
+    box-sizing: border-box;
+    font-family: inherit;
     transition: background 0.15s;
 }
 
@@ -1177,8 +1305,11 @@ a.btn-danger:visited {
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 500;
+    line-height: 1.2;
     text-decoration: none;
     display: inline-block;
+    box-sizing: border-box;
+    font-family: inherit;
 }
 
 .btn-danger:hover {
@@ -1349,6 +1480,7 @@ a.btn-secondary:visited {
 
 .list-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 0 0 12px 0;
@@ -1379,7 +1511,7 @@ a.btn-secondary:visited {
     height: var(--control-height, 36px);
     min-height: var(--control-height, 36px);
     padding: 0 10px 0 32px !important;
-    border: 1px solid var(--border-color) !important;
+    border: 1px solid var(--input-border) !important;
     border-radius: var(--radius-sm, 4px) !important;
     background: var(--body-bg) !important;
     color: var(--body-fg) !important;
@@ -1406,7 +1538,7 @@ a.btn-secondary:visited {
     height: var(--control-height, 36px);
     min-height: var(--control-height, 36px);
     padding: 4px 8px !important;
-    border: 1px solid var(--border-color) !important;
+    border: 1px solid var(--input-border) !important;
     border-radius: var(--radius-sm, 4px) !important;
     background: var(--body-bg) !important;
     color: var(--body-fg) !important;
@@ -1425,6 +1557,57 @@ a.btn-secondary:visited {
 .list-toolbar-filter-select:focus,
 .list-toolbar-filter-text:focus {
     border-color: var(--primary) !important;
+}
+
+/* Active filter indicator */
+.list-toolbar-filter-select.is-filtered,
+.list-toolbar-filter-text.is-filtered {
+    border-left: 3px solid var(--primary) !important;
+    background: color-mix(in srgb, var(--primary) 6%, var(--body-bg)) !important;
+}
+
+/* Overflow toggle button (4+ filters) */
+.list-toolbar-overflow-toggle {
+    height: var(--control-height, 36px);
+    padding: 4px 10px;
+    border: 1px dashed var(--input-border);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--body-bg);
+    color: var(--body-quiet-color);
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.list-toolbar-overflow-toggle:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.list-toolbar.show-overflow .list-toolbar-overflow-toggle {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+/* Overflow panel — hidden by default, 2-col grid */
+.list-toolbar-overflow-panel {
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+    padding-top: 10px;
+    margin-top: 4px;
+    border-top: 1px solid var(--hairline-color);
+    width: 100%;
+}
+
+.list-toolbar.show-overflow .list-toolbar-overflow-panel {
+    display: grid;
+}
+
+.list-toolbar-overflow-panel .list-toolbar-filter-select,
+.list-toolbar-overflow-panel .list-toolbar-filter-text {
+    width: 100%;
 }
 
 /* Spacer pushes right-side content */
@@ -1458,15 +1641,16 @@ a.btn-secondary:visited {
     background: color-mix(in srgb, var(--primary) 10%, var(--body-bg));
 }
 
-/* Display palette (used in toolbar and standalone) */
+/* Display palette (in card-header / page-header-actions) */
 .display-palette {
     display: inline-flex;
     gap: 0.25rem;
+    margin-right: 0.75rem;
 }
 
 .display-palette-btn {
     padding: 0.5rem 0.6rem;
-    border: 1px solid var(--border-color) !important;
+    border: 1px solid var(--input-border) !important;
     border-radius: var(--radius-sm, 4px);
     cursor: pointer;
     display: inline-flex;
@@ -1496,4 +1680,165 @@ a.btn-secondary:visited {
     .list-toolbar-filters {
         flex-wrap: wrap;
     }
+}
+
+
+/* --------------------------------------------------------------------------
+   CRUD Accessories (stat cards above list)
+   -------------------------------------------------------------------------- */
+
+.crud-accessories {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.crud-stat-card {
+    background: var(--card-bg, var(--body-bg));
+    border: 1px solid var(--hairline-color, rgba(128, 128, 128, 0.2));
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+
+.crud-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--primary);
+}
+
+.crud-stat-label {
+    font-size: 0.75rem;
+    color: var(--body-quiet-color);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+
+/* --------------------------------------------------------------------------
+   Bulk Selection & Actions Bar
+   --------------------------------------------------------------------------
+   Inline bar between toolbar and table (Django admin style). Hidden by
+   default, shown via .visible when rows are selected.
+   -------------------------------------------------------------------------- */
+
+.bulk-select-all,
+.bulk-select-row {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid color-mix(in srgb, var(--body-fg) 35%, transparent);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--body-fg) 10%, var(--body-bg));
+    cursor: pointer;
+    position: relative;
+}
+
+.bulk-select-all:checked,
+.bulk-select-row:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.bulk-select-all:checked::after,
+.bulk-select-row:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid var(--body-bg);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.crud-table tbody tr.bulk-selected {
+    background-color: color-mix(in srgb, var(--primary) 25%, var(--body-bg)) !important;
+}
+
+.card-display-item.bulk-selected {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent) !important;
+}
+
+/* Bar layout — left-aligned single line, smooth reveal */
+.bulk-actions-bar {
+    display: flex;
+    justify-content: flex-start;
+    overflow: hidden;
+    max-height: 0;
+    padding: 0;
+    opacity: 0;
+    transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+}
+
+.bulk-actions-bar.visible {
+    max-height: 3rem;
+    padding: 0.5rem 0;
+    opacity: 1;
+}
+
+/* Nav container — mirrors .paginator-nav */
+.bulk-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--hairline-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+/* Count — mirrors .paginator-current */
+.bulk-nav-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
+    height: 2rem;
+    color: var(--body-fg);
+    font-weight: 600;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.bulk-nav-of {
+    font-weight: 400;
+    color: var(--body-quiet-color);
+}
+
+/* Buttons — mirrors .paginator-btn */
+.bulk-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2rem;
+    padding: 0 0.85rem;
+    background: none;
+    color: var(--body-quiet-color);
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast, 0.15s);
+}
+
+.bulk-nav-btn:hover {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, var(--body-bg));
+}
+
+/* Delete — red text to signal danger */
+.bulk-nav-delete {
+    color: #dc3545 !important;
+    font-weight: 600;
+}
+
+.bulk-nav-delete:hover {
+    background: color-mix(in srgb, #dc3545 12%, var(--body-bg)) !important;
+    color: #c82333 !important;
 }

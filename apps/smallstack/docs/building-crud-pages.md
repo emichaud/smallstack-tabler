@@ -243,6 +243,28 @@ The User edit page shows another variation — tabbed content with Account, Prof
 </div>
 ```
 
+### Related Object Tabs
+
+When a model has reverse FK relationships (other models with ForeignKeys pointing to it), the detail page automatically shows a tabbed section below the detail card. Each tab displays a paginated table of related objects with links to their own detail pages.
+
+Tabs are auto-discovered by default — only relations whose related model has a registered CRUDView (standalone or via Explorer) appear. No configuration needed for the common case.
+
+```python
+class CustomerCRUDView(CRUDView):
+    model = Customer
+    fields = ["name", "email"]
+    url_base = "manage/customers"
+    # Default: related_tabs = None (auto-discover)
+    # Or explicitly control which tabs appear and their order:
+    related_tabs = ["order_set", "invoice_set"]
+    related_tabs_exclude = ["internal_note_set"]  # hide specific tabs
+    related_tabs_paginate_by = 20  # default is 10
+```
+
+Set `related_tabs = False` to disable tabs entirely for a CRUDView.
+
+The tab content loads lazily via HTMX — only the active tab fetches data. Tab counts are the only eager queries. The FK field pointing back to the parent is automatically hidden from table columns.
+
 ## Adding Optional Features
 
 The basic pattern above covers most needs. The following features are optional — add them only when the page benefits from them.
@@ -420,6 +442,9 @@ The User Manager demonstrates this — its edit form has three tabs (Account, Pr
 | `displays` | list | `[]` | Display classes for list view (enables palette) |
 | `detail_displays` | list | `[]` | Display classes for detail view |
 | `bulk_actions` | list | `["delete"]` | Bulk actions on list view. Options: `"delete"`, `"update"`. Set to `[]` to disable. |
+| `related_tabs` | `list\|None\|False` | `None` | Related object tabs on detail page. `None`=auto-discover, list=explicit, `False`=disabled |
+| `related_tabs_exclude` | list | `[]` | Accessor names to exclude from auto-discovery |
+| `related_tabs_paginate_by` | int | `10` | Rows per tab in related object tabs |
 | `enable_api` | bool | `False` | Generate REST API endpoints |
 | `search_fields` | list | `[]` | API search fields (falls back to `admin_class.search_fields`) |
 | `export_formats` | list | `[]` | API export formats: `["csv", "json"]` |
@@ -628,7 +653,9 @@ When using `admin_class`, set `explorer_bulk_actions` on the ModelAdmin instead 
 CRUDView supports the same display palette as Explorer. Configure multiple displays and users can swap between them at runtime:
 
 ```python
-from apps.smallstack.displays import TableDisplay, CardDisplay
+from apps.smallstack.displays import (
+    TableDisplay, CardDisplay, AvatarCardDisplay, CalendarDisplay,
+)
 
 class WidgetCRUDView(CRUDView):
     model = Widget
@@ -636,7 +663,11 @@ class WidgetCRUDView(CRUDView):
     url_base = "manage/widgets"
     displays = [
         TableDisplay,
-        CardDisplay(title_field="name", subtitle_field="category"),
+        CardDisplay,  # zero-config key-value card grid using list_fields
+        # Or, for records with a hero field + image:
+        # AvatarCardDisplay(title_field="name", subtitle_field="category"),
+        # Or, for models with a date/datetime field:
+        # CalendarDisplay(date_field="scheduled_for", title_field="name"),
     ]
 ```
 

@@ -56,6 +56,9 @@ Set these on the `ModelAdmin` subclass passed to `explorer.register()`:
 | `explorer_paginate_by` | `int` | `10` | Items per page in list view. |
 | `explorer_enable_api` | `bool` | `False` | Generate REST API endpoints for this model. |
 | `explorer_export_formats` | `list` | `[]` | Enabled export formats, e.g. `["csv", "json"]`. |
+| `explorer_related_tabs` | `list\|None\|False` | `None` | Related object tabs on detail page. `None`=auto-discover, list=explicit, `False`=disabled. |
+| `explorer_related_tabs_exclude` | `list` | `[]` | Accessor names to exclude from auto-discovery. |
+| `explorer_related_tabs_paginate_by` | `int` | `10` | Rows per tab in related object tabs. |
 
 ## Standard ModelAdmin Attributes
 
@@ -82,7 +85,9 @@ Display classes control how data renders in the list and detail views. Explorer 
 |-------|------|-------------|-------------|
 | `Table2Display` | `table2` | `Table2Display` | django-tables2 sortable table. Default. |
 | `TableDisplay` | `table` | `TableDisplay` | Basic HTML table. Supports field transforms. |
-| `CardDisplay` | `cards` | `CardDisplay(title_field=None, subtitle_field=None)` | 3-column card grid linking to detail. |
+| `CardDisplay` | `cards` | `CardDisplay` | Zero-config card grid — label:value rows using the model's `list_fields`. |
+| `AvatarCardDisplay` | `cards` | `AvatarCardDisplay(title_field=None, subtitle_field=None, image_field=None, pill_field=None, pill_label=None, show_avatar=None)` | Card grid with avatar + title + subtitle + optional pill. |
+| `CalendarDisplay` | `calendar` | `CalendarDisplay(date_field, end_field=None, title_field=None, status_field=None, variant="chip", month_param="month")` | Month-grid calendar. Events render on their date cell; `end_field` stretches ranged events across days; `status_field` tints chips green/yellow/red for `"success"`/`"warning"`/`"danger"`; `variant="block"` swaps small chips for one large colored block per day (for daily stats). |
 
 ### Detail Displays
 

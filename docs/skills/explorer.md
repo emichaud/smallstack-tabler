@@ -63,13 +63,17 @@ Explorer reads `list_display` for columns (real model fields only — callables 
 | `explorer_paginate_by` | `int` | `10` | Rows per page in the Explorer list view. |
 | `explorer_preview_fields` | `list[str]` | `[]` | Fields that get truncated with click-to-preview. Merged into `field_transforms`. |
 | `explorer_field_transforms` | `dict` | `{}` | Custom field rendering: `{field: "transform_name"}`. Overrides preview mappings. |
-| `explorer_displays` | `list` | `[Table2Display]` | Display protocol classes for list view. |
+| `explorer_displays` | `list` | `[Table2Display]` | Display protocol classes for list view. Add `CardDisplay`, `AvatarCardDisplay`, or `CalendarDisplay` for alternate views. See `card-displays.md` and `calendar-displays.md`. |
 | `explorer_detail_displays` | `list` | `[]` | Display protocol classes for detail view. |
 | `explorer_export_formats` | `list` | `[]` | Export formats, e.g. `["csv", "json"]`. |
 | `explorer_api_extra_fields` | `list[str]` | `[]` | Read-only fields appended to API responses |
 | `explorer_api_expand_fields` | `list[str]` | `[]` | FK fields always expanded in API responses |
 | `explorer_api_aggregate_fields` | `list[str]` | `[]` | Fields supporting `?sum=`, `?avg=`, `?min=`, `?max=` |
 | `explorer_enable_api` | `bool` | `False` | Enable REST API endpoints for this model. |
+| `explorer_related_tabs` | `list\|None\|False` | `None` | Related object tabs on detail page. `None`=auto-discover, list=explicit accessor names, `False`=disabled |
+| `explorer_related_tabs_exclude` | `list` | `[]` | Accessor names to exclude from auto-discovery |
+| `explorer_related_tabs_paginate_by` | `int` | `10` | Rows per tab in related object tabs |
+| `explorer_dashboard_widgets` | `list` | `[]` | Dashboard widgets published by this model. See `dashboard-widgets.md`. |
 
 ## Supported Django ModelAdmin Attributes
 
@@ -168,6 +172,18 @@ class HeartbeatView(ExplorerModelMixin, TemplateView):
 | **Source** | `explorer_group` attribute on ModelAdmin | Django's `app_label` |
 | **Flexibility** | Custom labels — group however you want | Fixed to Django's app structure |
 | **Mixin** | `ExplorerGroupMixin` | `ExplorerAppMixin` |
+
+## Dashboard Widgets
+
+Admin classes can publish cards to the main dashboard (`/smallstack/`) and to per-group/per-app Explorer index pages by setting `explorer_dashboard_widgets`:
+
+```python
+class OrderAdmin(admin.ModelAdmin):
+    explorer_enabled = True
+    explorer_dashboard_widgets = [OrdersWidget()]
+```
+
+The widget inherits its group from the Explorer registration. The Explorer group/app index pages show a **Models | Widgets** toggle when scoped widgets exist. See `dashboard-widgets.md` for the full widget protocol, `DashboardWidget` class reference, and REST API (`/api/dashboard/widgets/`).
 
 ## Access Control
 

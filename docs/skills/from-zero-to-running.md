@@ -121,7 +121,7 @@ Log in with `admin` / `admin` (or whatever you set in `.env`). Visit:
 
 ### 2.1 Update Branding Settings
 
-Edit `config/settings/base.py`:
+Edit `config/settings/smallstack.py`:
 
 ```python
 # Branding — update all of these
@@ -161,7 +161,7 @@ static/brand/
 
 ### 2.3 Choose Default Color Palette
 
-In `config/settings/base.py`:
+In `config/settings/smallstack.py`:
 
 ```python
 SMALLSTACK_COLOR_PALETTE = "django"  # Options: django, high-contrast, dark-blue, orange, purple
@@ -405,12 +405,12 @@ Register any model in Explorer for instant staff-facing CRUD at `/smallstack/exp
 # apps/inventory/explorer.py
 from django.contrib import admin
 from apps.explorer.registry import explorer
-from apps.smallstack.displays import Table2Display, TableDisplay, CardDisplay
+from apps.smallstack.displays import Table2Display, TableDisplay, CardDisplay, AvatarCardDisplay
 from .models import Product
 
 class ProductExplorerAdmin(admin.ModelAdmin):
     list_display = ("name", "sku", "price", "in_stock", "created_at")
-    explorer_displays = [Table2Display, TableDisplay, CardDisplay(title_field="name", subtitle_field="sku")]
+    explorer_displays = [Table2Display, TableDisplay, CardDisplay, AvatarCardDisplay(title_field="name", subtitle_field="sku")]
     explorer_paginate_by = 25
     explorer_enable_api = True                  # Adds REST API at /api/...
     explorer_export_formats = ["csv", "json"]   # Enable export
@@ -491,7 +491,7 @@ path("", include("apps.inventory.urls")),
 
 | Option | Purpose |
 |--------|---------|
-| `displays` | List view displays (TableDisplay, CardDisplay, Table2Display, or custom) |
+| `displays` | List view displays (TableDisplay, CardDisplay, AvatarCardDisplay, Table2Display, or custom) |
 | `detail_displays` | Detail view displays (DetailTableDisplay, DetailCardDisplay, or custom) |
 | `form_class` | Custom ModelForm (auto-generated from `fields` if not set) |
 | `table_class` | django-tables2 Table for sortable columns |
@@ -765,7 +765,7 @@ docker compose logs worker -f
 │  web container                      │
 │  ├── gunicorn (2 workers, 4 threads)│
 │  ├── supercronic (cron daemon)      │
-│  │   ├── heartbeat (every 1m)       │
+│  │   ├── heartbeat via curl (every 1m)│
 │  │   ├── prune activity (every 15m) │
 │  │   └── backup db (daily 2 AM)     │
 │  └── port 8000                      │

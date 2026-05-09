@@ -69,10 +69,10 @@ When the user says "update docs and skills" (or similar), this skill defines whi
 
 | Type | File | What it covers |
 |------|------|----------------|
-| Skill | `docs/skills/crud-views.md` | CRUDView class, actions, config |
+| Skill | `docs/skills/crud-views.md` | CRUDView class, actions, config, related tabs |
 | Skill | `docs/skills/django-apps.md` | Creating apps with CRUDView |
 | Skill | `docs/skills/api.md` | API integration via enable_api |
-| Help | `apps/smallstack/docs/building-crud-pages.md` | User-facing CRUD guide |
+| Help | `apps/smallstack/docs/building-crud-pages.md` | User-facing CRUD guide, related object tabs |
 
 ### Explorer (`apps/smallstack/explorer.py`)
 
@@ -83,6 +83,40 @@ When the user says "update docs and skills" (or similar), this skill defines whi
 | Help | `apps/smallstack/docs/explorer-admin-api.md` | ModelAdmin attribute reference |
 | Help | `apps/smallstack/docs/explorer-rest-api.md` | Explorer REST API |
 | Help | `apps/smallstack/docs/explorer-composability.md` | Embedding explorer |
+
+### Card Displays (`apps/smallstack/displays.py` CardDisplay/AvatarCardDisplay, `templates/smallstack/crud/displays/cards*`)
+
+| Type | File | What it covers |
+|------|------|----------------|
+| Skill | `docs/skills/card-displays.md` | Card display protocol, variants, authoring new variants |
+| Skill | `docs/skills/crud-views.md` | Display protocol, references CardDisplay variants |
+| Skill | `docs/skills/explorer.md` | `explorer_displays` attribute and card examples |
+| Help | `apps/smallstack/docs/building-crud-pages.md` | User-facing CRUD guide with card examples |
+| Help | `apps/smallstack/docs/explorer-admin-api.md` | Admin attribute reference |
+| Help | `apps/smallstack/docs/explorer.md` | User-facing explorer guide with card examples |
+
+### Calendar Displays (`apps/smallstack/displays.py` CalendarDisplay, `templates/smallstack/crud/displays/calendar.html`)
+
+| Type | File | What it covers |
+|------|------|----------------|
+| Skill | `docs/skills/calendar-displays.md` | CalendarDisplay config, ranged events, month navigation, authoring date-based displays |
+| Skill | `docs/skills/card-displays.md` | Cross-references CalendarDisplay as a sibling list-display family |
+| Skill | `docs/skills/crud-views.md` | Display protocol, references CalendarDisplay |
+| Skill | `docs/skills/explorer.md` | `explorer_displays` attribute and calendar example |
+| Help | `apps/smallstack/docs/explorer.md` | User-facing explorer guide with calendar example |
+| Help | `apps/smallstack/docs/explorer-admin-api.md` | Admin attribute reference |
+| Help | `apps/explorer/content/index.md` | Bundled explorer overview |
+| Help | `apps/explorer/content/admin-api.md` | Bundled admin API reference |
+
+### Dashboard Widgets (`apps/smallstack/dashboard.py`, `apps/smallstack/displays.py` DashboardWidget, `apps/smallstack/dashboard_widgets.py`)
+
+| Type | File | What it covers |
+|------|------|----------------|
+| Skill | `docs/skills/dashboard-widgets.md` | DashboardWidget class, Explorer vs standalone registration, data layer, mixin, API |
+| Skill | `docs/skills/explorer.md` | `explorer_dashboard_widgets` attribute + Explorer widget toggle |
+| Skill | `docs/skills/api.md` | `/api/dashboard/widgets/` endpoint |
+| Help | `apps/smallstack/docs/dashboard-widgets.md` | User-facing guide |
+| Config | `apps/smallstack/docs/_config.yaml` | Registers the help page |
 
 ### Settings & Configuration (`config/settings/`)
 

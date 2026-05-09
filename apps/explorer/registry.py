@@ -392,6 +392,12 @@ class ExplorerSite:
         else:
             resolved_fields = _resolve_fields_from_admin(model, admin_instance)
 
+        # explorer_list_fields: list-only override (doesn't touch form fields).
+        # Use this to trim columns from the list view while keeping all fields
+        # editable on create/edit forms.
+        explorer_list_fields = getattr(admin_instance, "explorer_list_fields", None)
+        list_fields_override = list(explorer_list_fields) if explorer_list_fields else resolved_fields
+
         # Readonly detection
         readonly = getattr(
             admin_instance,
@@ -456,6 +462,7 @@ class ExplorerSite:
                 "admin_class": admin_class,
                 "fields": form_fields or resolved_fields,
                 "list_fields": resolved_fields,
+                "list_columns": list_fields_override if explorer_list_fields else None,
                 "url_base": url_base,
                 "namespace": namespace,
                 "paginate_by": paginate_by,
@@ -478,6 +485,9 @@ class ExplorerSite:
                 "api_aggregate_fields": list(getattr(admin_class, "explorer_api_aggregate_fields", [])),
                 "list_accessories": list(getattr(admin_class, "explorer_list_accessories", [])),
                 "bulk_actions": _resolve_bulk_actions(admin_class),
+                "related_tabs": getattr(admin_class, "explorer_related_tabs", None),
+                "related_tabs_exclude": list(getattr(admin_class, "explorer_related_tabs_exclude", [])),
+                "related_tabs_paginate_by": getattr(admin_class, "explorer_related_tabs_paginate_by", 10),
             },
         )
 
@@ -519,6 +529,29 @@ class ExplorerSite:
 
     def get_models(self) -> list[ModelInfo]:
         return self._model_info
+
+    def get_dashboard_widgets(self) -> list[tuple]:
+        """Return [(widget, model_info), ...] for every registered widget.
+
+        Reads explorer_dashboard_widgets from each admin class, same pattern
+        as explorer_displays, explorer_list_accessories, etc.
+        """
+        results = []
+        for (model, group_key), admin_class in self._registry.items():
+            widgets = getattr(admin_class, "explorer_dashboard_widgets", None)
+            if not widgets:
+                continue
+            # Find matching ModelInfo
+            info = None
+            for m in self._model_info:
+                if m.model_class is model and m.group == group_key:
+                    info = m
+                    break
+            if info is None:
+                continue
+            for widget in widgets:
+                results.append((widget, info))
+        return results
 
     def get_grouped_models(self) -> dict[str, list[ModelInfo]]:
         """Return models organized by group, preserving discovery order."""

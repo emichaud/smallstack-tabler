@@ -8,7 +8,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from apps.heartbeat.views import StatusPageView, status_json
+from apps.heartbeat.views import StatusPageView, heartbeat_ping, status_json
 from apps.smallstack.api import (
     api_auth_logout,
     api_auth_me,
@@ -26,6 +26,7 @@ from apps.smallstack.api import (
     api_openapi_schema,
     api_schema,
 )
+from apps.smallstack.dashboard import api_widgets as api_dashboard_widgets
 
 from .views import health_check, legal_page_view
 
@@ -61,6 +62,8 @@ urlpatterns = [
     path("api/auth/users/", api_auth_users, name="api-auth-users"),
     path("api/auth/users/<int:user_id>/", api_auth_user_detail, name="api-auth-user-detail"),
     path("api/auth/logout/", api_auth_logout, name="api-auth-logout"),
+    # API dashboard
+    path("api/dashboard/widgets/", api_dashboard_widgets, name="api-dashboard-widgets"),
     # Admin
     path("admin/", admin.site.urls),
     # Tabler preview pages (design reference)
@@ -68,6 +71,8 @@ urlpatterns = [
     # Legal pages (public)
     path("privacy/", legal_page_view, {"page": "privacy-policy"}, name="privacy_policy"),
     path("terms/", legal_page_view, {"page": "terms-of-service"}, name="terms_of_service"),
+    # Heartbeat ping (localhost-only, used by cron instead of manage.py heartbeat)
+    path("heartbeat/ping/", heartbeat_ping, name="heartbeat_ping"),
     # Utility routes
     path("health/", health_check, name="health_check"),
     path(

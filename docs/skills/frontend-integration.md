@@ -107,9 +107,14 @@ Browser → POST /api/auth/token/
           {"username": "alice", "password": "secret123"}
 
       ← 200 {"token": "user-login-token...", "user": {...}, "expires_at": "..."}
+      ← 401 {"errors": {"__all__": ["Invalid credentials"]}}
+      ← 403 {"errors": {"__all__": ["Too many failed login attempts. Please try again later."]},
+              "retry_after_seconds": 900}
 ```
 
 This is an upsert — if the user already has a login token, the key is regenerated and the old one stops working. No system token needed.
+
+**Rate limiting:** After too many failed attempts (default: 5), the endpoint returns 403 with `retry_after_seconds` and a `Retry-After` HTTP header. During lockout, even correct credentials are rejected. Your frontend should distinguish 401 (wrong credentials — let them retry) from 403 (locked out — show a cooldown message using `retry_after_seconds`).
 
 ### Authenticated Requests
 
@@ -171,7 +176,136 @@ regenerated and the old one immediately stops working.
 
 If the token has already expired (401), redirect to your login page for re-authentication.
 
-## React Example
+## Using the SDK (Recommended)
+
+The `smallstack-sdk-js` package handles token management, persistence, and the system token proxy for registration. Install it in your frontend project:
+
+```bash
+npm install smallstack-sdk-js
+```
+
+### Client Setup
+
+```typescript
+// lib/client.ts
+import { SmallStackClient } from "smallstack-sdk-js";
+
+export const client = new SmallStackClient({
+  baseUrl: import.meta.env.VITE_API_URL || "http://localhost:8005",
+  persist: true,  // auto-sync token to localStorage
+});
+```
+
+> **Do not pass `systemToken` in client-side code.** `VITE_` and `NEXT_PUBLIC_` environment variables are bundled into JavaScript that anyone can view in their browser. The system token can register users, reset passwords, and deactivate accounts — it must stay server-side. Using `VITE_SYSTEM_TOKEN` during local development is acceptable.
+
+#### Production Registration Proxy
+
+For SPAs that need registration, proxy through a server-side endpoint that holds the system token:
+
+**Next.js API Route** (`app/api/register/route.ts`):
+```typescript
+import { SmallStackClient } from "smallstack-sdk-js";
+
+const server = new SmallStackClient({
+  baseUrl: process.env.SMALLSTACK_API_URL!,
+  systemToken: process.env.SMALLSTACK_SYSTEM_TOKEN!,
+});
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const res = await server.auth.register(body);
+  return Response.json(res.data, { status: res.status });
+}
+```
+
+**Express** (`routes/register.js`):
+```javascript
+import { SmallStackClient } from "smallstack-sdk-js";
+
+const server = new SmallStackClient({
+  baseUrl: process.env.SMALLSTACK_API_URL,
+  systemToken: process.env.SMALLSTACK_SYSTEM_TOKEN,
+});
+
+app.post("/api/register", async (req, res) => {
+  const result = await server.auth.register(req.body);
+  res.status(result.status).json(result.data);
+});
+```
+
+The browser calls your server, your server calls SmallStack with the system token, and the user's login token is returned to the browser.
+
+### Auth Context (React)
+
+```tsx
+// context/AuthContext.tsx
+import { createContext, useContext, useState, useEffect } from "react";
+import { client } from "../lib/client";
+import type { User } from "smallstack-sdk-js";
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // On mount, check if persisted token is still valid
+    client.auth.me().then(res => {
+      if (res.ok) setUser(res.data);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const login = async (username: string, password: string) => {
+    const res = await client.auth.login(username, password);
+    if (res.ok) setUser(res.data.user);
+    return res;
+  };
+
+  const register = async (data) => {
+    const res = await client.auth.register(data);
+    if (res.ok) setUser(res.data.user);
+    return res;
+  };
+
+  const logout = async () => {
+    await client.auth.logout();
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export const useAuth = () => useContext(AuthContext);
+```
+
+### Fetching Data
+
+```typescript
+// Use client.api() for any endpoint — token is sent automatically
+const { data } = await client.api<PaginatedResponse<Widget>>("/api/manage/widgets/");
+console.log(data.results);
+```
+
+The SDK handles: token storage/restoration on page refresh, system token swap for `register()`, and token cleanup on `logout()`. No manual `localStorage` or `Authorization` header management needed.
+
+### SDK Constructor Options
+
+| Option        | Type      | Default              | Description                                      |
+|---------------|-----------|----------------------|--------------------------------------------------|
+| `baseUrl`     | `string`  | —                    | Base URL of your SmallStack instance             |
+| `token`       | `string`  | —                    | Pre-existing Bearer token                        |
+| `systemToken` | `string`  | —                    | Auth-level token for `register()` (auto-proxied) |
+| `persist`     | `boolean` | `false`              | Auto-sync token to localStorage                  |
+| `storageKey`  | `string`  | `"smallstack_token"` | localStorage key for persisted token             |
+
+## React Example (Without SDK)
+
+If you prefer not to use the SDK, here's the equivalent manual approach:
 
 ```jsx
 // lib/api.js
@@ -208,6 +342,11 @@ async function login(username, password) {
   if (res.ok) {
     localStorage.setItem("token", data.token);
     return data.user;
+  }
+  // 403 = rate limited (locked out by axes)
+  if (res.status === 403 && data.retry_after_seconds) {
+    const minutes = Math.ceil(data.retry_after_seconds / 60);
+    throw new Error(`Too many attempts. Try again in ${minutes} minutes.`);
   }
   throw new Error(Object.values(data.errors).flat().join(", "));
 }
@@ -326,11 +465,12 @@ This produces typed functions for every endpoint, including auth responses, filt
 
 ## Security Notes
 
-- **System token is a backend secret** — store it in server-side environment variables, never expose it to the browser. If your frontend is a pure SPA with no server component, you cannot safely use register/deactivate/system-password-change endpoints from the client.
+- **System token is a backend secret** — store it in server-side environment variables, never expose it to the browser. `VITE_`, `NEXT_PUBLIC_`, and `REACT_APP_` prefixed variables are bundled into client-side JavaScript and visible to anyone. For SPAs that need registration, proxy through a server-side endpoint (Next.js API route, Express, etc.) that holds the system token. If your frontend has no server component, you cannot safely use register/deactivate/system-password-change endpoints from the client.
 - **Login tokens expire** — default 24 hours, configurable via `SMALLSTACK_LOGIN_TOKEN_EXPIRY_HOURS`. Handle 401 gracefully (redirect to login).
 - **Registration creates non-staff users only** — the register endpoint always sets `is_staff=False`, `is_superuser=False`.
 - **CORS restricts origins** — only origins listed in `CORS_ALLOWED_ORIGINS` can make cross-origin requests.
 - **One login token per user** — calling `/api/auth/token/` replaces the previous login token. A user can only be "logged in" from one token at a time.
+- **Rate limiting on login** — after 5 failed attempts (configurable via `AXES_FAILURE_LIMIT`), the token endpoint returns 403 with `retry_after_seconds`. Handle this in your UI by showing a cooldown message. The lockout is per username+IP combination.
 
 ## What's Not Included (Yet)
 

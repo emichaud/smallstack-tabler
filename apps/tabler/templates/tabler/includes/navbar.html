@@ -1,5 +1,5 @@
 {% load static theme_tags %}
-<header class="navbar navbar-expand-md d-print-none">
+<header class="navbar navbar-expand-md d-print-none topbar-nav">
     <div class="container-xl">
         <!-- Logo -->
         <h1 class="navbar-brand navbar-brand-autodark d-none-navbar-horizontal pe-0 pe-md-3">
@@ -141,6 +141,10 @@
                         {% csrf_token %}
                         <button type="submit" class="dropdown-item">Logout</button>
                     </form>
+                    {% if smallstack_version %}
+                    <div class="dropdown-divider"></div>
+                    <span class="dropdown-item text-secondary" style="font-size: 0.75rem; cursor: default;">SmallStack v{{ smallstack_version }}</span>
+                    {% endif %}
                 </div>
             </div>
             {% else %}

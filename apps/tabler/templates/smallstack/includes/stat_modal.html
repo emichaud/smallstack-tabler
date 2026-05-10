@@ -1,0 +1,83 @@
+{% comment %}
+Tabler-themed stat card drill-down modal.
+Uses Bootstrap modal classes for consistent Tabler styling.
+Include once at the bottom of any page that uses clickable stat cards.
+{% endcomment %}
+<div class="modal modal-blur fade" id="stat-modal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="stat-modal-title">Details</h5>
+                <button type="button" class="btn-close" onclick="closeStatModal()" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0" id="stat-modal-body">
+                <div class="p-4 text-center text-secondary">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+var _statModal;
+document.addEventListener('DOMContentLoaded', function() {
+    _statModal = new bootstrap.Modal(document.getElementById('stat-modal'));
+});
+function openStatModal(title) {
+    document.getElementById('stat-modal-title').textContent = title;
+    if (_statModal) _statModal.show();
+}
+function closeStatModal() {
+    if (_statModal) _statModal.hide();
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeStatModal();
+});
+</script>
+<style>
+    /* Ensure table content inside the modal uses Tabler table styles */
+    #stat-modal-body table {
+        width: 100%;
+        margin: 0;
+    }
+    #stat-modal-body .table {
+        margin-bottom: 0;
+    }
+    #stat-modal-body .table th {
+        background: var(--tblr-bg-surface-secondary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--tblr-secondary);
+        padding: 0.5rem 1rem;
+    }
+    #stat-modal-body .table td {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        border-bottom: 1px solid var(--tblr-border-color);
+    }
+    #stat-modal-body .table tr:last-child td {
+        border-bottom: none;
+    }
+    /* Style raw tables injected via htmx (no .table class) */
+    #stat-modal-body table:not(.table) {
+        border-collapse: collapse;
+    }
+    #stat-modal-body table:not(.table) th {
+        background: var(--tblr-bg-surface-secondary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--tblr-secondary);
+        padding: 0.5rem 1rem;
+        text-align: left;
+    }
+    #stat-modal-body table:not(.table) td {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        border-bottom: 1px solid var(--tblr-border-color);
+    }
+    #stat-modal-body table:not(.table) tr:last-child td {
+        border-bottom: none;
+    }
+</style>

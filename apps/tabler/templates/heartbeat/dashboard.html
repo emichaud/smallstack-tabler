@@ -73,7 +73,8 @@
 
 {% block breadcrumbs %}
 {% breadcrumb "Home" "website:home" %}
-{% breadcrumb "Heartbeat" %}
+{% breadcrumb "Heartbeat" "heartbeat:dashboard" %}
+{% breadcrumb "Dashboard" %}
 {% render_tabler_breadcrumbs %}
 {% endblock %}
 
@@ -82,9 +83,8 @@
     <div class="container-xl">
         <div class="row g-2 align-items-center">
             <div class="col">
-                <div class="page-pretitle">Monitoring</div>
-                <h2 class="page-title">Heartbeat Dashboard</h2>
-                <div class="text-secondary mt-1">{{ total_heartbeats|stringformat:"," }} total records &middot; {{ retention_days }}-day retention &middot; {{ expected_interval }}s interval</div>
+                <h2 class="page-title">Dashboard</h2>
+                <div class="text-secondary mt-1">{{ total_heartbeats|stringformat:"," }} records &middot; {{ retention_days }}-day retention &middot; {{ expected_interval }}s interval</div>
             </div>
             <div class="col-auto d-flex gap-2">
                 <a href="{% url 'heartbeat:status' %}" class="btn">

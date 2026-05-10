@@ -1,0 +1,87 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags crud_tags %}
+
+{% block title %}{{ object }}{% endblock %}
+
+{% block extra_css %}
+{% include "smallstack/crud/_table_styles.html" %}
+{% endblock %}
+
+{% block breadcrumbs %}
+{% if not breadcrumb_parent_label %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb object_verbose_name_plural list_view_url_name %}
+{% breadcrumb object %}
+{% render_tabler_breadcrumbs %}
+{% endif %}
+{% endblock %}
+
+{% block page_header %}
+{% if breadcrumb_parent_label %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <nav aria-label="breadcrumb" class="mb-1">
+                    <ol class="breadcrumb breadcrumb-arrows" style="font-size: 0.8rem;">
+                        <li class="breadcrumb-item"><a href="{% url 'website:home' %}">Home</a></li>
+                        <li class="breadcrumb-item"><a href="{% url breadcrumb_parent_url_name %}">{{ breadcrumb_parent_label }}</a></li>
+                        <li class="breadcrumb-item"><a href="{% url list_view_url_name %}">{{ object_verbose_name_plural }}</a></li>
+                        <li class="breadcrumb-item active" aria-current="page">{{ object }}</li>
+                    </ol>
+                </nav>
+                <h2 class="page-title">{{ object }}</h2>
+                <div class="text-secondary mt-1">{{ object_verbose_name }} detail</div>
+            </div>
+            {% if crud_actions %}
+            <div class="col-auto ms-auto d-print-none">
+                <div class="btn-list">
+                    {% for action in crud_actions %}
+                    {% if action.value == "update" %}
+                    <a href="edit/" class="btn btn-primary">Edit</a>
+                    {% endif %}
+                    {% if action.value == "delete" %}
+                    <a href="delete/" class="btn btn-danger">Delete</a>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    {% if not breadcrumb_parent_label %}
+    <div class="card-header">
+        <h3 class="card-title">{{ object }}</h3>
+        {% if crud_actions %}
+        <div class="card-actions">
+            {% for action in crud_actions %}
+            {% if action.value == "update" %}
+            <a href="edit/" class="btn btn-primary btn-sm">Edit</a>
+            {% endif %}
+            {% if action.value == "delete" %}
+            <a href="delete/" class="btn btn-danger btn-sm">Delete</a>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    <div class="card-body">
+        {% if display_template %}
+            {% include "smallstack/crud/includes/display_palette.html" %}
+            <div id="crud-display-area">
+                {% include display_template %}
+            </div>
+        {% else %}
+            {% crud_detail %}
+        {% endif %}
+    </div>
+</div>
+{% include "smallstack/crud/includes/field_preview_modal.html" %}
+{% endblock %}

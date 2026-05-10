@@ -35,6 +35,16 @@
         <div class="invalid-feedback d-block">{{ form.password2.errors.0 }}</div>
         {% endif %}
     </div>
+    {% if brand.signup_terms_notice %}
+    <div class="mb-3">
+        <small class="form-hint text-secondary">
+            By signing up, you agree to our
+            <a href="{{ brand.terms_url|default:'/terms/' }}">Terms of Service</a>
+            and
+            <a href="{{ brand.privacy_url|default:'/privacy/' }}">Privacy Policy</a>.
+        </small>
+    </div>
+    {% endif %}
     <div class="form-footer">
         <button type="submit" class="btn btn-primary w-100">Sign Up</button>
     </div>

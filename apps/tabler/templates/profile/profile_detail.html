@@ -9,73 +9,118 @@
 {% render_tabler_breadcrumbs %}
 {% endblock %}
 
-{% block page_header %}
-<div class="page-header d-print-none">
-    <div class="container-xl">
-        <div class="row g-2 align-items-center">
-            <div class="col">
-                <h2 class="page-title">{{ profile.get_display_name }}</h2>
-            </div>
-            {% if user == profile.user %}
-            <div class="col-auto ms-auto">
-                <a href="{% url 'profile_edit' %}" class="btn btn-primary">Edit Profile</a>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endblock %}
+{% block page_header %}{% endblock %}
 
 {% block content %}
-<div class="row row-cards">
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body text-center">
-                <div class="mb-3">
+<!-- Profile Header Card with Cover -->
+<div class="card mb-3">
+    <div class="card-img-top profile-cover" {% if profile.background_photo %}style="background-image: url('{{ profile.background_photo.url }}');"{% endif %}></div>
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-auto">
+                <div class="profile-avatar-wrapper">
                     {% if profile.profile_photo %}
-                    <span class="avatar avatar-xl" style="background-image: url('{{ profile.profile_photo.url }}');"></span>
+                    <span class="avatar avatar-xl avatar-rounded" style="background-image: url('{{ profile.profile_photo.url }}');"></span>
                     {% else %}
-                    <span class="avatar avatar-xl" style="background-color: #f59f00; color: #1a1c23; font-size: 2rem;">
+                    <span class="avatar avatar-xl avatar-rounded bg-primary-lt text-primary" style="font-size: 1.5rem;">
                         {{ profile.user.username|slice:":1"|upper }}
                     </span>
                     {% endif %}
                 </div>
-                <h3 class="card-title mb-1">{{ profile.get_display_name }}</h3>
-                <p class="text-secondary">@{{ profile.user.username }}</p>
             </div>
-            {% if profile.bio %}
-            <div class="card-body border-top">
-                <p class="mb-0">{{ profile.bio }}</p>
+            <div class="col">
+                <h2 class="mb-0">{{ profile.get_display_name }}</h2>
+                <div class="text-secondary">@{{ profile.user.username }}</div>
+            </div>
+            {% if user == profile.user %}
+            <div class="col-auto">
+                <a href="{% url 'profile_edit' %}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-edit" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" /><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z" /></svg>
+                    Edit Profile
+                </a>
             </div>
             {% endif %}
         </div>
     </div>
-    <div class="col-md-8">
-        <div class="card">
+</div>
+
+<div class="row row-cards">
+    <div class="col-md-4">
+        {% if profile.bio %}
+        <div class="card mb-3">
             <div class="card-header">
-                <h3 class="card-title">Details</h3>
+                <h3 class="card-title">About</h3>
             </div>
             <div class="card-body">
-                <div class="datagrid">
-                    {% if profile.location %}
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Location</div>
-                        <div class="datagrid-content">{{ profile.location }}</div>
+                <p class="mb-0">{{ profile.bio }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Info</h3>
+            </div>
+            <div class="list-group list-group-flush">
+                {% if profile.location %}
+                <div class="list-group-item">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon text-secondary" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>
+                        </div>
+                        <div class="col">
+                            <div class="text-secondary small">Location</div>
+                            <div>{{ profile.location }}</div>
+                        </div>
                     </div>
-                    {% endif %}
-                    {% if profile.website %}
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Website</div>
-                        <div class="datagrid-content"><a href="{{ profile.website }}" target="_blank" rel="noopener">{{ profile.website }}</a></div>
+                </div>
+                {% endif %}
+                {% if profile.website %}
+                <div class="list-group-item">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon text-secondary" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
+                        </div>
+                        <div class="col">
+                            <div class="text-secondary small">Website</div>
+                            <div><a href="{{ profile.website }}" target="_blank" rel="noopener">{{ profile.website }}</a></div>
+                        </div>
                     </div>
-                    {% endif %}
-                    <div class="datagrid-item">
-                        <div class="datagrid-title">Joined</div>
-                        <div class="datagrid-content">{{ profile.user.date_joined|date:"F Y" }}</div>
+                </div>
+                {% endif %}
+                <div class="list-group-item">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon text-secondary" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 5m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M16 3l0 4" /><path d="M8 3l0 4" /><path d="M4 11l16 0" /><path d="M11 15l1 0" /><path d="M12 15l0 3" /></svg>
+                        </div>
+                        <div class="col">
+                            <div class="text-secondary small">Joined</div>
+                            <div>{{ profile.user.date_joined|date:"F Y" }}</div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .profile-cover {
+        height: 180px;
+        background: linear-gradient(135deg, var(--tblr-primary) 0%, var(--tblr-primary-darken) 100%);
+        background-size: cover;
+        background-position: center;
+    }
+    .profile-avatar-wrapper {
+        margin-top: -3rem;
+    }
+    .profile-avatar-wrapper .avatar {
+        border: 3px solid var(--tblr-card-bg, var(--tblr-bg-surface));
+        width: 5rem;
+        height: 5rem;
+    }
+</style>
 {% endblock %}

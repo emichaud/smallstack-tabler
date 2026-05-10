@@ -27,8 +27,10 @@
     .tz-filter-btn:hover { border-color: var(--tblr-primary, #f59f00); color: var(--tblr-body-color, #c8ccd4); }
     .tz-filter-btn.active { border-color: var(--tblr-primary, #f59f00); color: var(--tblr-primary, #f59f00); font-weight: 600; }
     /* django-tables2 sort indicators */
-    .table thead th a { color: var(--tblr-muted, #656d77); text-decoration: none; }
-    .table thead th a:hover { color: var(--tblr-primary, #f59f00); }
+    .table thead th.orderable a { color: var(--tblr-body-color); text-decoration: none; }
+    .table thead th.orderable a:hover { color: var(--tblr-primary); }
+    .table thead th.orderable.asc a::after { content: " \25B2"; font-size: 0.65rem; color: var(--tblr-primary); }
+    .table thead th.orderable.desc a::after { content: " \25BC"; font-size: 0.65rem; color: var(--tblr-primary); }
     /* django-tables2 pagination */
     ul.pagination {
         display: flex; justify-content: center; gap: 0.25rem;
@@ -57,7 +59,6 @@
     <div class="container-xl">
         <div class="row g-2 align-items-center">
             <div class="col">
-                <div class="page-pretitle">User Management</div>
                 <h2 class="page-title">Timezones</h2>
             </div>
             <div class="col-auto d-flex gap-3">

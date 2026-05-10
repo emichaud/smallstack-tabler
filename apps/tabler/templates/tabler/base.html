@@ -13,9 +13,15 @@
         if (t === 'dark') {
             document.body ? document.body.classList.add('theme-dark') : document.addEventListener('DOMContentLoaded', function() { document.body.classList.add('theme-dark'); });
         }
-        // For immediate application before body exists, store on documentElement
         document.documentElement.setAttribute('data-bs-theme', t);
         document.documentElement.dataset.stkTheme = t;
+        // Apply font, base, radius early to prevent flash
+        var font = localStorage.getItem('smallstack-font');
+        var base = localStorage.getItem('smallstack-base');
+        var radius = localStorage.getItem('smallstack-radius');
+        if (font && font !== 'sans-serif') document.documentElement.setAttribute('data-bs-theme-font', font);
+        if (base && base !== 'gray') document.documentElement.setAttribute('data-bs-theme-base', base);
+        if (radius && radius !== '1') document.documentElement.setAttribute('data-bs-theme-radius', radius);
     })();
     </script>
 
@@ -37,18 +43,16 @@
 </head>
 <body class="{% block body_class %}{% endblock %}" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
     <script>
-    // Apply theme-dark class immediately on body
+    // Apply theme + layout immediately on body to prevent flash
     (function() {
         var t = localStorage.getItem('smallstack-theme') || 'dark';
         if (t === 'dark') document.body.classList.add('theme-dark');
-        // Apply layout
         var layout = localStorage.getItem('smallstack-layout') || 'default';
-        if (layout === 'condensed') {
-            document.body.classList.add('layout-condensed');
-        } else if (layout === 'sticky') {
-            var nav = document.querySelector('.navbar');
-            if (nav) nav.classList.add('navbar-sticky');
-        }
+        // Migrate legacy values
+        if (layout === 'sticky') layout = 'navbar-sticky';
+        if (layout === 'boxed') document.body.classList.add('layout-boxed');
+        else if (layout === 'condensed') document.body.classList.add('layout-condensed');
+        else if (layout === 'fluid') document.body.classList.add('layout-fluid');
     })();
     </script>
     <div class="page">
@@ -58,6 +62,9 @@
         {% endblock %}
 
         <div class="page-wrapper">
+            <!-- Breadcrumbs -->
+            {% block breadcrumbs %}{% endblock %}
+
             <!-- Page Header -->
             {% block page_header %}{% endblock %}
 
@@ -78,13 +85,27 @@
                 <div class="container-xl">
                     <div class="row text-center align-items-center">
                         <div class="col-12">
-                            <span class="text-secondary">&copy; {% now "Y" %} {{ brand.name }}. Built with <a href="https://github.com/emichaud/django-smallstack" class="link-secondary">SmallStack</a> + <a href="https://tabler.io" class="link-secondary">Tabler</a>.</span>
+                            <span class="text-secondary">
+                                &copy; {% now "Y" %} {{ brand.name }}. Built with <a href="https://github.com/emichaud/django-smallstack" class="link-secondary">SmallStack</a> + <a href="https://tabler.io" class="link-secondary">Tabler</a>.
+                                {% if brand.privacy_url %}
+                                <a href="{{ brand.privacy_url }}" class="link-secondary ms-2">Privacy</a>
+                                {% endif %}
+                                {% if brand.terms_url %}
+                                <a href="{{ brand.terms_url }}" class="link-secondary ms-2">Terms</a>
+                                {% endif %}
+                                {% if smallstack_version %}
+                                <span class="ms-2 text-muted">v{{ smallstack_version }}</span>
+                                {% endif %}
+                            </span>
                         </div>
                     </div>
                 </div>
             </footer>
         </div>
     </div>
+
+    <!-- Cookie Consent Banner -->
+    {% include "tabler/includes/cookie_banner.html" %}
 
     <!-- Theme Settings Panel -->
     {% include "tabler/includes/settings.html" %}

@@ -1,0 +1,170 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags crud_tags %}
+
+{% block title %}{{ object_verbose_name_plural }} — Explorer{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Explorer / Model</div>
+                <h2 class="page-title">{{ object_verbose_name_plural }}</h2>
+                <div class="text-secondary mt-1">{{ model_info.count }} record{{ model_info.count|pluralize }} &mdash; {{ model_info.app_label }}.{{ model_info.model_name }}</div>
+            </div>
+            {% if create_view_url %}
+            <div class="col-auto">
+                <a href="{{ create_view_url }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>
+                    Add {{ object_verbose_name }}
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{% include "smallstack/crud/_table_styles.html" %}
+<style>
+    .explorer-tabs .nav-link { border: none; border-bottom: 2px solid transparent; color: var(--tblr-secondary); font-weight: 500; }
+    .explorer-tabs .nav-link:hover { color: var(--tblr-body-color); }
+    .explorer-tabs .nav-link.active { color: var(--tblr-primary); border-bottom-color: var(--tblr-primary); background: transparent; }
+
+    .example-code-section { margin-bottom: 2.25rem; }
+    .example-code-section h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.4rem; }
+    .example-code-section p { font-size: 0.88rem; color: var(--tblr-secondary); margin: 0 0 0.7rem; line-height: 1.55; }
+    .example-code-wrap { position: relative; border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); overflow: hidden; }
+    .example-code-wrap pre { margin: 0; padding: 1.5rem; overflow-x: auto; font-size: 14px !important; line-height: 1.8 !important; background: var(--tblr-bg-surface-secondary) !important; }
+    .example-code-label { display: block; padding: 0.5rem 1.5rem; font-size: 13px; font-weight: 500; color: var(--tblr-secondary); border-bottom: 1px solid var(--tblr-border-color); background: var(--tblr-bg-surface); font-family: var(--tblr-font-monospace); }
+    .example-copy-btn { position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.6rem; border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); background: var(--tblr-bg-surface); color: var(--tblr-secondary); font-size: 12px; cursor: pointer; }
+    .example-copy-btn:hover { color: var(--tblr-body-color); border-color: var(--tblr-primary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<ul class="nav nav-tabs explorer-tabs mb-3" id="example-tabs">
+    <li class="nav-item"><button type="button" class="nav-link active" data-tab="overview">Overview</button></li>
+    <li class="nav-item"><button type="button" class="nav-link" data-tab="code">Code Examples</button></li>
+</ul>
+
+<!-- Overview tab -->
+<div class="example-tab-panel active" id="tab-overview">
+    <div class="card">
+        <div class="card-body">
+            {% if object_list %}
+                {% crud_table %}
+                {% if page_obj.has_other_pages %}
+                <nav class="d-flex justify-content-center align-items-center gap-1 pt-3 pb-1 flex-wrap">
+                    {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-sm btn-ghost-secondary">&laquo; Prev</a>
+                    {% endif %}
+                    {% for num in page_range %}
+                        {% if num == page_obj.number %}
+                        <span class="btn btn-sm btn-primary">{{ num }}</span>
+                        {% elif num == '...' %}
+                        <span class="text-secondary px-1">&hellip;</span>
+                        {% else %}
+                        <a href="?page={{ num }}" class="btn btn-sm btn-ghost-secondary">{{ num }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}" class="btn btn-sm btn-ghost-secondary">Next &raquo;</a>
+                    {% endif %}
+                </nav>
+                {% endif %}
+            {% else %}
+                <div class="empty">
+                    <p class="empty-title">No {{ object_verbose_name_plural }} found.</p>
+                    {% if create_view_url %}
+                    <p class="empty-subtitle text-secondary">
+                        <a href="{{ create_view_url }}" class="text-primary">Create one now?</a>
+                    </p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% include "smallstack/crud/includes/delete_modal.html" %}
+</div>
+
+<!-- Code Examples tab -->
+<div class="example-tab-panel" id="tab-code" style="display:none;">
+    <p class="text-secondary mb-4" style="line-height: 1.6;">
+        A page dedicated to one model with full CRUD: list, detail, create, update, delete.
+        The mixin provides everything the <code>crud_table</code> tag needs.
+    </p>
+
+    <div class="example-code-section">
+        <h3>1. View</h3>
+        <p><code>ExplorerModelMixin</code> reads <code>app_label</code> and <code>model_name</code> from the URL and populates the template context.</p>
+        <div class="example-code-wrap">
+            <span class="example-code-label">apps/myapp/views.py</span>
+            <button type="button" class="example-copy-btn" data-copy>Copy</button>
+            <pre><code>from django.views.generic import TemplateView
+from apps.smallstack.mixins import StaffRequiredMixin
+from apps.explorer.mixins import ExplorerModelMixin
+
+class ModelPageView(ExplorerModelMixin, StaffRequiredMixin, TemplateView):
+    template_name = "myapp/model_page.html"</code></pre>
+        </div>
+    </div>
+
+    <div class="example-code-section">
+        <h3>2. Context variables</h3>
+        <p>The mixin populates everything <code>crud_table</code> needs automatically.</p>
+        <div class="example-code-wrap">
+            <span class="example-code-label">What the mixin provides</span>
+            <button type="button" class="example-copy-btn" data-copy>Copy</button>
+            <pre><code># object_list              → queryset of all model rows
+# list_fields              → columns for the table
+# url_base                 → e.g. "explorer/heartbeat/heartbeat"
+# crud_actions             → [LIST, DETAIL, CREATE, UPDATE, DELETE]
+# create_view_url          → URL for the "Add" button (None if readonly)
+# object_verbose_name      → "Heartbeat"
+# object_verbose_name_plural → "Heartbeats"
+# model_info               → ModelCardInfo dataclass</code></pre>
+        </div>
+    </div>
+
+    <div class="example-code-section">
+        <h3>3. Register in admin</h3>
+        <p>Set <code>explorer_enabled = True</code> and Explorer handles the rest.</p>
+        <div class="example-code-wrap">
+            <span class="example-code-label">apps/heartbeat/admin.py</span>
+            <button type="button" class="example-copy-btn" data-copy>Copy</button>
+            <pre><code>@admin.register(Heartbeat)
+class HeartbeatAdmin(admin.ModelAdmin):
+    list_display = ("checked_at", "status", "response_time_ms")
+    explorer_enabled = True
+    explorer_group = "Monitoring"</code></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const tabs = document.getElementById('example-tabs');
+    const panels = document.querySelectorAll('.example-tab-panel');
+    tabs.addEventListener('click', function(e) {
+        const btn = e.target.closest('button[data-tab]');
+        if (!btn) return;
+        tabs.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        panels.forEach(p => { p.style.display = p.id === 'tab-' + btn.dataset.tab ? '' : 'none'; p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab); });
+    });
+    document.querySelectorAll('.example-copy-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const code = this.closest('.example-code-wrap').querySelector('code');
+            navigator.clipboard.writeText(code.textContent).then(() => {
+                this.textContent = 'Copied!'; this.style.color = 'var(--tblr-primary)';
+                setTimeout(() => { this.textContent = 'Copy'; this.style.color = ''; }, 1500);
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

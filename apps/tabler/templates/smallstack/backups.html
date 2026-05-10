@@ -4,6 +4,7 @@
 {% block title %}Backups{% endblock %}
 
 {% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
 {% breadcrumb "Backups" %}
 {% render_tabler_breadcrumbs %}
 {% endblock %}
@@ -13,7 +14,6 @@
     <div class="container-xl">
         <div class="row g-2 align-items-center">
             <div class="col">
-                <div class="page-pretitle">Database</div>
                 <h2 class="page-title">Backups</h2>
                 <div class="text-secondary mt-1">SQLite backup management</div>
             </div>

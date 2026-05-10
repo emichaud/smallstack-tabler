@@ -1,0 +1,56 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb "Dashboard" %}
+{% render_tabler_breadcrumbs %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">Dashboard</h2>
+                <div class="text-secondary mt-1">System overview at a glance</div>
+            </div>
+            <div class="col-auto">
+                <a href="{% url 'help:section_index' 'smallstack' %}" class="btn btn-ghost-secondary btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/><path d="M10 13l-1 2l1 2"/><path d="M14 13l1 2l-1 2"/></svg>
+                    Docs
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if widgets %}
+<div class="row row-deck row-cards">
+    {% for w in widgets %}
+    <div class="col-sm-6 col-lg-4">
+        <a href="{{ w.url }}" class="card card-link{% if w.status == 'degraded' %} border-warning{% elif w.status == 'down' %} border-danger{% endif %}">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <span class="avatar avatar-sm me-2" style="background: rgba(var(--tblr-primary-rgb), 0.1); color: var(--tblr-primary);">
+                        {{ w.icon }}
+                    </span>
+                    <span class="text-secondary fw-semibold text-uppercase" style="font-size: 0.8rem; letter-spacing: 0.04em;">{{ w.title }}</span>
+                </div>
+                <div class="h2 mb-1{% if w.status == 'operational' %} text-success{% elif w.status == 'degraded' %} text-warning{% elif w.status == 'down' %} text-danger{% endif %}">{{ w.headline }}</div>
+                <div class="text-secondary">{{ w.detail }}</div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+    <p class="empty-title">No dashboard widgets available.</p>
+</div>
+{% endif %}
+{% endblock %}

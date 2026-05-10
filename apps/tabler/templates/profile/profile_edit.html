@@ -16,6 +16,7 @@
         <div class="row g-2 align-items-center">
             <div class="col">
                 <h2 class="page-title">Edit Profile</h2>
+                <div class="text-secondary mt-1">Update your personal information and preferences</div>
             </div>
         </div>
     </div>
@@ -29,53 +30,90 @@
     <div class="row row-cards">
         <!-- Left Column: Photos -->
         <div class="col-md-4">
+            <!-- Profile Photo Card -->
             <div class="card mb-3">
                 <div class="card-header">
                     <h3 class="card-title">Profile Photo</h3>
                 </div>
-                <div class="card-body">
-                    <div class="text-center mb-3">
+                <div class="card-body text-center">
+                    <div class="mb-3">
                         {% if profile.profile_photo %}
-                        <span class="avatar avatar-xl mb-2" style="background-image: url('{{ profile.profile_photo.url }}');" id="profile-photo-avatar"></span>
+                        <span class="avatar avatar-xl avatar-rounded mb-2" style="background-image: url('{{ profile.profile_photo.url }}'); width: 6rem; height: 6rem;" id="profile-photo-avatar"></span>
                         {% else %}
-                        <span class="avatar avatar-xl mb-2" style="background-color: #f59f00; color: #1a1c23; font-size: 2rem;" id="profile-photo-avatar">
+                        <span class="avatar avatar-xl avatar-rounded bg-primary-lt text-primary mb-2" style="font-size: 2rem; width: 6rem; height: 6rem;" id="profile-photo-avatar">
                             {{ user.username|slice:":1"|upper }}
                         </span>
                         {% endif %}
-                        <img src="" alt="Profile photo preview" id="profile-photo-preview" style="display: none; width: 80px; height: 80px; border-radius: 50%; object-fit: cover;">
+                        <img src="" alt="Profile photo preview" id="profile-photo-preview" class="avatar avatar-xl avatar-rounded mb-2" style="display: none; width: 6rem; height: 6rem; object-fit: cover;">
                     </div>
-                    <input type="file" name="profile_photo" id="id_profile_photo" accept="image/*" class="form-control">
-                    <small class="form-hint">JPG, PNG or GIF. Max 5MB.</small>
+                    <label for="id_profile_photo" class="btn btn-outline-primary btn-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-upload" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 9l5 -5l5 5" /><path d="M12 4l0 12" /></svg>
+                        Choose Photo
+                    </label>
+                    <input type="file" name="profile_photo" id="id_profile_photo" accept="image/*" class="d-none">
+                    <div class="text-secondary small mt-2">JPG, PNG or GIF. Max 5MB.</div>
                     {% if form.profile_photo.errors %}
                     <div class="invalid-feedback d-block">{{ form.profile_photo.errors.0 }}</div>
                     {% endif %}
                 </div>
             </div>
 
-            <div class="card">
+            <!-- Cover Photo Card -->
+            <div class="card mb-3">
                 <div class="card-header">
                     <h3 class="card-title">Cover Photo</h3>
                 </div>
-                <div class="card-body">
-                    {% if profile.background_photo %}
-                    <div class="mb-2">
-                        <img src="{{ profile.background_photo.url }}" alt="Cover photo" class="rounded" style="width: 100%; height: 80px; object-fit: cover;" id="cover-photo-preview">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        {% if profile.background_photo %}
+                        <img src="{{ profile.background_photo.url }}" alt="Cover photo" class="rounded w-100" style="height: 100px; object-fit: cover;" id="cover-photo-current">
+                        {% else %}
+                        <div class="rounded w-100 d-flex align-items-center justify-content-center" style="height: 100px; background: linear-gradient(135deg, var(--tblr-primary) 0%, var(--tblr-primary-darken) 100%);" id="cover-photo-current">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-lg text-white" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 8h.01" /><path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5" /><path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3" /></svg>
+                        </div>
+                        {% endif %}
+                        <img src="" alt="Cover photo preview" id="cover-photo-preview" class="rounded w-100" style="display: none; height: 100px; object-fit: cover;">
                     </div>
-                    {% else %}
-                    <img src="" alt="Cover photo preview" id="cover-photo-preview" style="display: none; width: 100%; height: 80px; object-fit: cover;" class="rounded mb-2">
-                    {% endif %}
-                    <input type="file" name="background_photo" id="id_background_photo" accept="image/*" class="form-control">
-                    <small class="form-hint">Recommended: 1500x500px</small>
+                    <label for="id_background_photo" class="btn btn-outline-primary btn-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-upload" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 9l5 -5l5 5" /><path d="M12 4l0 12" /></svg>
+                        Choose Photo
+                    </label>
+                    <input type="file" name="background_photo" id="id_background_photo" accept="image/*" class="d-none">
+                    <div class="text-secondary small mt-2">Recommended: 1500x500px</div>
                     {% if form.background_photo.errors %}
                     <div class="invalid-feedback d-block">{{ form.background_photo.errors.0 }}</div>
                     {% endif %}
+                </div>
+            </div>
+
+            <!-- Appearance Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Appearance</h3>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Theme</label>
+                        <input type="hidden" name="theme_preference" id="id_theme_preference" value="{{ form.theme_preference.value|default:'dark' }}">
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'dark' or not form.theme_preference.value %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="dark">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" /></svg>
+                                Dark
+                            </button>
+                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'light' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="light">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon me-1" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7" /></svg>
+                                Light
+                            </button>
+                        </div>
+                    </div>
+                    <input type="hidden" name="color_palette" id="id_color_palette" value="{{ form.color_palette.value|default:'' }}">
                 </div>
             </div>
         </div>
 
         <!-- Right Column: Information -->
         <div class="col-md-8">
-            <div class="card">
+            <div class="card mb-3">
                 <div class="card-header">
                     <h3 class="card-title">Basic Information</h3>
                 </div>
@@ -114,17 +152,27 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label" for="id_location">Location</label>
-                            <input type="text" name="location" id="id_location" class="form-control"
-                                   value="{{ form.location.value|default:'' }}" maxlength="100"
-                                   placeholder="City, Country">
+                            <div class="input-icon">
+                                <span class="input-icon-addon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" /></svg>
+                                </span>
+                                <input type="text" name="location" id="id_location" class="form-control"
+                                       value="{{ form.location.value|default:'' }}" maxlength="100"
+                                       placeholder="City, Country">
+                            </div>
                             {% if form.location.errors %}
                             <div class="invalid-feedback d-block">{{ form.location.errors.0 }}</div>
                             {% endif %}
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="id_date_of_birth">Date of Birth</label>
-                            <input type="date" name="date_of_birth" id="id_date_of_birth" class="form-control"
-                                   value="{{ form.date_of_birth.value|date:'Y-m-d'|default:'' }}">
+                            <div class="input-icon">
+                                <span class="input-icon-addon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 20h18v-8a3 3 0 0 0 -3 -3h-12a3 3 0 0 0 -3 3v8z" /><path d="M3 14.803c.312 .135 .654 .204 1 .197a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1a2.4 2.4 0 0 0 2 -1a2.4 2.4 0 0 1 2 -1a2.4 2.4 0 0 1 2 1a2.4 2.4 0 0 0 2 1c.35 .007 .692 -.062 1 -.197" /><path d="M12 4l1.465 1.638a2 2 0 1 1 -3.015 .099l1.55 -1.737z" /></svg>
+                                </span>
+                                <input type="date" name="date_of_birth" id="id_date_of_birth" class="form-control"
+                                       value="{{ form.date_of_birth.value|date:'Y-m-d'|default:'' }}">
+                            </div>
                             {% if form.date_of_birth.errors %}
                             <div class="invalid-feedback d-block">{{ form.date_of_birth.errors.0 }}</div>
                             {% endif %}
@@ -133,32 +181,62 @@
 
                     <div class="mb-3">
                         <label class="form-label" for="id_website">Website</label>
-                        <input type="url" name="website" id="id_website" class="form-control"
-                               value="{{ form.website.value|default:'' }}" placeholder="https://yourwebsite.com">
+                        <div class="input-icon">
+                            <span class="input-icon-addon">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
+                            </span>
+                            <input type="url" name="website" id="id_website" class="form-control"
+                                   value="{{ form.website.value|default:'' }}" placeholder="https://yourwebsite.com">
+                        </div>
                         {% if form.website.errors %}
                         <div class="invalid-feedback d-block">{{ form.website.errors.0 }}</div>
                         {% endif %}
                     </div>
+                </div>
+            </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Appearance</label>
-                        <input type="hidden" name="theme_preference" id="id_theme_preference" value="{{ form.theme_preference.value|default:'dark' }}">
-                        <input type="hidden" name="color_palette" id="id_color_palette" value="{{ form.color_palette.value|default:'' }}">
-                        <div class="btn-group w-100" role="group">
-                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'dark' or not form.theme_preference.value %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="dark">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-                                Dark
-                            </button>
-                            <button type="button" class="btn theme-toggle-btn {% if form.theme_preference.value == 'light' %}btn-primary{% else %}btn-outline-secondary{% endif %}" data-theme="light">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                                Light
-                            </button>
+            <!-- Timezone Card -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h3 class="card-title">Timezone</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-end">
+                        <div class="col-md-6">
+                            <label class="form-label" for="id_timezone">Your timezone</label>
+                            <select name="timezone" id="id_timezone" class="form-select">
+                                {% for group_label, group_options in form.timezone.field.widget.optgroups %}
+                                    {% if group_label %}
+                                    <optgroup label="{{ group_label }}">
+                                    {% endif %}
+                                    {% for option in group_options %}
+                                    <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                                    {% endfor %}
+                                    {% if group_label %}
+                                    </optgroup>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            <small class="form-hint">Used to display dates and times in your local time</small>
+                        </div>
+                        <div class="col-md-6">
+                            <div id="tz-preview" class="text-secondary small font-monospace"></div>
                         </div>
                     </div>
+                    {% if form.timezone.errors %}
+                    <div class="invalid-feedback d-block">{{ form.timezone.errors.0 }}</div>
+                    {% endif %}
                 </div>
-                <div class="card-footer text-end">
-                    <a href="{% url 'profile' %}" class="btn btn-link me-2">Cancel</a>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+
+            <!-- Actions -->
+            <div class="card">
+                <div class="card-footer d-flex align-items-center">
+                    <a href="{% url 'profile' %}" class="btn btn-link">Cancel</a>
+                    <button type="submit" class="btn btn-primary ms-auto">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg>
+                        Save Changes
+                    </button>
                 </div>
             </div>
         </div>
@@ -168,7 +246,7 @@
 
 {% block extra_js %}
 <script>
-// Preview uploaded images
+// Preview uploaded profile photo
 document.getElementById('id_profile_photo').addEventListener('change', function(e) {
     var file = e.target.files[0];
     if (file) {
@@ -177,24 +255,62 @@ document.getElementById('id_profile_photo').addEventListener('change', function(
             var preview = document.getElementById('profile-photo-preview');
             var avatar = document.getElementById('profile-photo-avatar');
             preview.src = e.target.result;
-            preview.style.display = 'block';
+            preview.style.display = 'inline-flex';
             if (avatar) avatar.style.display = 'none';
         };
         reader.readAsDataURL(file);
     }
 });
 
+// Preview uploaded cover photo
 document.getElementById('id_background_photo').addEventListener('change', function(e) {
     var file = e.target.files[0];
     if (file) {
         var reader = new FileReader();
         reader.onload = function(e) {
             var preview = document.getElementById('cover-photo-preview');
+            var current = document.getElementById('cover-photo-current');
             preview.src = e.target.result;
             preview.style.display = 'block';
+            if (current) current.style.display = 'none';
         };
         reader.readAsDataURL(file);
     }
 });
+
+// Live timezone preview
+(function() {
+    var tzSelect = document.getElementById('id_timezone');
+    var preview = document.getElementById('tz-preview');
+    if (!tzSelect || !preview) return;
+
+    function formatTime(date, tz) {
+        try {
+            return date.toLocaleString('en-US', {
+                timeZone: tz,
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit', second: '2-digit',
+                hour12: true, timeZoneName: 'short'
+            });
+        } catch (e) { return null; }
+    }
+
+    function updatePreview() {
+        var tz = tzSelect.value;
+        if (!tz) { preview.textContent = ''; return; }
+        var now = new Date();
+        var utcStr = formatTime(now, 'UTC');
+        var localStr = formatTime(now, tz);
+        if (utcStr && localStr) {
+            preview.innerHTML = utcStr + '<br>' + localStr;
+        } else {
+            preview.textContent = '';
+        }
+    }
+
+    tzSelect.addEventListener('change', updatePreview);
+    updatePreview();
+    setInterval(updatePreview, 1000);
+})();
 </script>
 {% endblock %}

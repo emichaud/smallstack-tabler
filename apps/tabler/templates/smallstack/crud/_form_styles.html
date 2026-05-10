@@ -1,0 +1,70 @@
+<style>
+/* Tabler CRUD Form Styles
+   Maps upstream .vTextField and raw input/select/textarea to Tabler's form-control look */
+
+/* All text-like inputs, selects, and textareas in forms */
+form input[type="text"],
+form input[type="email"],
+form input[type="url"],
+form input[type="number"],
+form input[type="password"],
+form input[type="date"],
+form input[type="datetime-local"],
+form input[type="time"],
+form input[type="tel"],
+form input[type="search"],
+form select,
+form textarea {
+    display: block;
+    width: 100%;
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.4285714286;
+    appearance: none;
+    background-color: var(--tblr-bg-forms, var(--tblr-bg-surface));
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    color: var(--tblr-body-color);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    box-sizing: border-box;
+}
+
+form input:focus,
+form select:focus,
+form textarea:focus {
+    border-color: var(--tblr-primary);
+    box-shadow: 0 0 0 0.25rem rgba(var(--tblr-primary-rgb), 0.25);
+    outline: 0;
+}
+
+form textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+form select {
+    appearance: auto;
+}
+
+/* File inputs */
+form input[type="file"] {
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px dashed var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+    cursor: pointer;
+    width: 100%;
+}
+
+form input[type="file"]:hover {
+    border-color: var(--tblr-primary);
+}
+
+/* Checkbox styling */
+form input[type="checkbox"] {
+    accent-color: var(--tblr-primary);
+}
+</style>

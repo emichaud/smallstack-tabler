@@ -4,6 +4,7 @@
 {% block title %}Backup #{{ record.pk }}{% endblock %}
 
 {% block breadcrumbs %}
+{% breadcrumb "Home" "website:home" %}
 {% breadcrumb "Backups" "smallstack:backups" %}
 {% breadcrumb record.filename|default:"Backup"|truncatechars:30 %}
 {% render_tabler_breadcrumbs %}
@@ -14,7 +15,6 @@
     <div class="container-xl">
         <div class="row g-2 align-items-center">
             <div class="col">
-                <div class="page-pretitle">Backups</div>
                 <h2 class="page-title">
                     Backup #{{ record.pk }}
                     {% if record.is_pruned %}

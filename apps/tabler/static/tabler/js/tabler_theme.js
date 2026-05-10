@@ -4,8 +4,11 @@
  * Handles the offcanvas theme settings panel:
  * - Color mode (dark/light)
  * - Color scheme (accent color)
- * - Layout (default/condensed/sticky)
- * - Navbar position (top/side)
+ * - Font family
+ * - Theme base (gray palette)
+ * - Corner radius
+ * - Layout (horizontal, boxed, condensed, fluid, navbar-dark,
+ *           navbar-overlap, navbar-sticky, vertical, vertical-right, rtl)
  *
  * All settings persist to localStorage and apply immediately.
  */
@@ -19,8 +22,10 @@
     var defaults = {
         theme: 'dark',
         color: 'amber',
-        layout: 'default',
-        navbar: 'top'
+        font: 'sans-serif',
+        base: 'gray',
+        radius: '1',
+        layout: 'default'
     };
 
     // Color map: name → hex
@@ -135,35 +140,99 @@
             '.slides-progress-bar{background:' + hex + '}';
     }
 
-    // ─── Layout ─────────────────────────────────────────────
-    function applyLayout(layout) {
-        set('layout', layout);
-        document.body.classList.remove('layout-condensed');
-        var nav = document.querySelector('.navbar');
-        if (nav) nav.classList.remove('navbar-sticky');
-
-        if (layout === 'condensed') {
-            document.body.classList.add('layout-condensed');
-        } else if (layout === 'sticky') {
-            if (nav) nav.classList.add('navbar-sticky');
+    // ─── Font family ────────────────────────────────────────
+    function applyFont(font) {
+        set('font', font);
+        if (font === defaults.font) {
+            document.documentElement.removeAttribute('data-bs-theme-font');
+        } else {
+            document.documentElement.setAttribute('data-bs-theme-font', font);
         }
     }
 
-    // ─── Navbar position ────────────────────────────────────
-    function applyNavbar(position) {
-        set('navbar', position);
+    // ─── Theme base (gray palette) ───────────────────────
+    function applyBase(base) {
+        set('base', base);
+        if (base === defaults.base) {
+            document.documentElement.removeAttribute('data-bs-theme-base');
+        } else {
+            document.documentElement.setAttribute('data-bs-theme-base', base);
+        }
+    }
+
+    // ─── Corner radius ───────────────────────────────────
+    function applyRadius(radius) {
+        set('radius', radius);
+        if (radius === '1') {
+            document.documentElement.removeAttribute('data-bs-theme-radius');
+        } else {
+            document.documentElement.setAttribute('data-bs-theme-radius', radius);
+        }
+    }
+
+    // ─── Layout ─────────────────────────────────────────────
+    var LAYOUT_CLASSES_BODY = ['layout-condensed', 'layout-boxed', 'layout-fluid'];
+    var LAYOUT_CLASSES_PAGE = ['navbar-side', 'navbar-side-end'];
+
+    function clearLayout() {
+        var body = document.body;
         var page = document.querySelector('.page');
         var navbar = document.querySelector('.navbar');
-        if (!page || !navbar) return;
 
-        if (position === 'side') {
-            page.classList.add('navbar-side');
-            navbar.classList.remove('navbar-expand-md');
-            navbar.classList.add('navbar-vertical', 'navbar-expand-lg');
-        } else {
-            page.classList.remove('navbar-side');
-            navbar.classList.add('navbar-expand-md');
-            navbar.classList.remove('navbar-vertical', 'navbar-expand-lg');
+        LAYOUT_CLASSES_BODY.forEach(function(c) { body.classList.remove(c); });
+        if (page) {
+            LAYOUT_CLASSES_PAGE.forEach(function(c) { page.classList.remove(c); });
+        }
+        if (navbar) {
+            navbar.classList.remove('navbar-sticky', 'navbar-overlap');
+            navbar.removeAttribute('data-bs-theme');
+        }
+        document.documentElement.removeAttribute('dir');
+    }
+
+    function applyLayout(layout) {
+        set('layout', layout);
+
+        // Migrate legacy 'navbar' key into layout
+        localStorage.removeItem(PREFIX + 'navbar');
+
+        clearLayout();
+
+        var navbar = document.querySelector('.navbar');
+        var page = document.querySelector('.page');
+
+        switch (layout) {
+            case 'boxed':
+                document.body.classList.add('layout-boxed');
+                break;
+            case 'condensed':
+                document.body.classList.add('layout-condensed');
+                break;
+            case 'fluid':
+                document.body.classList.add('layout-fluid');
+                break;
+            case 'navbar-dark':
+                if (navbar) navbar.setAttribute('data-bs-theme', 'dark');
+                break;
+            case 'navbar-overlap':
+                if (navbar) navbar.classList.add('navbar-overlap');
+                break;
+            case 'navbar-sticky':
+                if (navbar) navbar.classList.add('navbar-sticky');
+                break;
+            case 'vertical':
+                if (page) page.classList.add('navbar-side');
+                break;
+            case 'vertical-right':
+                if (page) {
+                    page.classList.add('navbar-side');
+                    page.classList.add('navbar-side-end');
+                }
+                break;
+            case 'rtl':
+                document.documentElement.setAttribute('dir', 'rtl');
+                break;
+            // 'default' (horizontal) — no extra classes needed
         }
     }
 
@@ -175,8 +244,10 @@
         var settings = {
             'stk-theme': get('theme'),
             'stk-color': get('color'),
-            'stk-layout': get('layout'),
-            'stk-navbar': get('navbar')
+            'stk-font': get('font'),
+            'stk-base': get('base'),
+            'stk-radius': get('radius'),
+            'stk-layout': get('layout')
         };
 
         for (var name in settings) {
@@ -192,26 +263,48 @@
         for (var key in defaults) {
             localStorage.removeItem(PREFIX + key);
         }
+        // Clean up legacy keys
+        localStorage.removeItem(PREFIX + 'navbar');
+
         // Remove dynamic styles
         var dynStyle = document.getElementById('stk-dynamic-btn-css');
         if (dynStyle) dynStyle.remove();
         document.documentElement.style.removeProperty('--tblr-primary');
         document.documentElement.style.removeProperty('--tblr-primary-rgb');
+        document.documentElement.removeAttribute('data-bs-theme-font');
+        document.documentElement.removeAttribute('data-bs-theme-base');
+        document.documentElement.removeAttribute('data-bs-theme-radius');
 
         applyTheme(defaults.theme);
         applyColor(defaults.color);
+        applyFont(defaults.font);
+        applyBase(defaults.base);
+        applyRadius(defaults.radius);
         applyLayout(defaults.layout);
-        applyNavbar(defaults.navbar);
         syncPanel();
     }
 
     // ─── Init ───────────────────────────────────────────────
     function init() {
+        // Migrate legacy navbar setting → layout
+        var legacyNavbar = localStorage.getItem(PREFIX + 'navbar');
+        var currentLayout = localStorage.getItem(PREFIX + 'layout');
+        if (legacyNavbar === 'side' && (!currentLayout || currentLayout === 'default')) {
+            set('layout', 'vertical');
+            localStorage.removeItem(PREFIX + 'navbar');
+        }
+        // Migrate legacy layout values
+        if (currentLayout === 'sticky') {
+            set('layout', 'navbar-sticky');
+        }
+
         // Apply all saved settings
         applyTheme(get('theme'));
         applyColor(get('color'));
+        applyFont(get('font'));
+        applyBase(get('base'));
+        applyRadius(get('radius'));
         applyLayout(get('layout'));
-        applyNavbar(get('navbar'));
 
         // Sync panel radios
         syncPanel();
@@ -223,8 +316,10 @@
                 var target = e.target;
                 if (target.name === 'stk-theme') applyTheme(target.value);
                 else if (target.name === 'stk-color') applyColor(target.value);
+                else if (target.name === 'stk-font') applyFont(target.value);
+                else if (target.name === 'stk-base') applyBase(target.value);
+                else if (target.name === 'stk-radius') applyRadius(target.value);
                 else if (target.name === 'stk-layout') applyLayout(target.value);
-                else if (target.name === 'stk-navbar') applyNavbar(target.value);
             });
         }
 
@@ -258,8 +353,10 @@
     window.SmallStackTheme = {
         applyTheme: applyTheme,
         applyColor: applyColor,
+        applyFont: applyFont,
+        applyBase: applyBase,
+        applyRadius: applyRadius,
         applyLayout: applyLayout,
-        applyNavbar: applyNavbar,
         get: get,
         reset: resetAll
     };

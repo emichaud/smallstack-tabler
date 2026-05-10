@@ -1,0 +1,226 @@
+<style>
+.crud-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.crud-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Reset any inherited table backgrounds */
+.crud-table tr:nth-child(odd),
+.crud-table tr:nth-child(even) {
+    background: transparent;
+}
+.crud-table thead tr {
+    background-color: rgba(var(--tblr-primary-rgb), 0.15) !important;
+    border: none !important;
+}
+.crud-table thead th {
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 10px 16px;
+    border: none !important;
+    background-color: transparent !important;
+    color: var(--tblr-secondary) !important;
+    text-align: left;
+}
+.crud-table tbody tr {
+    border: none !important;
+}
+.crud-table tbody tr:nth-child(odd) {
+    background-color: rgba(var(--tblr-primary-rgb), 0.04) !important;
+}
+.crud-table tbody tr:nth-child(even) {
+    background-color: rgba(var(--tblr-primary-rgb), 0.12) !important;
+}
+.crud-table tbody td,
+.crud-table tbody th {
+    border: none !important;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+}
+.crud-table tbody tr:hover {
+    background-color: rgba(var(--tblr-primary-rgb), 0.20) !important;
+}
+.crud-table a {
+    color: var(--tblr-primary);
+    text-decoration: none;
+}
+.crud-table a:hover {
+    text-decoration: underline;
+}
+.crud-actions-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+.crud-action-delete {
+    color: var(--delete-button-bg, #dc3545) !important;
+}
+
+/* Field preview trigger (truncated text) */
+.field-preview-trigger {
+    cursor: pointer;
+}
+.field-preview-trigger:hover {
+    color: var(--tblr-primary);
+}
+.field-preview-more {
+    display: inline-block;
+    margin-left: 3px;
+    padding: 0 5px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    line-height: 1.5;
+    vertical-align: middle;
+    border-radius: 3px;
+    background: rgba(var(--tblr-primary-rgb), 0.15);
+    color: var(--tblr-primary);
+    transition: background 0.15s;
+}
+.field-preview-trigger:hover .field-preview-more {
+    background: rgba(var(--tblr-primary-rgb), 0.30);
+}
+
+/* Field preview modal styles (Bootstrap modal structure) */
+#fieldPreviewModal .modal-header {
+    padding: 10px 16px;
+    background: rgba(var(--tblr-primary-rgb), 0.08);
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.field-preview-tabs {
+    display: flex;
+    gap: 2px;
+}
+.field-preview-tab {
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--tblr-secondary);
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: var(--tblr-border-radius);
+    transition: color 0.15s, background 0.15s;
+}
+.field-preview-tab:hover {
+    color: var(--tblr-body-color);
+    background: rgba(var(--tblr-body-color-rgb, 200, 204, 212), 0.08);
+}
+.field-preview-tab.active {
+    color: var(--tblr-primary);
+    background: rgba(var(--tblr-primary-rgb), 0.15);
+}
+.field-preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.field-preview-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--tblr-secondary);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: none;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.field-preview-copy:hover {
+    color: var(--tblr-primary);
+    border-color: var(--tblr-primary);
+    background: rgba(var(--tblr-primary-rgb), 0.08);
+}
+.field-preview-copy.copied {
+    color: #22863a;
+    border-color: #22863a;
+}
+[data-bs-theme="dark"] .field-preview-copy.copied {
+    color: #85e89d;
+    border-color: #85e89d;
+}
+.field-preview-content {
+    padding: 16px 20px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+.field-preview-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.82rem;
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+    line-height: 1.6;
+}
+
+/* JSON syntax highlighting */
+.field-preview-content .json-key { color: var(--tblr-primary); }
+.field-preview-content .json-str { color: #22863a; }
+.field-preview-content .json-num { color: #005cc5; }
+.field-preview-content .json-bool { color: #d73a49; }
+.field-preview-content .json-null { color: var(--tblr-secondary); }
+[data-bs-theme="dark"] .field-preview-content .json-str { color: #85e89d; }
+[data-bs-theme="dark"] .field-preview-content .json-num { color: #79b8ff; }
+[data-bs-theme="dark"] .field-preview-content .json-bool { color: #f97583; }
+
+/* Markdown preview */
+.field-preview-content .md-preview h1,
+.field-preview-content .md-preview h2,
+.field-preview-content .md-preview h3 {
+    margin: 0.8em 0 0.4em;
+    font-weight: 700;
+    color: var(--tblr-body-color);
+}
+.field-preview-content .md-preview h1 { font-size: 1.25em; }
+.field-preview-content .md-preview h2 { font-size: 1.1em; }
+.field-preview-content .md-preview h3 { font-size: 1em; }
+.field-preview-content .md-preview p {
+    margin: 0.4em 0;
+}
+.field-preview-content .md-preview code {
+    background: rgba(var(--tblr-body-color-rgb, 200, 204, 212), 0.08);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+}
+.field-preview-content .md-preview ul,
+.field-preview-content .md-preview ol {
+    padding-left: 1.5em;
+    margin: 0.4em 0;
+}
+.field-preview-content .md-preview li {
+    margin: 0.15em 0;
+}
+.field-preview-content .md-preview blockquote {
+    margin: 0.5em 0;
+    padding: 0.4em 0.8em;
+    border-left: 3px solid var(--tblr-primary);
+    color: var(--tblr-secondary);
+    background: rgba(var(--tblr-primary-rgb), 0.05);
+    border-radius: 0 var(--tblr-border-radius) var(--tblr-border-radius) 0;
+}
+.field-preview-content .md-preview a {
+    color: var(--tblr-primary);
+    text-decoration: none;
+}
+.field-preview-content .md-preview a:hover {
+    text-decoration: underline;
+}
+</style>

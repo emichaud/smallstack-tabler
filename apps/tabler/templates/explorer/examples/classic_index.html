@@ -1,0 +1,251 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags django_tables2 %}
+
+{% block title %}Explorer{% endblock %}
+
+{% block page_header %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="page-pretitle">Admin</div>
+                <h2 class="page-title">Explorer</h2>
+                <div class="text-secondary mt-1">{{ models|length }} registered model{{ models|length|pluralize }}</div>
+            </div>
+            <div class="col-auto d-flex align-items-center gap-2">
+                <div class="btn-group explorer-view-toggle" role="group">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" data-view="grid" title="Grid view">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M14 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M4 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/><path d="M14 14m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z"/></svg>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" data-view="list" title="List view">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6l16 0"/><path d="M4 12l16 0"/><path d="M4 18l16 0"/></svg>
+                    </button>
+                </div>
+                <a href="{% url 'help:section_detail' section='explorer' slug='admin-api' %}" class="btn btn-ghost-secondary btn-icon" title="How to enable models for Explorer">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M12 9h.01"/><path d="M11 12h1v4h1"/></svg>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{% include "smallstack/crud/_table_styles.html" %}
+<style>
+    .explorer-view-toggle .btn.active {
+        background: rgba(var(--tblr-primary-rgb), 0.1) !important;
+        color: var(--tblr-primary) !important;
+    }
+
+    /* Card styles */
+    a.explorer-card {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border: 1px solid var(--tblr-border-color);
+        border-radius: var(--tblr-border-radius);
+        padding: 0.75rem 0.85rem;
+        text-decoration: none !important;
+        color: var(--tblr-body-color) !important;
+        background: var(--tblr-bg-surface);
+        transition: border-color 0.15s, box-shadow 0.15s;
+        min-height: 4.2rem;
+    }
+    a.explorer-card:hover {
+        border-color: var(--tblr-primary);
+        box-shadow: 0 2px 8px rgba(var(--tblr-primary-rgb), 0.1);
+    }
+    .explorer-card-name {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        font-size: 0.88rem;
+        font-weight: 500;
+    }
+    .explorer-card-lock { width: 14px; height: 14px; color: var(--tblr-secondary); opacity: 0.5; margin-left: 0.4rem; }
+    .explorer-card-bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: auto;
+        padding-top: 0.35rem;
+    }
+    .explorer-card-app { font-size: 0.8rem; color: var(--tblr-secondary); }
+    .explorer-card-count { color: var(--tblr-primary); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* Grid */
+    .explorer-grid-wrap { display: none; }
+    .explorer-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+    }
+    @media (max-width: 900px) { .explorer-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .explorer-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .explorer-list-wrap { display: none; }
+
+    .explorer-section-title {
+        grid-column: 1 / -1;
+        font-size: 0.78rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--tblr-secondary);
+        padding: 0.6rem 0 0.2rem;
+    }
+    .explorer-section-title:first-child { padding-top: 0; }
+
+    [data-explorer-view="grid"] .explorer-grid-wrap { display: block; }
+    [data-explorer-view="list"] .explorer-list-wrap { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="explorer-body">
+    {% if models_az %}
+
+    <!-- Grid view -->
+    <div class="explorer-grid-wrap">
+        <div class="d-flex align-items-center justify-content-between mb-3 gap-3">
+            <div style="max-width: 280px;">
+                <input type="text" data-search="grid" class="form-control form-control-sm" placeholder="Search models..." autocomplete="off">
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-secondary small">Group by:</span>
+                <div class="btn-group btn-group-sm explorer-groupby-toggle" data-target="grid">
+                    <button type="button" class="btn btn-ghost-secondary active" data-groupby="none">None</button>
+                    <button type="button" class="btn btn-ghost-secondary" data-groupby="app">App</button>
+                    <button type="button" class="btn btn-ghost-secondary" data-groupby="category">Group</button>
+                </div>
+            </div>
+        </div>
+        <div class="explorer-grid" id="explorer-grid">
+            {% for m in models_az %}
+            <a href="{{ m.list_url }}" class="explorer-card" data-app="{{ m.app_label }}" data-group="{{ m.group }}" data-name="{{ m.verbose_name_plural }}">
+                <span class="explorer-card-name">
+                    {{ m.verbose_name_plural }}
+                    {% if m.readonly %}<svg class="explorer-card-lock" viewBox="0 0 24 24" fill="currentColor" title="Read-only"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>{% endif %}
+                </span>
+                <span class="explorer-card-bottom">
+                    <span class="explorer-card-app">{{ m.app_label }}</span>
+                    <span class="explorer-card-count">{{ m.count }}</span>
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- List view -->
+    <div class="explorer-list-wrap">
+        <div class="mb-3" style="max-width: 280px;">
+            <input type="text" id="explorer-list-search" class="form-control form-control-sm" placeholder="Search models..." autocomplete="off">
+        </div>
+        <div class="card">
+            <div class="card-body p-0">
+                {% render_table table %}
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="empty">
+        <p class="empty-title">No models registered.</p>
+        <p class="empty-subtitle text-secondary">Set <code>explorer_enabled = True</code> on a ModelAdmin to get started.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const body = document.getElementById('explorer-body');
+
+    // View toggle
+    const viewButtons = document.querySelectorAll('.explorer-view-toggle button');
+    const viewKey = 'explorer-view';
+    const savedView = localStorage.getItem(viewKey) || 'grid';
+
+    function setView(view) {
+        body.setAttribute('data-explorer-view', view);
+        viewButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
+        localStorage.setItem(viewKey, view);
+    }
+    viewButtons.forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
+    setView(savedView);
+
+    // Shared group-by + search logic
+    function setupPanel(panelId, container, itemSelector, headerTag, colSpan) {
+        const groupKey = 'explorer-groupby-' + panelId;
+        const savedGroup = localStorage.getItem(groupKey) || 'none';
+        const toggle = document.querySelector('.explorer-groupby-toggle[data-target="' + panelId + '"]');
+        const searchInput = document.querySelector('input[data-search="' + panelId + '"]');
+        const originalItems = Array.from(container.querySelectorAll(itemSelector));
+
+        function clearHeaders() {
+            container.querySelectorAll('.explorer-section-title').forEach(el => el.remove());
+        }
+
+        function buildGrouped(attr) {
+            const groups = {};
+            originalItems.forEach(item => {
+                const key = item.getAttribute(attr);
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(item);
+            });
+            Object.keys(groups).sort().forEach(key => {
+                const header = document.createElement('div');
+                header.className = 'explorer-section-title';
+                header.textContent = key;
+                container.appendChild(header);
+                groups[key].forEach(item => container.appendChild(item));
+            });
+        }
+
+        function applyGroupBy(mode) {
+            if (toggle) toggle.querySelectorAll('button').forEach(btn => btn.classList.toggle('active', btn.dataset.groupby === mode));
+            localStorage.setItem(groupKey, mode);
+            clearHeaders();
+            if (mode === 'none') originalItems.forEach(item => container.appendChild(item));
+            else buildGrouped(mode === 'app' ? 'data-app' : 'data-group');
+            if (searchInput && searchInput.value) applySearch(searchInput.value);
+        }
+
+        function applySearch(query) {
+            const q = query.toLowerCase();
+            originalItems.forEach(item => {
+                const text = (item.getAttribute('data-name') || '') + ' ' + (item.getAttribute('data-app') || '') + ' ' + (item.getAttribute('data-group') || '');
+                item.style.display = text.toLowerCase().includes(q) ? '' : 'none';
+            });
+            container.querySelectorAll('.explorer-section-title').forEach(header => {
+                let next = header.nextElementSibling, hasVisible = false;
+                while (next && !next.classList.contains('explorer-section-title')) {
+                    if (next.style.display !== 'none') hasVisible = true;
+                    next = next.nextElementSibling;
+                }
+                header.style.display = hasVisible ? '' : 'none';
+            });
+        }
+
+        if (toggle) toggle.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => applyGroupBy(btn.dataset.groupby)));
+        if (searchInput) searchInput.addEventListener('input', function() { applySearch(this.value); });
+        applyGroupBy(savedGroup);
+    }
+
+    const grid = document.getElementById('explorer-grid');
+    if (grid) setupPanel('grid', grid, '.explorer-card', 'div', 0);
+
+    const listSearch = document.getElementById('explorer-list-search');
+    if (listSearch) {
+        listSearch.addEventListener('input', function() {
+            const q = this.value.toLowerCase();
+            document.querySelectorAll('.explorer-list-wrap .crud-table tbody tr').forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

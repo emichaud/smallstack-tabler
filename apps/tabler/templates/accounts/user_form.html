@@ -74,29 +74,29 @@
     <div class="container-xl">
         <div class="row g-2 align-items-center">
             <div class="col">
-                <div class="page-pretitle">User Management</div>
-                <h2 class="page-title">{% if object %}{{ object }}{% else %}Create User{% endif %}</h2>
-            </div>
-            {% if object %}
-            <div class="col-auto d-flex gap-3">
-                <div class="text-center">
-                    <span class="badge {% if object.is_active %}bg-green{% else %}bg-red{% endif %} badge-lg">
-                        {% if object.is_active %}Active{% else %}Inactive{% endif %}
-                    </span>
-                    <div class="text-secondary small text-uppercase mt-1">Status</div>
-                </div>
-                <div class="text-center">
-                    <div class="h3 mb-0" style="color: var(--tblr-primary);">{{ object.date_joined|date:"M Y" }}</div>
-                    <div class="text-secondary small text-uppercase">Member Since</div>
-                </div>
-                {% if object.is_staff %}
-                <div class="text-center">
-                    <span class="badge bg-blue badge-lg">Staff</span>
-                    <div class="text-secondary small text-uppercase mt-1">Role</div>
-                </div>
+                <h2 class="page-title">
+                    {% if object %}{{ object }}{% else %}Create User{% endif %}
+                    {% if object %}
+                    <span class="badge {% if object.is_active %}bg-green{% else %}bg-red{% endif %} ms-2" style="font-size: 0.65rem; vertical-align: middle;">{% if object.is_active %}Active{% else %}Inactive{% endif %}</span>
+                    {% if object.is_staff %}<span class="badge bg-blue ms-1" style="font-size: 0.65rem; vertical-align: middle;">Staff</span>{% endif %}
+                    {% endif %}
+                </h2>
+                {% if object %}
+                <div class="text-secondary mt-1">Joined {{ object.date_joined|date:"M j, Y" }}</div>
                 {% endif %}
             </div>
-            {% endif %}
+            <div class="col-auto d-flex gap-2">
+                {% if object %}
+                <a href="{% url 'profile_detail' object.username %}" class="btn btn-ghost-secondary btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/></svg>
+                    Profile
+                </a>
+                {% endif %}
+                <a href="{% url 'manage/users-list' %}" class="btn btn-ghost-secondary btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l14 0"/><path d="M5 12l6 6"/><path d="M5 12l6 -6"/></svg>
+                    All Users
+                </a>
+            </div>
         </div>
     </div>
 </div>

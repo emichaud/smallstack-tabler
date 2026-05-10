@@ -17,13 +17,13 @@ image: myapp
 servers:
   web:
     - 123.45.67.89  # Replace with your VPS IP
-  worker:
-    hosts:
-      - 123.45.67.89  # Same VPS as web
-    cmd: python manage.py db_worker --queue-name "*"
-    proxy: false
-    options:
-      health-cmd: "true"
+#  worker:
+#    hosts:
+#      - 123.45.67.89  # Same VPS as web
+#    cmd: python manage.py db_worker --queue-name "*"
+#    proxy: false
+#    options:
+#      health-cmd: "true"
 
 # SSH configuration
 ssh:

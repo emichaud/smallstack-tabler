@@ -98,6 +98,108 @@
                 </div>
             </div>
 
+            <!-- Font family -->
+            <div class="mb-4">
+                <label class="form-label">Font family</label>
+                <p class="form-hint">Choose the font family that fits your app.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-font" value="sans-serif" class="form-check-input" />
+                        <div class="form-check-label">Sans-serif</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-font" value="serif" class="form-check-input" />
+                        <div class="form-check-label">Serif</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-font" value="monospace" class="form-check-input" />
+                        <div class="form-check-label">Monospace</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-font" value="comic" class="form-check-input" />
+                        <div class="form-check-label">Comic</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Theme base -->
+            <div class="mb-4">
+                <label class="form-label">Theme base</label>
+                <p class="form-hint">Choose the gray shade for your app.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-base" value="slate" class="form-check-input" />
+                        <div class="form-check-label">Slate</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-base" value="gray" class="form-check-input" />
+                        <div class="form-check-label">Gray</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-base" value="zinc" class="form-check-input" />
+                        <div class="form-check-label">Zinc</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-base" value="neutral" class="form-check-input" />
+                        <div class="form-check-label">Neutral</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-base" value="stone" class="form-check-input" />
+                        <div class="form-check-label">Stone</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Corner Radius -->
+            <div class="mb-4">
+                <label class="form-label">Corner Radius</label>
+                <p class="form-hint">Choose the border radius factor for your app.</p>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-radius" value="0" class="form-check-input" />
+                        <div class="form-check-label">0</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-radius" value="0.5" class="form-check-input" />
+                        <div class="form-check-label">0.5</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-radius" value="1" class="form-check-input" />
+                        <div class="form-check-label">1</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-radius" value="1.5" class="form-check-input" />
+                        <div class="form-check-label">1.5</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-radius" value="2" class="form-check-input" />
+                        <div class="form-check-label">2</div>
+                    </div>
+                </label>
+            </div>
+
             <!-- Layout -->
             <div class="mb-4">
                 <label class="form-label">Layout</label>
@@ -105,7 +207,13 @@
                 <label class="form-check">
                     <div class="form-selectgroup-item">
                         <input type="radio" name="stk-layout" value="default" class="form-check-input" />
-                        <div class="form-check-label">Default</div>
+                        <div class="form-check-label">Horizontal</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="boxed" class="form-check-input" />
+                        <div class="form-check-label">Boxed</div>
                     </div>
                 </label>
                 <label class="form-check">
@@ -116,26 +224,44 @@
                 </label>
                 <label class="form-check">
                     <div class="form-selectgroup-item">
-                        <input type="radio" name="stk-layout" value="sticky" class="form-check-input" />
-                        <div class="form-check-label">Sticky navbar</div>
-                    </div>
-                </label>
-            </div>
-
-            <!-- Navbar position -->
-            <div class="mb-4">
-                <label class="form-label">Navbar position</label>
-                <p class="form-hint">Choose where the navbar appears.</p>
-                <label class="form-check">
-                    <div class="form-selectgroup-item">
-                        <input type="radio" name="stk-navbar" value="top" class="form-check-input" />
-                        <div class="form-check-label">Top</div>
+                        <input type="radio" name="stk-layout" value="fluid" class="form-check-input" />
+                        <div class="form-check-label">Fluid</div>
                     </div>
                 </label>
                 <label class="form-check">
                     <div class="form-selectgroup-item">
-                        <input type="radio" name="stk-navbar" value="side" class="form-check-input" />
-                        <div class="form-check-label">Side</div>
+                        <input type="radio" name="stk-layout" value="navbar-dark" class="form-check-input" />
+                        <div class="form-check-label">Navbar dark</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="navbar-overlap" class="form-check-input" />
+                        <div class="form-check-label">Navbar overlap</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="navbar-sticky" class="form-check-input" />
+                        <div class="form-check-label">Navbar sticky</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="vertical" class="form-check-input" />
+                        <div class="form-check-label">Vertical</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="vertical-right" class="form-check-input" />
+                        <div class="form-check-label">Right vertical</div>
+                    </div>
+                </label>
+                <label class="form-check">
+                    <div class="form-selectgroup-item">
+                        <input type="radio" name="stk-layout" value="rtl" class="form-check-input" />
+                        <div class="form-check-label">RTL mode</div>
                     </div>
                 </label>
             </div>

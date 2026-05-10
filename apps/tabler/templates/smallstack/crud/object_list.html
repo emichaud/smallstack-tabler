@@ -1,0 +1,121 @@
+{% extends "tabler/base.html" %}
+{% load theme_tags crud_tags %}
+
+{% block title %}{{ object_verbose_name_plural }}{% endblock %}
+
+{% block breadcrumbs %}
+{% if not breadcrumb_parent_label %}
+{% breadcrumb "Home" "website:home" %}
+{% breadcrumb object_verbose_name_plural %}
+{% render_tabler_breadcrumbs %}
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+{% include "smallstack/crud/_table_styles.html" %}
+{% if use_tables2 %}
+<style>
+    /* django-tables2 sort indicators */
+    .crud-table thead th a { color: var(--tblr-secondary); text-decoration: none; }
+    .crud-table thead th a:hover { color: var(--tblr-primary); }
+    .crud-table thead th.asc a::after { content: " \25B2"; font-size: 0.65rem; }
+    .crud-table thead th.desc a::after { content: " \25BC"; font-size: 0.65rem; }
+    /* django-tables2 pagination */
+    .table-container .pagination {
+        display: flex; justify-content: center; gap: 0.25rem;
+        list-style: none; padding: 1rem 0 0; margin: 0;
+    }
+    .table-container .pagination li {
+        list-style: none;
+    }
+    .table-container .pagination li a {
+        display: inline-block; padding: 0.3rem 0.75rem;
+        border-radius: var(--tblr-border-radius); color: var(--tblr-secondary);
+        text-decoration: none; font-size: 0.85rem;
+    }
+    .table-container .pagination li a:hover {
+        color: var(--tblr-primary);
+        background: rgba(var(--tblr-primary-rgb), 0.10);
+        text-decoration: none;
+    }
+    .table-container .pagination li.active a {
+        background: var(--tblr-primary); color: #fff;
+        text-decoration: none;
+    }
+</style>
+{% endif %}
+{% endblock %}
+
+{% block page_header %}
+{% if breadcrumb_parent_label %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <nav aria-label="breadcrumb" class="mb-1">
+                    <ol class="breadcrumb breadcrumb-arrows" style="font-size: 0.8rem;">
+                        <li class="breadcrumb-item"><a href="{% url 'website:home' %}">Home</a></li>
+                        <li class="breadcrumb-item"><a href="{% url breadcrumb_parent_url_name %}">{{ breadcrumb_parent_label }}</a></li>
+                        <li class="breadcrumb-item active" aria-current="page">{{ object_verbose_name_plural }}</li>
+                    </ol>
+                </nav>
+                <h2 class="page-title">{{ object_verbose_name_plural }}</h2>
+                <div class="text-secondary mt-1">{{ object_verbose_name }} records</div>
+            </div>
+            {% if create_view_url %}
+            <div class="col-auto">
+                <a href="{{ create_view_url }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-plus" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 5l0 14" /><path d="M5 12l14 0" /></svg>
+                    Add {{ object_verbose_name }}
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card" id="crud-content">
+    {% if not breadcrumb_parent_label %}
+    <div class="card-header">
+        <h3 class="card-title">{{ object_verbose_name_plural }}</h3>
+        {% if create_view_url %}
+        <div class="card-actions">
+            <a href="{{ create_view_url }}" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-plus" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 5l0 14" /><path d="M5 12l14 0" /></svg>
+                Add {{ object_verbose_name }}
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    <div class="card-body">
+        {% if display_template %}
+            {% include "smallstack/crud/includes/display_palette.html" %}
+            <div id="crud-display-area">
+                {% include display_template %}
+            </div>
+        {% elif use_tables2 %}
+            {% load django_tables2 %}
+            {% render_table table %}
+        {% elif object_list %}
+            {% crud_table %}
+        {% else %}
+            <p class="text-secondary" style="padding: 2rem 0; text-align: center;">
+                No {{ object_verbose_name_plural }} found.
+                {% if create_view_url %}
+                <a href="{{ create_view_url }}" class="text-primary">Create one now?</a>
+                {% endif %}
+            </p>
+        {% endif %}
+
+        {% if not use_tables2 and not display_template and is_paginated %}
+        {% render_paginator page_obj "#crud-content" %}
+        {% endif %}
+    </div>
+</div>
+{% include "smallstack/crud/includes/delete_modal.html" %}
+{% include "smallstack/crud/includes/field_preview_modal.html" %}
+{% endblock %}

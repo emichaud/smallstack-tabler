@@ -75,5 +75,5 @@ def starter_forms_view(request):
 
 
 def components_view(request):
-    """Redirect to the components section in help docs."""
-    return redirect(reverse("help:section_index", kwargs={"section": "components"}))
+    """Redirect to the components section in SmallStack docs."""
+    return redirect(reverse("help:section_detail", kwargs={"section": "smallstack", "slug": "components"}))

@@ -11,7 +11,34 @@ When an AI agent is asked to modify or extend this project, these files help it:
 - Make changes that integrate properly with the codebase
 - Avoid common mistakes
 
-## Available Skills
+## Tabler UI Skills (comprehensive)
+
+For Tabler-themed page work, this project ships a full skill set under [`tabler/`](tabler/). Start at the router:
+
+| File | Description |
+|------|-------------|
+| [tabler-ui.md](tabler-ui.md) | **Start here.** Top-level orientation, which-skill-for-which-job, and project rules every Tabler page must follow. |
+| [tabler/README.md](tabler/README.md) | Detailed router and glossary across all Tabler skills |
+| [tabler/foundations.md](tabler/foundations.md) | Page architecture, base.html, asset loading, navbar/breadcrumbs wiring, context processors, template tags |
+| [tabler/theming.md](tabler/theming.md) | 5 theme axes, 11 accent colors, dark mode, settings panel engine, theme persistence + profile sync |
+| [tabler/layouts.md](tabler/layouts.md) | All 10 layout variants (horizontal, vertical, boxed, condensed, fluid, sticky, overlap, RTL) — when to pick which |
+| [tabler/components.md](tabler/components.md) | Comprehensive reference: cards, buttons, modals, alerts, dropdowns, tabs, timelines, ribbons, status, etc. |
+| [tabler/icons-typography.md](tabler/icons-typography.md) | Tabler Icons (5000+), typography scale, code blocks with Prism, markdown rendering |
+| [tabler/forms.md](tabler/forms.md) | Form basics + advanced plugins (Flatpickr, Choices, tom-select, Imask, Dropzone, Signature, Star, Slider, Wizard) |
+| [tabler/tables.md](tabler/tables.md) | Sortable, paginated, datatables, List.js, htmx-driven tables, SmallStack CRUD integration |
+| [tabler/charts.md](tabler/charts.md) | ApexCharts patterns (line, area, bar, donut, radial, sparkline, heatmap), theme-aware colors, live updates |
+| [tabler/maps-calendar.md](tabler/maps-calendar.md) | jsVectorMap, FullCalendar, Sortable.js (drag-drop, kanban) |
+| [tabler/htmx-patterns.md](tabler/htmx-patterns.md) | HTMX + Tabler: lazy tabs, modal load, table refresh, toasts, JS re-init after swap |
+| [tabler/page-dashboards.md](tabler/page-dashboards.md) | **Page recipe** — admin dashboards with KPI cards, charts, recent-activity tables, live updates |
+| [tabler/page-landing.md](tabler/page-landing.md) | **Page recipe** — marketing/landing: hero, pricing, features, testimonials, FAQ, CTAs |
+| [tabler/page-content.md](tabler/page-content.md) | **Page recipe** — blog/docs/articles: TOC, markdown, slide viewer, search, related posts |
+| [tabler/page-api-explorer.md](tabler/page-api-explorer.md) | **Page recipe** — API documentation with endpoint browser, try-it panel, code examples |
+| [tabler/page-auth.md](tabler/page-auth.md) | **Page recipe** — login, signup, lock screen, password reset (uses `tabler_auth_base.html`) |
+| [tabler/page-utility.md](tabler/page-utility.md) | **Page recipe** — kanban, todos, calendar UI, file manager, email-style inbox |
+| [tabler/customization.md](tabler/customization.md) | Overrides: CSS variables, base.html extensions, new plugins, local Tabler build, CSP, new theme axes |
+| [tabler/troubleshooting.md](tabler/troubleshooting.md) | Symptom-indexed fixes: FOUC, theme persistence, chart dark mode, htmx + Tabler JS, settings sync |
+
+## Other Skills
 
 | File | Description |
 |------|-------------|
@@ -47,10 +74,11 @@ When an AI agent is asked to modify or extend this project, these files help it:
 
 AI agents should read relevant skill files before making changes to the corresponding parts of the codebase. For example:
 
+- **Before building any Tabler-themed page → read `tabler-ui.md` first** (it routes you to the right specialized skill under `tabler/`)
 - Before creating a new app → read `django-apps.md`
 - Before creating templates → read `templates.md`
-- Before building any admin/management page → read `admin-page-styling.md` (buttons, cards, tables, forms, etc.)
-- Before modifying CSS/theming → read `theming-system.md`
+- Before building any admin/management page → read `admin-page-styling.md` (buttons, cards, tables, forms, etc.) — note: for Tabler-specific page building, `tabler-ui.md` is the authoritative starting point
+- Before modifying CSS/theming → read `theming-system.md` (for SmallStack base) or `tabler/theming.md` (for the Tabler engine)
 - Before building a new page that should fit the SmallStack theme → read `building-themed-pages.md`
 - Before adding a custom theme (Bootstrap, Tailwind, etc.) → read `adding-your-own-theme.md`
 - Before deciding which theme approach to take → read `theme-scenarios.md`

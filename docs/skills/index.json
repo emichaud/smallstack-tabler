@@ -194,6 +194,166 @@
       "description": "Pulling upstream SmallStack changes into downstream projects, resolving merge conflicts, and deploying after integration.",
       "keywords": ["upstream", "downstream", "merge", "pull", "integrate", "conflict"],
       "use_when": "Merging upstream SmallStack updates into a downstream project like opshugger or smallstack_web."
+    },
+    {
+      "id": "tabler-ui",
+      "file": "tabler-ui.md",
+      "name": "Tabler UI — top-level orientation",
+      "description": "Router and project-wide rules for building Tabler-themed pages. Lists every specialized Tabler skill and the file-locations cheat sheet. Start here for any Tabler work.",
+      "keywords": ["tabler", "ui", "theme", "admin", "dashboard", "bootstrap", "page", "rules"],
+      "use_when": "Starting any Tabler-themed page or component, or unsure which specialized Tabler skill to read."
+    },
+    {
+      "id": "tabler-readme",
+      "file": "tabler/README.md",
+      "name": "Tabler Skills — Router",
+      "description": "Lists all specialized Tabler skill files with which-skill-for-which-job index and glossary. Also lives in tabler-ui.md but with more detail.",
+      "keywords": ["tabler", "index", "router", "skills", "navigation"],
+      "use_when": "Need a detailed map of which Tabler skill covers which use case."
+    },
+    {
+      "id": "tabler-foundations",
+      "file": "tabler/foundations.md",
+      "name": "Tabler Foundations",
+      "description": "Page architecture, base.html structure, asset loading order, navbar/breadcrumbs/messages wiring, available template blocks, context processors (brand.*, nav_items), template tags from theme_tags.py.",
+      "keywords": ["tabler", "base", "page", "template", "block", "breadcrumb", "navbar", "context processor", "brand"],
+      "use_when": "Creating any new Tabler-themed page, wiring a Django view to a template, or understanding how base.html composes navbar, header, body, footer."
+    },
+    {
+      "id": "tabler-theming",
+      "file": "tabler/theming.md",
+      "name": "Tabler Theming",
+      "description": "Five theme axes (theme/color/font/base/radius), 11 accent colors, dark-mode CSS variables, settings panel, theme engine API (SmallStackTheme.applyColor etc.), localStorage keys, profile sync, FOUC prevention.",
+      "keywords": ["tabler", "theme", "dark mode", "color", "accent", "css variable", "settings", "localStorage", "fouc"],
+      "use_when": "Changing the default accent color, customizing dark mode, debugging theme persistence, adding/removing settings panel options, or syncing theme state to profile."
+    },
+    {
+      "id": "tabler-layouts",
+      "file": "tabler/layouts.md",
+      "name": "Tabler Layouts",
+      "description": "Layout matrix: default, boxed, condensed, fluid, navbar-dark, navbar-overlap, navbar-sticky, vertical, vertical-right, rtl. When to pick each. How to hard-code per-app. Sidebar implementation, RTL, print, mobile responsive.",
+      "keywords": ["tabler", "layout", "boxed", "condensed", "fluid", "vertical", "sidebar", "sticky", "overlap", "rtl"],
+      "use_when": "Choosing a page layout, hard-coding a layout per-app, implementing a new layout variant, or combining layouts."
+    },
+    {
+      "id": "tabler-components",
+      "file": "tabler/components.md",
+      "name": "Tabler Components Reference",
+      "description": "Comprehensive component reference: cards (status, stacked, tabs, card-table), buttons (color, size, shape, group), badges, avatars, alerts, dropdowns (rich, apps-grid), modals (sizes, status-color, htmx-load), offcanvas, tabs (lazy-load), accordions, popovers, tooltips, steps, ribbons, status, empty states, timelines, progress bars, carousels, toasts, lightbox, spinners, pagination.",
+      "keywords": ["tabler", "component", "card", "button", "badge", "avatar", "alert", "dropdown", "modal", "offcanvas", "tab", "accordion", "step", "ribbon", "timeline", "toast"],
+      "use_when": "Building any UI element except forms, tables, or charts (which have dedicated skill files)."
+    },
+    {
+      "id": "tabler-icons-typography",
+      "file": "tabler/icons-typography.md",
+      "name": "Tabler Icons & Typography",
+      "description": "Tabler Icons (5000+ stroke icons), sizing (icon-sm to icon-2xl), colors via currentColor, animations (icon-pulse/tada/rotate), common icon SVGs used in this project. Typography: headings, display sizes, weight, alignment, colors, font-family override. Code blocks with Prism.js setup. Markdown rendering via the .markdown class.",
+      "keywords": ["tabler", "icon", "svg", "typography", "heading", "display", "font", "code", "prism", "markdown"],
+      "use_when": "Picking, sizing, or coloring icons. Choosing heading sizes. Setting up code blocks with syntax highlighting. Rendering markdown."
+    },
+    {
+      "id": "tabler-forms",
+      "file": "tabler/forms.md",
+      "name": "Tabler Forms (basic + advanced plugins)",
+      "description": "Form basics (inputs, selects, switches, validation), input groups (icon, prefix, button addon), color/file/range inputs, form layouts (horizontal, inline, multi-column), advanced plugins (Flatpickr, Choices.js, tom-select, Imask, Dropzone, Signature Pad, Star Rating, NoUiSlider, autosize), multi-step wizards, Django form integration with class assignment, htmx form submission with inline validation.",
+      "keywords": ["tabler", "form", "input", "flatpickr", "choices", "tom-select", "imask", "dropzone", "signature", "star rating", "noUiSlider", "wizard", "validation"],
+      "use_when": "Building any form: signup, settings, content editing, multi-step wizards, advanced selects, date pickers, file uploads, masked inputs."
+    },
+    {
+      "id": "tabler-tables",
+      "file": "tabler/tables.md",
+      "name": "Tabler Tables",
+      "description": "Table classes (card-table, table-vcenter, responsive, striped, hover, mobile-md), sortable columns via {% sortable_th %}, Django pagination with {% render_paginator %}, filters above table, htmx-driven live search + sort + paginate + inline edit + infinite scroll, DataTables.net for client-side enhancement, List.js for lightweight search, SmallStack CRUD integration, bulk actions, row expansion, sticky headers, CSV/JSON export, empty states, timezone-aware datetime cells.",
+      "keywords": ["tabler", "table", "datatable", "sortable", "pagination", "filter", "crud", "list.js", "infinite scroll", "inline edit", "export"],
+      "use_when": "Building a list view, log viewer, data explorer, or any tabular presentation of records."
+    },
+    {
+      "id": "tabler-charts",
+      "file": "tabler/charts.md",
+      "name": "Tabler Charts (ApexCharts)",
+      "description": "ApexCharts patterns: line, area, bar (stacked, horizontal), donut/pie, radial/gauge, sparkline, heatmap, range/timeline, mixed chart. Theme-aware colors via CSS variables. Reacting to theme/color changes with MutationObserver. Live updates via htmx polling. Tooltip customization. Chart.js mention as alternative.",
+      "keywords": ["tabler", "chart", "apexcharts", "line", "bar", "donut", "radial", "sparkline", "heatmap", "live update"],
+      "use_when": "Adding any chart, making charts respect theme + accent color, updating charts live via htmx polling."
+    },
+    {
+      "id": "tabler-maps-calendar",
+      "file": "tabler/maps-calendar.md",
+      "name": "Tabler Maps & Calendar (jsvectormap, FullCalendar, Sortable.js)",
+      "description": "jsVectorMap (world/regional maps with series, markers, click handlers, dark-mode polish), FullCalendar (events from JSON endpoint, multiple views, color-coded, recurring, drag-from-outside), Sortable.js (single list and multi-column kanban with onEnd persistence, handles, ghost styles, combining with FullCalendar drop).",
+      "keywords": ["tabler", "map", "vector", "calendar", "fullcalendar", "sortable", "kanban", "drag drop", "jsvectormap"],
+      "use_when": "Adding a geographic map, full event calendar (week/month/day views), or drag-drop sortable lists / kanban boards."
+    },
+    {
+      "id": "tabler-htmx-patterns",
+      "file": "tabler/htmx-patterns.md",
+      "name": "Tabler + HTMX patterns",
+      "description": "The critical re-init pattern for tooltips/popovers/dropdowns after swap. Lazy-load tabs (click once). Modal content via htmx with HX-Trigger close-from-server. Offcanvas with htmx. Table refresh (search, sort, paginate, infinite scroll). Toast notifications from server response. Inline edit. Out-of-band swaps. hx-push-url for SPA-like nav. Loading indicators. Polling. Confirm before destructive actions.",
+      "keywords": ["tabler", "htmx", "swap", "re-init", "tab", "modal", "offcanvas", "toast", "infinite scroll", "polling", "oob"],
+      "use_when": "Wiring htmx into Tabler: tab loads, modals/offcanvas content, table refresh, toasts, infinite scroll, JS re-initialization after swap."
+    },
+    {
+      "id": "tabler-page-dashboards",
+      "file": "tabler/page-dashboards.md",
+      "name": "Tabler Dashboards page recipe",
+      "description": "Anatomy of an admin dashboard: page header → KPI row (4 patterns) → welcome/hero card → primary chart row → donut breakdown → recent activity table → timeline/status. Range switchers, real-time htmx updates, tabbed dashboards with lazy-load.",
+      "keywords": ["tabler", "dashboard", "kpi", "stat", "analytics", "admin", "welcome", "sparkline", "metrics"],
+      "use_when": "Building an internal/admin dashboard: stat rows, KPI cards, analytics charts, recent activity, real-time monitoring."
+    },
+    {
+      "id": "tabler-page-landing",
+      "file": "tabler/page-landing.md",
+      "name": "Tabler Landing/Marketing page recipe",
+      "description": "Hero (centered, split, gradient with navbar-overlap), feature grids (icon-cards, alternating left-right), pricing tables (3-tier with monthly/yearly toggle), testimonials, logo cloud, FAQ accordion, newsletter signup, CTA banner, 404/error pages, changelog. Layout tips for marketing pages.",
+      "keywords": ["tabler", "landing", "marketing", "hero", "pricing", "feature", "testimonial", "faq", "cta", "404", "changelog"],
+      "use_when": "Building marketing/landing pages: hero, pricing, features, testimonials, FAQ, CTAs, 404 pages, changelog."
+    },
+    {
+      "id": "tabler-page-content",
+      "file": "tabler/page-content.md",
+      "name": "Tabler Blog/Docs/Content page recipe",
+      "description": "Article/blog post layout with hero, markdown rendering (server-side with Pygments/markdown extensions, client-side with Marked). Code blocks with Prism + copy-to-clipboard. Table of contents with scroll-spy. Blog index (cards or compact list). Three-column docs layout (sidebar nav, content, on-this-page). Search (List.js, htmx). Slide viewer pattern. Reading progress bar. Related posts. Social share. OG/SEO meta.",
+      "keywords": ["tabler", "blog", "docs", "article", "markdown", "toc", "prism", "slide", "search", "share", "seo"],
+      "use_when": "Building blog posts, documentation pages, knowledge-base articles, help pages, release notes, or any long-form structured content."
+    },
+    {
+      "id": "tabler-page-api-explorer",
+      "file": "tabler/page-api-explorer.md",
+      "name": "Tabler API Explorer/Docs page recipe",
+      "description": "Endpoint sidebar with method badges + search, endpoint header (method + path + summary), parameters table, responses with tabs and status colors, try-it panel with bearer token + parameter inputs + JSON body editor, code examples for multiple languages with copy-clipboard, OpenAPI integration (ReDoc/Swagger), inline schema explorer with details/summary, versioning, auth helper alert.",
+      "keywords": ["tabler", "api", "explorer", "endpoint", "documentation", "openapi", "swagger", "redoc", "prism", "try it"],
+      "use_when": "Building a page that documents REST endpoints, lets users try them, shows request/response examples, generates client snippets, browses an OpenAPI spec."
+    },
+    {
+      "id": "tabler-page-auth",
+      "file": "tabler/page-auth.md",
+      "name": "Tabler Auth pages (login, signup, lock, password reset)",
+      "description": "Uses registration/tabler_auth_base.html. Centered card layout. Sign-in, sign-up, forgot password, set new password, lock screen, email verification, OAuth/SSO buttons, two-factor MFA with auto-advancing OTP inputs, logged-out screen. SmallStack signup-gate handling, branding overrides.",
+      "keywords": ["tabler", "auth", "login", "signup", "password reset", "lock", "mfa", "otp", "oauth"],
+      "use_when": "Building or customizing login, signup, lock-screen, password-reset, MFA, or email-confirmation pages."
+    },
+    {
+      "id": "tabler-page-utility",
+      "file": "tabler/page-utility.md",
+      "name": "Tabler Utility apps (kanban, todos, calendar, file manager, inbox)",
+      "description": "Kanban board with Sortable.js + htmx modal cards. Todo list with htmx checkbox-toggle and inline create. Event calendar with FullCalendar + filter sidebar. File manager (grid + list views, offcanvas detail, Dropzone upload). Email-style inbox (3-column with htmx detail load). Activity feed via timeline. Notifications dropdown + center. Profile/settings page with sidebar nav.",
+      "keywords": ["tabler", "kanban", "todo", "calendar", "file manager", "inbox", "email", "notification", "settings", "profile"],
+      "use_when": "Building productivity-tool-style pages: kanban boards, todo lists, calendar UIs, file managers, email inboxes."
+    },
+    {
+      "id": "tabler-customization",
+      "file": "tabler/customization.md",
+      "name": "Tabler Customization",
+      "description": "Three customization layers (CSS variables, CSS overrides, fork base/partials). When to pick each. Adding new template blocks. Integrating new plugins (5-step pattern: load, dark-mode, accent-color, htmx-reinit, document). Switching to local Tabler build (quick + full SCSS rebuild). Adding new theme axes (settings panel + JS + CSS). Customizing navbar/footer. Removing cookie banner / settings panel. CSP guidance. Print stylesheets. i18n.",
+      "keywords": ["tabler", "customization", "override", "css variable", "plugin", "cdn", "local build", "csp", "i18n", "rtl"],
+      "use_when": "Changing Tabler defaults, extending base template, integrating a new plugin, self-hosting Tabler, adding a new theme axis, or handling CSP."
+    },
+    {
+      "id": "tabler-troubleshooting",
+      "file": "tabler/troubleshooting.md",
+      "name": "Tabler Troubleshooting",
+      "description": "Symptom index with fixes: FOUC, theme not persisting, accent color resets, charts ignoring theme changes, charts wrong in dark mode, Bootstrap components dead after htmx swap, settings panel out of sync, CDN failures, modal showing stale content, vertical layout missing, auth page showing navbar, chart 0-height in tabs, Sortable.js not persisting, Django form fields lacking Tabler classes, performance, print preview broken, settings reset incomplete.",
+      "keywords": ["tabler", "troubleshooting", "debug", "fouc", "fix", "bug", "issue", "problem"],
+      "use_when": "Something visual or behavioral is broken — FOUC, theme not persisting, charts ignoring dark mode, htmx swaps breaking Tabler JS, settings panel out of sync."
     }
   ]
 }

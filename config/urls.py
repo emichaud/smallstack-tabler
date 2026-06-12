@@ -26,6 +26,7 @@ from apps.smallstack.api import (
     api_openapi_schema,
     api_schema,
 )
+from apps.mcp.urls import oauth_wellknown_urlpatterns
 from apps.smallstack.dashboard import api_widgets as api_dashboard_widgets
 
 from .views import health_check, legal_page_view
@@ -64,6 +65,10 @@ urlpatterns = [
     path("api/auth/logout/", api_auth_logout, name="api-auth-logout"),
     # API dashboard
     path("api/dashboard/widgets/", api_dashboard_widgets, name="api-dashboard-widgets"),
+    # MCP (Model Context Protocol) — JSON-RPC + OAuth surface
+    path("", include("apps.mcp.urls")),
+    # MCP well-known discovery endpoints mounted at the root
+    *oauth_wellknown_urlpatterns,
     # Admin
     path("admin/", admin.site.urls),
     # Legal pages (public)

@@ -5,7 +5,12 @@ A client (Claude Desktop, Claude.ai, custom) is failing to attach to `/mcp` or a
 
 ## Decision tree
 
-1. **No tools showing up at all** → `mcp_doctor`. If the registry shows 0 tools, no CRUDView has `enable_mcp = True` and `MCP_TOOL_MODULES` is empty.
+1. **No tools showing up at all** → `mcp_doctor`. If the registry shows 0 tools, no CRUDView has `enable_mcp = True` and `MCP_TOOL_MODULES` is empty. If the doctor WARNs that `enable_mcp = True` files aren't represented in the registry, the named file's CRUDView isn't being imported — either `MCP_AUTODISCOVER` is off, or the CRUDView lives outside `views.py`/`mcp_tools.py` and the owning app's `AppConfig.ready()` isn't importing it.
+
+   **The LLM sees the wrong tool list or wrong schema?** → `mcp_doctor --explain` dumps every registered tool's description + `inputSchema`. Use `--explain TOOL_NAME` for one tool; pipe `--explain --json` through `jq` for surgical queries like "which tools take a `status` parameter?". Typical findings:
+   - Schema is missing a filter the user expects → add the field to `filter_fields` on the CRUDView.
+   - Description is the bare model name → set `mcp_description` to a sentence the LLM can match against.
+   - Read tool incorrectly marked `write: True` (or vice-versa) → check the decorator / `Action` mapping.
 
 2. **Client says "couldn't connect", no log lines** → the GET banner is reachable, but POST isn't. Three usual causes:
    - APPEND_SLASH redirected POST to GET. Both `/mcp` and `/mcp/` must accept POST. Check `apps/mcp/urls.py` — it should mount the same view twice.

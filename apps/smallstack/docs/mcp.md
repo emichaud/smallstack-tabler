@@ -10,7 +10,7 @@ SmallStack ships an MCP server at `/mcp` so AI clients (Claude Desktop, Claude.a
 - `enable_mcp = True` on any `CRUDView` auto-derives 1–5 MCP tools from it. Each `Action` in the view's `actions` (filtered by `mcp_actions` if set) becomes one tool — up to 5 per view (`list_`, `get_`, `create_`, `update_`, `delete_`).
 - `@tool` decorator for adding curated cross-cutting tools that wrap aggregation or lookups an LLM would otherwise need many CRUD calls for
 - Bearer-only auth (session cookies are deliberately rejected)
-- `python manage.py mcp_doctor` for diagnostics
+- `python manage.py mcp_doctor` for diagnostics (and `mcp_doctor --explain` to dump tool schemas — the same thing the LLM sees from `tools/list`)
 
 ## First connection (smoke test)
 

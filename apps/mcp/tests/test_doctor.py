@@ -157,3 +157,74 @@ def test_scanner_skips_tests_and_migrations(tmp_path, monkeypatch):
     assert any("views.py" in d for d in displays)
     assert not any("conftest.py" in d for d in displays)
     assert not any("0001.py" in d for d in displays)
+
+
+# ---------------------------------------------------------------------------
+# --explain
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _registered_tool():
+    """Put one concrete tool in the registry for the --explain tests."""
+    from apps.mcp.factory import register_mcp_tools_from_crudview
+    from apps.mcp.server import clear_registry_for_tests
+    from apps.mcp.tests.fake_app.views import AutodiscoverWidgetCRUDView
+
+    clear_registry_for_tests()
+    register_mcp_tools_from_crudview(AutodiscoverWidgetCRUDView)
+    yield
+    clear_registry_for_tests()
+
+
+def test_explain_dumps_all_tools(_registered_tool, capsys):
+    """--explain (no tool name) dumps every registered tool's schema."""
+    call_command("mcp_doctor", "--explain")
+    out = capsys.readouterr().out
+    assert "list_autodiscover_widgets" in out
+    assert "get_widget" in out
+    assert "inputSchema" in out
+    assert "description:" in out
+
+
+def test_explain_filters_to_a_single_tool(_registered_tool, capsys):
+    """--explain <tool_name> dumps only that one tool."""
+    call_command("mcp_doctor", "--explain", "get_widget")
+    out = capsys.readouterr().out
+    assert "get_widget" in out
+    assert "list_autodiscover_widgets" not in out
+    assert '"pk"' in out  # inputSchema includes pk
+
+
+def test_explain_with_unknown_tool_exits_nonzero(_registered_tool, capsys):
+    """Asking for a tool that doesn't exist exits 1 with an actionable
+    list of what IS registered."""
+    with pytest.raises(SystemExit) as excinfo:
+        call_command("mcp_doctor", "--explain", "no_such_tool")
+    assert excinfo.value.code == 1
+    out = capsys.readouterr().out
+    assert "no_such_tool" in out
+    assert "list_autodiscover_widgets" in out  # the suggested alternatives
+
+
+def test_explain_with_json_is_parseable(_registered_tool):
+    """--explain --json emits a JSON array of tool dicts."""
+    out = StringIO()
+    call_command("mcp_doctor", "--explain", "--json", stdout=out)
+    data = json.loads(out.getvalue())
+    assert isinstance(data, list)
+    names = [t["name"] for t in data]
+    assert "list_autodiscover_widgets" in names
+    sample = next(t for t in data if t["name"] == "get_widget")
+    assert sample["inputSchema"]["properties"]["pk"]["type"] == "integer"
+    assert sample["write"] is False
+
+
+def test_explain_handles_empty_registry(capsys):
+    """No tools registered → friendly "(no tools registered)" line, exit 0."""
+    from apps.mcp.server import clear_registry_for_tests
+
+    clear_registry_for_tests()
+    call_command("mcp_doctor", "--explain")
+    out = capsys.readouterr().out
+    assert "no tools registered" in out.lower()

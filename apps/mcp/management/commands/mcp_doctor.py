@@ -45,8 +45,27 @@ class Command(BaseCommand):
             action="store_true",
             help="Exit non-zero on any FAIL.",
         )
+        parser.add_argument(
+            "--explain",
+            nargs="?",
+            const="__ALL__",
+            default=None,
+            metavar="TOOL",
+            help=(
+                "Dump the description + input_schema for every registered MCP tool "
+                "(or just one if a tool name is provided). Useful for debugging "
+                "'Claude doesn't know it can filter by status' style issues. "
+                "Composes with --json."
+            ),
+        )
 
     def handle(self, *args, **options):
+        # --explain bypasses the diagnostic checks — it's a read-only dump
+        # against the live TOOL_REGISTRY. Composes with --json.
+        if options.get("explain") is not None:
+            self._explain(options["explain"], as_json=options.get("json", False))
+            return
+
         report: list[dict] = []
         self._check_mcp_package(report)
         self._check_settings(report)
@@ -72,6 +91,56 @@ class Command(BaseCommand):
                 f"Summary: {len(report) - fail_count - warn_count} ✓ / "
                 f"{warn_count} ⚠ / {fail_count} ✗"
             )
+
+    # ---- --explain --------------------------------------------------------
+
+    def _explain(self, tool_filter: str, *, as_json: bool) -> None:
+        """Dump the schemas the LLM sees.
+
+        `tool_filter == "__ALL__"` (sentinel from argparse `const`) means
+        "every registered tool"; anything else is treated as an exact tool
+        name. A non-matching name exits with the registered-tools list.
+        """
+        all_tools = sorted(TOOL_REGISTRY.values(), key=lambda td: td.name)
+        if tool_filter == "__ALL__":
+            selected = all_tools
+        else:
+            selected = [td for td in all_tools if td.name == tool_filter]
+            if not selected:
+                available = ", ".join(td.name for td in all_tools) or "(none)"
+                self.stdout.write(
+                    self.style.ERROR(f"No tool named {tool_filter!r}. Registered: {available}")
+                )
+                sys.exit(1)
+
+        if as_json:
+            payload = [
+                {
+                    "name": td.name,
+                    "description": td.description,
+                    "write": td.write,
+                    "requires_access": td.requires_access,
+                    "inputSchema": td.input_schema,
+                }
+                for td in selected
+            ]
+            self.stdout.write(jsonlib.dumps(payload, indent=2))
+            return
+
+        if not selected:
+            self.stdout.write("(no tools registered)")
+            return
+
+        for td in selected:
+            self.stdout.write(self.style.MIGRATE_HEADING(td.name))
+            self.stdout.write(f"  description: {td.description}")
+            self.stdout.write(f"  write: {td.write}")
+            self.stdout.write(f"  requires_access: {td.requires_access}")
+            self.stdout.write("  inputSchema:")
+            pretty = jsonlib.dumps(td.input_schema, indent=2)
+            for line in pretty.splitlines():
+                self.stdout.write(f"    {line}")
+            self.stdout.write("")
 
     # ---- checks -----------------------------------------------------------
 

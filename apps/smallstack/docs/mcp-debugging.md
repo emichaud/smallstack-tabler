@@ -14,8 +14,31 @@ Flags:
 - `--no-self-test` — skip the test-client request
 - `--json` — machine-readable output for monitoring
 - `--check-only` — exit 1 on any FAIL (useful in CI)
+- `--explain [TOOL]` — dump descriptions + `inputSchema` for every registered tool (or just one). Useful for the "Claude doesn't know it can filter by status" class of issues.
 
-## Step 2 — log lines
+## Step 2 — inspect what the LLM sees
+
+When a tool exists but the LLM is calling it wrong (or won't call it at all), the next stop is the tool's description + input schema. That's what Claude reads from `tools/list`. The `--explain` flag dumps it without needing a running server:
+
+```bash
+uv run python manage.py mcp_doctor --explain
+# → every registered tool: name, description, write flag, requires_access,
+#    full inputSchema
+
+uv run python manage.py mcp_doctor --explain list_tickets
+# → just the one tool
+
+uv run python manage.py mcp_doctor --explain --json | jq '.[].name'
+# → machine-readable; pipe through jq for surgical queries like
+#   "which tools accept a `status` parameter?"
+```
+
+Typical fixes once you see the dump:
+- Field missing from `inputSchema` → add it to `filter_fields` on the CRUDView.
+- Description is the bare model name → set `mcp_description` to a sentence the LLM can match against.
+- `write: True` on a tool that should be read-only (and vice versa) → check the action / decorator.
+
+## Step 3 — log lines
 
 Every request emits at least three lines under the `smallstack.mcp.views` logger:
 

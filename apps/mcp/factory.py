@@ -180,11 +180,12 @@ def _build_list_tool(view_cls, *, base: str, description: str):
 
         fields = view_cls._get_list_fields()
         extra = getattr(view_cls, "api_extra_fields", [])
+        expand = set(getattr(view_cls, "api_expand_fields", []) or [])
         rows = list(qs[:limit])
         return {
             "count": len(rows),
             "limit": limit,
-            "results": [serialize(obj, fields, extra) for obj in rows],
+            "results": [serialize(obj, fields, extra, expand) for obj in rows],
         }
 
     desc = description or f"List {view_cls.model._meta.verbose_name_plural}. Supports filters + search."
@@ -210,7 +211,8 @@ def _build_get_tool(view_cls, *, singular: str, description: str):
             return {"error": f"{view_cls.model.__name__} pk={pk} not found"}
         fields = view_cls._get_detail_fields() or view_cls.fields
         extra = getattr(view_cls, "api_extra_fields", [])
-        return serialize(obj, fields, extra)
+        expand = set(getattr(view_cls, "api_expand_fields", []) or [])
+        return serialize(obj, fields, extra, expand)
 
     schema = {
         "type": "object",
@@ -241,7 +243,8 @@ def _build_create_tool(view_cls, *, singular: str, description: str):
         view_cls.on_form_valid(request, form, obj, is_create=True)
         fields = view_cls._get_detail_fields() or view_cls.fields
         extra = getattr(view_cls, "api_extra_fields", [])
-        return serialize(obj, fields, extra)
+        expand = set(getattr(view_cls, "api_expand_fields", []) or [])
+        return serialize(obj, fields, extra, expand)
 
     schema = _build_form_input_schema(view_cls)
     desc = description or f"Create a new {view_cls.model._meta.verbose_name}."
@@ -293,7 +296,8 @@ def _build_update_tool(view_cls, *, singular: str, description: str):
         view_cls.on_form_valid(request, form, obj, is_create=False)
         fields = view_cls._get_detail_fields() or view_cls.fields
         extra = getattr(view_cls, "api_extra_fields", [])
-        return serialize(obj, fields, extra)
+        expand = set(getattr(view_cls, "api_expand_fields", []) or [])
+        return serialize(obj, fields, extra, expand)
 
     schema = _build_form_input_schema(view_cls, include_pk=True)
     desc = description or f"Update a {view_cls.model._meta.verbose_name}."

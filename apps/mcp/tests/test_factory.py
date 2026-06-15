@@ -75,3 +75,60 @@ def test_list_schema_includes_filters_and_search(widget_view):
     assert "q" in props
     assert "owner" in props
     assert "limit" in props
+
+
+def test_fk_expansion_via_api_expand_fields(widget_view, user_a, readonly_token):
+    """A CRUDView with api_expand_fields=['owner'] makes the factory
+    serialize FKs as nested {id, name} dicts instead of bare PKs — the
+    LLM-friendly form. Mirrors the REST API's ?expand= behavior."""
+    import inspect
+
+    from apps.mcp.server import TOOL_HANDLERS, ToolContext, reset_context, set_context
+
+    from .models import Widget
+
+    class _ExpandWidget(widget_view):
+        url_base = "expand_widgets"
+        api_expand_fields = ["owner"]
+
+    register_mcp_tools_from_crudview(_ExpandWidget)
+    Widget.objects.create(name="W1", owner=user_a)
+    token, _ = readonly_token
+
+    ctx = set_context(ToolContext(user=user_a, token=token))
+    try:
+        handler = TOOL_HANDLERS["list_expand_widgets"]
+        result = handler({}) if not inspect.iscoroutinefunction(handler) else None  # sync handler
+    finally:
+        reset_context(ctx)
+
+    assert result["count"] == 1
+    owner = result["results"][0]["owner"]
+    # Without expand: would be a bare int. With expand: {id, name}.
+    assert isinstance(owner, dict)
+    assert owner["id"] == user_a.pk
+    assert owner["name"] == str(user_a)
+
+
+def test_no_expand_keeps_fk_as_bare_pk(widget_view, user_a, readonly_token):
+    """Sanity check: a CRUDView WITHOUT api_expand_fields still emits
+    FKs as bare PKs (the existing default behaviour). Backwards-compat."""
+    from apps.mcp.server import TOOL_HANDLERS, ToolContext, reset_context, set_context
+
+    from .models import Widget
+
+    class _PlainWidget(widget_view):
+        url_base = "plain_widgets"
+        api_expand_fields = []
+
+    register_mcp_tools_from_crudview(_PlainWidget)
+    Widget.objects.create(name="W2", owner=user_a)
+    token, _ = readonly_token
+
+    ctx = set_context(ToolContext(user=user_a, token=token))
+    try:
+        result = TOOL_HANDLERS["list_plain_widgets"]({})
+    finally:
+        reset_context(ctx)
+
+    assert result["results"][0]["owner"] == user_a.pk  # bare int, not dict

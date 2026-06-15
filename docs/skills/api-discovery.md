@@ -222,6 +222,18 @@ Import the spec URL directly:
 2. Enter `http://localhost:8005/api/schema/openapi.json`
 3. All endpoints are imported with parameters, request bodies, and auth headers
 
+## Smoke-Testing the API
+
+When you need to verify the API is actually serving from a running server (not just that `pytest` passes against the test client), use `make api-test`:
+
+```bash
+make run             # one terminal
+make api-test        # another — mints readonly token, GETs /api/schema/,
+                     # GETs a sample endpoint, revokes the token
+```
+
+Exit codes: `0` clean, `2` connection refused, `4` malformed response or non-200. Catches reverse-proxy bugs, header-stripping middleware, port conflicts — the stuff `pytest` can't see because it runs in-process. The companion command for MCP is `make mcp-test`. Wire both into CI for one signal per deploy.
+
 ## Best Practices
 
 1. **Use `/api/schema/` for runtime discovery** — it's lightweight and returns only what you need for building dynamic navigation or config
@@ -229,3 +241,4 @@ Import the spec URL directly:
 3. **Use the OpenAPI spec for tooling** — Swagger UI for interactive docs, code generators for type-safe clients
 4. **Cache discovery responses** — these endpoints return metadata that changes only when the server code changes, not with data mutations
 5. **Prefer OpenAPI for external integrations** — it's a standard format that any API tool understands
+6. **Run `make api-test` before merging** — proves the API actually serves a real HTTP request, not just that pytest passes in-process

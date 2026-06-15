@@ -163,3 +163,22 @@ If Swagger UI or ReDoc shows a blank white page:
 2. **Check network tab** — Verify the CDN scripts are loading (200 status).
 3. **Check the spec URL** — Visit `/api/schema/openapi.json` directly. If it returns valid JSON, the spec is fine.
 4. **Django Debug Toolbar** — If enabled, the toolbar can interfere with standalone HTML pages. The debug toolbar is configured to skip `/api/docs/` and `/api/redoc/` paths, but if you're still having issues, verify the `SHOW_TOOLBAR_CALLBACK` in `config/settings/development.py`.
+
+## Smoke-Testing the API
+
+To verify the API surface end-to-end against a running server (not the in-process test client):
+
+```bash
+make run             # one terminal — start the dev server
+make api-test        # another — mint readonly token, GET /api/schema/,
+                     # GET a sample endpoint, revoke the token
+```
+
+Exit codes:
+- `0` — all steps PASS (SKIP is allowed when no CRUDView has `enable_api = True`)
+- `2` — could not reach the server
+- `4` — server reachable but a response was malformed or non-200
+
+This catches what `pytest` and `python manage.py check` can't: reverse-proxy bugs, header-stripping middleware, port collisions, and CSP regressions that only show up when a real HTTP request hits the running server. Wraps `manage.py api_smoke`; pass `--base-url`, `--user`, `--endpoint`, `--json`, or `--quiet` to that command directly if you need more control.
+
+The companion command for the MCP surface is `make mcp-test`. Wire both into CI for a single green/red signal on each deploy.

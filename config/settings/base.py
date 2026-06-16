@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # SmallStack app-level settings (branding, feature flags, sidebar, etc.)
 # Edit config/settings/smallstack.py to customize your instance.
-from config.settings.smallstack import *  # noqa: F401, F403
+from config.settings.smallstack import *  # noqa: E402, F401, F403
 
 # SECURITY WARNING: keep the secret key used in production secret!
 # In development, auto-generates a random key so devs never need to configure one.
@@ -35,6 +35,8 @@ INSTALLED_APPS = [
     "apps.usermanager",
     "apps.website",  # Project-specific pages (customize freely)
     "apps.preview",  # Tabler preview pages (design reference)
+    "apps.mcp",  # Model Context Protocol server for AI clients
+    "apps.tokenmgr",  # User-facing UI for API token management
     # Django built-in apps
     "django.contrib.admin",
     "django.contrib.auth",

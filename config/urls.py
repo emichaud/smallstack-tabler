@@ -9,6 +9,7 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 
 from apps.heartbeat.views import StatusPageView, heartbeat_ping, status_json
+from apps.mcp.urls import oauth_wellknown_urlpatterns
 from apps.smallstack.api import (
     api_auth_logout,
     api_auth_me,
@@ -64,6 +65,10 @@ urlpatterns = [
     path("api/auth/logout/", api_auth_logout, name="api-auth-logout"),
     # API dashboard
     path("api/dashboard/widgets/", api_dashboard_widgets, name="api-dashboard-widgets"),
+    # MCP (Model Context Protocol) — JSON-RPC + OAuth surface
+    path("", include("apps.mcp.urls")),
+    # MCP well-known discovery endpoints mounted at the root
+    *oauth_wellknown_urlpatterns,
     # Admin
     path("admin/", admin.site.urls),
     # Tabler preview pages (design reference)

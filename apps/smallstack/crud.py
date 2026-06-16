@@ -27,8 +27,8 @@ from typing import Any
 from django import forms
 from django.contrib import messages
 from django.db import IntegrityError
-from django.db.models import ProtectedError, RestrictedError
-from django.http import Http404, HttpResponse, QueryDict
+from django.db.models import ProtectedError, QuerySet, RestrictedError
+from django.http import Http404, HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import redirect as _redirect
 from django.urls import path, reverse
 from django.views.generic import (
@@ -74,7 +74,7 @@ class BulkAction(enum.Enum):
 # ---------------------------------------------------------------------------
 
 
-def _apply_list_search(qs, request, crud_config):
+def _apply_list_search(qs, request: HttpRequest, crud_config) -> QuerySet:
     """Apply ?q= text search to a queryset using configured search_fields.
 
     Text fields use __icontains.  Date/DateTime fields use smart date
@@ -121,7 +121,7 @@ def _apply_list_search(qs, request, crud_config):
     return qs.filter(query)
 
 
-def _apply_ordering_fields(qs, ordering, allowed):
+def _apply_ordering_fields(qs, ordering: str, allowed: set[str]) -> QuerySet:
     """Apply comma-separated ordering fields to a queryset.
 
     Each field may be prefixed with ``-`` for descending.  Fields not in
@@ -140,7 +140,7 @@ def _apply_ordering_fields(qs, ordering, allowed):
     return qs
 
 
-def _apply_ordering(qs, request, crud_config):
+def _apply_ordering(qs, request: HttpRequest, crud_config) -> QuerySet:
     """Apply ?ordering= sort to a queryset using list_fields as allowed fields.
 
     The allowed set is derived from ``ordering_fields`` (if set) or
@@ -160,7 +160,7 @@ def _apply_ordering(qs, request, crud_config):
     return _apply_ordering_fields(qs, ordering, allowed)
 
 
-def _apply_list_filters(qs, request, crud_config):
+def _apply_list_filters(qs, request: HttpRequest, crud_config) -> QuerySet:
     """Apply query-param filters to a queryset using configured filter_fields."""
     from datetime import timedelta
 
@@ -215,7 +215,7 @@ def _apply_list_filters(qs, request, crud_config):
     return qs
 
 
-def _build_toolbar_context(request, crud_config):
+def _build_toolbar_context(request: HttpRequest, crud_config) -> dict[str, Any]:
     """Build context dict for the list toolbar template.
 
     The toolbar shows when search_fields or filter_fields are configured.
@@ -254,7 +254,7 @@ def _build_toolbar_context(request, crud_config):
     }
 
 
-def _build_filter_meta(model, field_name):
+def _build_filter_meta(model, field_name: str) -> dict[str, Any] | None:
     """Build filter widget metadata for a single field."""
     from django.db import models as _m
 
@@ -490,8 +490,12 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
                 page_obj.showing_start = page_obj.start_index()
                 page_obj.showing_end = page_obj.end_index()
                 page_obj.total_count = page_obj.paginator.count
-                page_obj.page_range_display = page_obj.paginator.get_elided_page_range(
-                    page_obj.number, on_each_side=2, on_ends=1
+                # list-cast: get_elided_page_range returns a one-shot
+                # generator, which silently empties on second iteration.
+                page_obj.page_range_display = list(
+                    page_obj.paginator.get_elided_page_range(
+                        page_obj.number, on_each_side=2, on_ends=1
+                    )
                 )
         return context
 
@@ -1072,7 +1076,7 @@ class _CRUDRelatedTabBase(_CRUDContextMixin, DetailView):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_transform_spec(spec):
+def _resolve_transform_spec(spec) -> tuple[Any, dict]:
     """Resolve a field_transforms value to (transform_or_callable, options_dict).
 
     Spec formats:
@@ -1133,8 +1137,15 @@ class CRUDView:
         field_transforms: {field_name: "transform_name" | ("name", {opts}) | callable}
     """
 
-    # Model→CRUDView registry: populated by get_urls() at URL-config time
+    # Model→CRUDView registry: populated eagerly via __init_subclass__ so
+    # apps.mcp.AppConfig.ready() can iterate before URL config runs.
+    # get_urls() still tops it up — that path remains for legacy compatibility.
     _registry: dict[type, type["CRUDView"]] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if getattr(cls, "model", None) is not None:
+            CRUDView._registry[cls.model] = cls
 
     # Config source
     admin_class = None  # ModelAdmin subclass — the standard Django config DSL
@@ -1143,7 +1154,8 @@ class CRUDView:
     model = None
     fields = None
     list_fields = None
-    list_columns = None  # Optional UI-only override: narrower column set for list template (API/CSV still use list_fields)
+    # UI-only override: narrower column set for list template. API/CSV still use list_fields.
+    list_columns = None
     detail_fields = None
     link_field = None
 
@@ -1181,6 +1193,28 @@ class CRUDView:
     filter_class = None  # Optional django-filters FilterSet class
     export_formats = []  # e.g. ["csv", "json"] — enables ?format= on API list
 
+    # MCP (Model Context Protocol) exposure — opt-in surface for AI clients.
+    # When enable_mcp=True, apps.mcp.factory emits list_<base>, get_<singular>,
+    # and (when CREATE/UPDATE/DELETE are in `actions`) create_/update_/delete_
+    # tools wired through the existing form_class / get_list_queryset / hooks.
+    enable_mcp = False
+    # Human-readable description for the auto-generated tools. AI clients use
+    # this to decide when to call the tool — write it for the LLM, not the dev.
+    mcp_description: str | None = None
+    # Restrict which CRUD actions become MCP tools. None means "follow
+    # `actions`". Use to keep web writes while exposing MCP as read-only.
+    mcp_actions: list | None = None
+    # Per-action description overrides for finer-grained tool descriptions.
+    # Default is f"<verb> {mcp_description or model._meta.verbose_name}".
+    # Example: {Action.CREATE: "File a brand-new support ticket."}
+    mcp_descriptions: dict | None = None
+    # Override the noun used in MCP tool names. Defaults keep upstream
+    # behaviour: list_<url_base or verbose_name_plural>, get_/create_/
+    # update_/delete_<verbose_name>. Set both for a consistent, custom
+    # name pair like ("ticket", "tickets") → list_tickets + get_ticket.
+    mcp_singular: str | None = None
+    mcp_plural: str | None = None
+
     # Related object tabs (reverse FK relations on detail page)
     related_tabs = None  # None=auto-discover, list=explicit accessor names, False=disabled
     related_tabs_exclude = []  # Accessor names to exclude from auto-discovery
@@ -1198,7 +1232,7 @@ class CRUDView:
     # -- Config resolution: admin_class → legacy attrs → defaults --
 
     @classmethod
-    def _get_url_base(cls):
+    def _get_url_base(cls) -> str:
         if cls.url_base:
             return cls.url_base
         return cls.model._meta.model_name
@@ -1211,7 +1245,7 @@ class CRUDView:
         return reverse(url_name, **kwargs)
 
     @classmethod
-    def _get_list_fields(cls):
+    def _get_list_fields(cls) -> list[str]:
         # Explicit list_fields always wins
         if cls.list_fields:
             return cls.list_fields
@@ -1226,7 +1260,7 @@ class CRUDView:
         return cls.fields
 
     @classmethod
-    def _get_list_columns(cls):
+    def _get_list_columns(cls) -> list[str]:
         """UI-only column subset for the list template. Falls back to list_fields.
 
         Use this to trim the list table without affecting API/CSV/ordering.
@@ -1236,7 +1270,7 @@ class CRUDView:
         return cls._get_list_fields()
 
     @classmethod
-    def _get_detail_fields(cls):
+    def _get_detail_fields(cls) -> list[str]:
         if cls.detail_fields:
             return cls.detail_fields
         # Try admin_class.fields (flat list) or flatten fieldsets
@@ -1266,14 +1300,14 @@ class CRUDView:
         return all_fields or cls.fields
 
     @classmethod
-    def _get_link_field(cls):
+    def _get_link_field(cls) -> str | None:
         if cls.link_field:
             return cls.link_field
         list_fields = cls._get_list_fields()
         return list_fields[0] if list_fields else None
 
     @classmethod
-    def _resolve_paginate_by(cls):
+    def _resolve_paginate_by(cls) -> int | None:
         """Resolve pagination: explicit paginate_by → admin_class.list_per_page."""
         if cls.paginate_by is not None:
             return cls.paginate_by
@@ -1282,14 +1316,14 @@ class CRUDView:
         return None
 
     @classmethod
-    def _get_displays(cls):
+    def _get_displays(cls) -> list:
         """Return list of display instances for the list view."""
         if not cls.displays:
             return []
         return [d() if isinstance(d, type) else d for d in cls.displays]
 
     @classmethod
-    def _get_detail_displays(cls):
+    def _get_detail_displays(cls) -> list:
         """Return list of display instances for the detail view."""
         if not cls.detail_displays:
             from .displays import DetailGridDisplay
@@ -1298,7 +1332,7 @@ class CRUDView:
         return [d() if isinstance(d, type) else d for d in cls.detail_displays]
 
     @classmethod
-    def _get_form_displays(cls, action="form"):
+    def _get_form_displays(cls, action: str = "form") -> list:
         """Return list of form display instances for create or edit.
 
         Resolution: create_displays/edit_displays → form_displays → empty.
@@ -1314,7 +1348,7 @@ class CRUDView:
         return [d() if isinstance(d, type) else d for d in source]
 
     @classmethod
-    def _get_effective_transforms(cls):
+    def _get_effective_transforms(cls) -> dict[str, Any]:
         """Merge legacy attrs (preview_fields, field_formatters) into field_transforms.
 
         Priority: explicit field_transforms > preview_fields > field_formatters.
@@ -1358,6 +1392,8 @@ class CRUDView:
         if cls.related_tabs is False:
             return []
 
+        from django.urls import NoReverseMatch
+
         tabs = []
         for rel in cls.model._meta.get_fields():
             if not rel.one_to_many:
@@ -1365,6 +1401,14 @@ class CRUDView:
             related_model = rel.related_model
             related_crud = CRUDView._registry.get(related_model)
             if not related_crud:
+                continue
+            # Skip registry entries whose URLs aren't wired (e.g. CRUDViews
+            # defined only for MCP exposure, or test-only subclasses). They
+            # belong in `_registry` for the MCP factory, but they don't have
+            # HTML pages to deep-link to.
+            try:
+                related_crud._reverse(f"{related_crud._get_url_base()}-list")
+            except NoReverseMatch:
                 continue
             accessor = rel.get_accessor_name()
             # Find the FK field name on the related model
@@ -1392,7 +1436,7 @@ class CRUDView:
         return tabs
 
     @classmethod
-    def _resolve_search_fields(cls):
+    def _resolve_search_fields(cls) -> list[str]:
         """Resolve search fields: explicit → admin_class.search_fields."""
         if cls.search_fields:
             return list(cls.search_fields)
@@ -1401,7 +1445,7 @@ class CRUDView:
         return []
 
     @classmethod
-    def _resolve_filter_fields(cls):
+    def _resolve_filter_fields(cls) -> list[str]:
         """Resolve filter fields: explicit → admin_class.list_filter."""
         if cls.filter_fields:
             return list(cls.filter_fields)
@@ -1420,24 +1464,24 @@ class CRUDView:
         return []
 
     @classmethod
-    def _resolve_filter_class(cls):
+    def _resolve_filter_class(cls) -> type | None:
         """Return the filter class, or None."""
         return cls.filter_class
 
     @classmethod
-    def _resolve_export_formats(cls):
+    def _resolve_export_formats(cls) -> list[str]:
         """Return enabled export formats."""
         return cls.export_formats or []
 
     # -- Hooks for subclass overrides --
 
     @classmethod
-    def can_update(cls, obj, request):
+    def can_update(cls, obj, request) -> bool:
         """Return True if the user can update this object. Override for row-level perms."""
         return True
 
     @classmethod
-    def can_delete(cls, obj, request):
+    def can_delete(cls, obj, request) -> bool:
         """Return True if the user can delete this object. Override for row-level perms."""
         return True
 
@@ -1452,7 +1496,7 @@ class CRUDView:
         pass
 
     @classmethod
-    def can_bulk_update_fields(cls):
+    def can_bulk_update_fields(cls) -> list[str]:
         """Return list of field names allowed for bulk update. Override to restrict."""
         return cls.fields or []
 

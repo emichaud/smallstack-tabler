@@ -50,6 +50,7 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [adding-your-own-theme.md](adding-your-own-theme.md) | Adding a custom CSS framework alongside SmallStack's built-in theme |
 | [theme-scenarios.md](theme-scenarios.md) | Three theme integration scenarios: public-only, user login, or build on SmallStack |
 | [authentication.md](authentication.md) | Custom user model, auth views, protecting views |
+| [manage-api-tokens.md](manage-api-tokens.md) | Pick the right token surface (/smallstack/tokens/, CLI, OAuth) by question; permissions matrix; reveal-once flow |
 | [htmx-patterns.md](htmx-patterns.md) | htmx setup, CSRF, partials, dual-response views, OOB messages |
 | [help-documentation.md](help-documentation.md) | Help system, sections, bundled SmallStack docs |
 | [settings.md](settings.md) | Split settings, environment variables, feature flags |
@@ -70,6 +71,22 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [calendar-displays.md](calendar-displays.md) | Month-grid calendar display: `CalendarDisplay` config, ranged vs single-date events, month navigation |
 | [update-docs-and-skills.md](update-docs-and-skills.md) | File group map for updating docs/skills after code changes |
 
+### MCP (Model Context Protocol)
+
+| File | Description |
+|------|-------------|
+| [mcp/enable-mcp-for-a-model.md](mcp/enable-mcp-for-a-model.md) | Opt a CRUDView into MCP via `enable_mcp = True` |
+| [mcp/write-a-custom-tool.md](mcp/write-a-custom-tool.md) | Add cross-cutting tools with the `@tool` decorator + `current_context()` |
+| [mcp/add-a-write-tool.md](mcp/add-a-write-tool.md) | Expose create/update/delete via factory vs custom write tools |
+| [mcp/connect-claude-desktop.md](mcp/connect-claude-desktop.md) | Connect Claude Desktop / Claude.ai Connectors UI to the server |
+| [mcp/debug-mcp-failure.md](mcp/debug-mcp-failure.md) | Decision tree for diagnosing connector failures |
+| [mcp/add-mcp-to-this-project.md](mcp/add-mcp-to-this-project.md) | Bootstrap MCP in a fresh / non-MCP-aware project |
+| [mcp/extend-explorer-for-tokens.md](mcp/extend-explorer-for-tokens.md) | Surface APIToken management via Explorer |
+| [mcp/mcp-admin-pages.md](mcp/mcp-admin-pages.md) | Use the `/smallstack/mcp/` Health / Tools / Activity admin pages from a debugging session |
+| [mcp/build-mcp-solution.md](mcp/build-mcp-solution.md) | "User wants Claude to do X" → decision tree for CRUDView vs `@tool` + copy-pasteable patterns. Start here when designing new MCP features. |
+| [mcp/verify-mcp.md](mcp/verify-mcp.md) | Consolidated verify checklist: doctor, --explain, make mcp-test, admin pages, dashboard widget, Claude Desktop — picks the right path per question |
+| [mcp/configure-mcp.md](mcp/configure-mcp.md) | Scenario → `MCP_*` setting map: turn off OAuth, custom theme, kamal-proxy, multi-tenant, verbose logging, autodiscover |
+
 ## Usage
 
 AI agents should read relevant skill files before making changes to the corresponding parts of the codebase. For example:
@@ -83,6 +100,7 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before adding a custom theme (Bootstrap, Tailwind, etc.) → read `adding-your-own-theme.md`
 - Before deciding which theme approach to take → read `theme-scenarios.md`
 - Before working with auth → read `authentication.md`
+- Before answering an API-token question (mint, revoke, where to look) → read `manage-api-tokens.md`
 - Before adding htmx interactions → read `htmx-patterns.md`
 - Before adding a help page → read `help-documentation.md`
 - Before changing settings → read `settings.md`
@@ -100,6 +118,12 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before configuring or building card-grid list displays → read `card-displays.md`
 - Before adding a month-grid calendar to a model → read `calendar-displays.md`
 - Before updating docs after code changes → read `update-docs-and-skills.md`
+- **Before designing any MCP feature** → read `mcp/build-mcp-solution.md` (decision tree + patterns)
+- Before exposing a CRUDView to AI clients → read `mcp/enable-mcp-for-a-model.md`
+- Before adding a custom MCP tool → read `mcp/write-a-custom-tool.md`
+- Before changing any `MCP_*` setting → read `mcp/configure-mcp.md`
+- Before saying "MCP works" → read `mcp/verify-mcp.md`
+- Before debugging an MCP failure → read `mcp/debug-mcp-failure.md`
 
 ## For Humans
 

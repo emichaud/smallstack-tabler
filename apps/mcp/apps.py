@@ -53,6 +53,26 @@ class MCPConfig(AppConfig):
                 except Exception:
                     logger.exception("Failed to register MCP tools for %s", view_cls)
 
+        # Step 4: register the staff-only "MCP" sidebar entry. Lands users
+        # on the Health page; internal tabs surface Tools and Activity.
+        try:
+            from apps.smallstack.navigation import nav
+
+            nav.register(
+                section="admin",
+                label="MCP",
+                url_name="mcp_admin:health",
+                icon_svg=(
+                    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">'
+                    '<path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 17.93V18a2 2 0 0 0-2-2v-1a2 2 0 0 1-2-2H7.09a8 8 0 0 1 6.91-6.91V8h-1V6h2v-.93A8 8 0 0 1 19 12a8 8 0 0 1-6 7.93z"/>'
+                    "</svg>"
+                ),
+                staff_required=True,
+                order=35,
+            )
+        except Exception:
+            logger.exception("Failed to register MCP sidebar entry")
+
     def _autodiscover_apps(self, module_names: tuple[str, ...]) -> list[str]:
         """Import `<app>.<module>` for every installed app and module name.
 

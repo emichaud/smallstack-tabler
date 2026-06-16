@@ -1,0 +1,29 @@
+{% extends "smallstack/base.html" %}
+
+{% block title %}MCP Activity{% endblock %}
+
+{% block content %}
+<div class="mcp-admin-page">
+  <h1 style="margin: 0 0 1rem 0;">MCP</h1>
+  {% include "mcp/admin/_nav.html" %}
+
+  {% if not activity_app_installed %}
+    <div style="
+      padding: 1rem;
+      background: var(--warning-bg, #fffbe6);
+      border: 1px solid var(--warning-fg, #b78d05);
+      border-radius: 6px;
+      color: var(--body-fg, #111);
+      margin-bottom: 1rem;
+    ">
+      <strong>apps.activity isn't installed.</strong> Add it to
+      <code>INSTALLED_APPS</code> to capture MCP request history.
+    </div>
+  {% else %}
+    <p style="color: var(--body-quiet-color, #666);">
+      Coming soon — Phase 5 renders the filtered <code>RequestLog</code>
+      table here.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "smallstack/base.html" %}
+
+{% block title %}MCP Health{% endblock %}
+
+{% block content %}
+<div class="mcp-admin-page">
+  <h1 style="margin: 0 0 1rem 0;">MCP</h1>
+  {% include "mcp/admin/_nav.html" %}
+
+  <p style="color: var(--body-quiet-color, #666); margin-bottom: 1rem;">
+    Coming soon — Phase 2 renders <code>mcp_doctor</code> checks here.
+  </p>
+</div>
+{% endblock %}

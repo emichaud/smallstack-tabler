@@ -34,4 +34,6 @@ urlpatterns = [
     path("", include("apps.usermanager.urls")),
     # Model Explorer (staff-only)
     path("", include("apps.explorer.urls")),
+    # MCP admin pages (staff-only) — Health, Tools, Activity
+    path("mcp/", include("apps.mcp.admin_urls")),
 ]

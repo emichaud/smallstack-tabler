@@ -1,0 +1,18 @@
+{% extends "smallstack/base.html" %}
+
+{% block title %}MCP tool — {{ tool.name }}{% endblock %}
+
+{% block content %}
+<div class="mcp-admin-page">
+  <h1 style="margin: 0 0 1rem 0;">MCP</h1>
+  {% include "mcp/admin/_nav.html" %}
+
+  <p>
+    <a href="{% url 'mcp_admin:tools' %}">← back to tools</a>
+  </p>
+  <h2 style="margin: 0.5rem 0 1rem 0;">{{ tool.name }}</h2>
+  <p style="color: var(--body-quiet-color, #666);">
+    Coming soon — Phase 4 renders the full <code>ToolDef</code> here.
+  </p>
+</div>
+{% endblock %}

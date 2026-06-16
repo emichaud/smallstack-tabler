@@ -1,0 +1,37 @@
+{% comment %}
+Internal tab nav for the MCP admin pages. Included near the top of each
+admin template. The owning view sets `page` ("health" / "tools" /
+"activity") so the active tab can be styled.
+{% endcomment %}
+<nav class="mcp-admin-nav" aria-label="MCP admin sections" style="
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border, #ddd);
+  padding-bottom: 0.5rem;
+">
+  <a href="{% url 'mcp_admin:health' %}" style="
+    padding: 0.4rem 0.9rem;
+    text-decoration: none;
+    border-radius: 6px 6px 0 0;
+    color: {% if page == 'health' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
+    border-bottom: 2px solid {% if page == 'health' %}var(--primary, #0066cc){% else %}transparent{% endif %};
+    font-weight: {% if page == 'health' %}600{% else %}400{% endif %};
+  ">Health</a>
+  <a href="{% url 'mcp_admin:tools' %}" style="
+    padding: 0.4rem 0.9rem;
+    text-decoration: none;
+    border-radius: 6px 6px 0 0;
+    color: {% if page == 'tools' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
+    border-bottom: 2px solid {% if page == 'tools' %}var(--primary, #0066cc){% else %}transparent{% endif %};
+    font-weight: {% if page == 'tools' %}600{% else %}400{% endif %};
+  ">Tools</a>
+  <a href="{% url 'mcp_admin:activity' %}" style="
+    padding: 0.4rem 0.9rem;
+    text-decoration: none;
+    border-radius: 6px 6px 0 0;
+    color: {% if page == 'activity' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
+    border-bottom: 2px solid {% if page == 'activity' %}var(--primary, #0066cc){% else %}transparent{% endif %};
+    font-weight: {% if page == 'activity' %}600{% else %}400{% endif %};
+  ">Activity</a>
+</nav>

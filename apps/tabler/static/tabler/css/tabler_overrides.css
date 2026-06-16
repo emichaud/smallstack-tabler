@@ -9,10 +9,35 @@
     --tblr-primary-rgb: 245, 159, 0;
     --tblr-font-sans-serif: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --tblr-code-color: #f59f00;
-    /* SmallStack compatibility aliases (used by heartbeat views, etc.) */
+    /* SmallStack compatibility aliases — let upstream templates that
+       reference SmallStack's CSS variable names (var(--primary),
+       var(--card-bg), var(--body-fg), etc.) render correctly inside
+       the Tabler theme without rewriting every template. */
+    --primary: var(--tblr-primary);
+    --primary-hover: color-mix(in srgb, var(--tblr-primary) 88%, black);
     --success-fg: #2fb344;
     --error-fg: #d63939;
     --warning-fg: #f76707;
+    --message-warning-bg: rgba(247, 103, 7, 0.12);
+    --delete-button-bg: #d63939;
+    --font-monospace: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+}
+
+/* ── Light-mode SmallStack aliases ─────────────────────────────── */
+body:not(.theme-dark) {
+    --body-bg: var(--tblr-body-bg, #f7f7f7);
+    --body-fg: var(--tblr-body-color, #1d2433);
+    --body-quiet-color: var(--tblr-muted, #656d77);
+    --muted-fg: var(--tblr-muted, #656d77);
+    --card-bg: var(--tblr-card-bg, #ffffff);
+    --border: var(--tblr-border-color, #e6e7e9);
+    --border-color: var(--tblr-border-color, #e6e7e9);
+    --hairline-color: var(--tblr-border-color, #e6e7e9);
+    --input-border: var(--tblr-border-color, #e6e7e9);
+    --code-bg: rgba(0, 0, 0, 0.04);
+    --control-height: 36px;
 }
 
 /* ── Dark-mode gray palette (on <html>, theme-base overrides these) ── */
@@ -40,6 +65,18 @@ body.theme-dark {
     --tblr-border-color-light: var(--tblr-gray-500);
     --tblr-nav-link-color: var(--tblr-gray-200);
     --tblr-muted: var(--tblr-gray-400);
+    /* SmallStack compat aliases for dark mode */
+    --body-bg: var(--tblr-body-bg);
+    --body-fg: var(--tblr-body-color);
+    --body-quiet-color: var(--tblr-muted);
+    --muted-fg: var(--tblr-muted);
+    --card-bg: var(--tblr-card-bg);
+    --border: var(--tblr-border-color);
+    --border-color: var(--tblr-border-color);
+    --hairline-color: var(--tblr-border-color);
+    --input-border: var(--tblr-border-color);
+    --code-bg: rgba(245, 159, 0, 0.08);
+    --control-height: 36px;
     background-color: var(--tblr-body-bg);
     color: var(--tblr-body-color);
 }
@@ -1051,4 +1088,376 @@ body:not(.theme-dark)[data-bs-theme-base] {
     --tblr-border-radius-lg: 16px;
     --tblr-border-radius-xl: 2rem;
     --tblr-border-radius-xxl: 4rem;
+}
+
+/* ── SmallStack-style page header (used by mcp/admin, tokenmgr, etc.) ─
+   Upstream apps use a "bleed" header that breaks out of the page-body
+   container with a tinted background. We render it inside Tabler's
+   .container-xl so it looks intentional instead of forced edge-to-edge. */
+.page-header-bleed {
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-body-bg));
+    border-radius: var(--tblr-border-radius);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+body.theme-dark .page-header-bleed {
+    background: color-mix(in srgb, var(--tblr-primary) 12%, var(--tblr-card-bg));
+}
+
+.page-header-with-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.page-header-content h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--tblr-body-color);
+    margin: 0;
+}
+
+.page-header-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.page-subtitle {
+    color: var(--tblr-muted);
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+}
+
+/* ── SmallStack CRUD form classes (used by tokenmgr, etc.) ───────────
+   These are simpler than upstream's full crud-form rules — they cover
+   labels, help text, errors, and a sensible default for unstyled inputs
+   while letting any .form-control inputs inside still use Tabler's
+   own styling. */
+.crud-form .crud-field {
+    margin-bottom: 1.25rem;
+}
+
+.crud-form .crud-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    color: var(--tblr-body-color);
+}
+
+.crud-form .crud-label .required {
+    color: #d63939;
+    margin-left: 0.15rem;
+}
+
+.crud-form .crud-help {
+    color: var(--tblr-muted);
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+    line-height: 1.4;
+}
+
+.crud-form .crud-error {
+    color: #d63939;
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+}
+
+.crud-form .crud-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--tblr-border-color);
+}
+
+/* Default styling for inputs inside .crud-form that don't already have
+   .form-control. Mirrors Tabler's form-control look so server-rendered
+   Django widgets without explicit classes still look right. */
+.crud-form input:not([type="checkbox"]):not([type="radio"]):not(.form-control):not(.form-check-input),
+.crud-form select:not(.form-control):not(.form-select),
+.crud-form textarea:not(.form-control) {
+    display: block;
+    width: 100%;
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.4285714;
+    color: var(--tblr-body-color);
+    background-color: var(--tblr-bg-forms, var(--tblr-card-bg));
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-sizing: border-box;
+}
+
+.crud-form input:not([type="checkbox"]):not([type="radio"]):not(.form-control):not(.form-check-input):focus,
+.crud-form select:not(.form-control):not(.form-select):focus,
+.crud-form textarea:not(.form-control):focus {
+    outline: 0;
+    border-color: var(--tblr-primary);
+    box-shadow: 0 0 0 0.25rem rgba(var(--tblr-primary-rgb), 0.15);
+}
+
+.crud-form .crud-field.has-error input,
+.crud-form .crud-field.has-error select,
+.crud-form .crud-field.has-error textarea {
+    border-color: #d63939;
+}
+
+/* ── SmallStack list-toolbar (search + filter dropdowns) ──────────────
+   Used by CRUDView list pages — tokenmgr, etc. Ported from
+   apps/smallstack/static/smallstack/css/components.css so that
+   SmallStack template includes/list_toolbar.html renders correctly
+   inside the Tabler theme without rewriting the include. */
+.list-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 12px 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+
+.list-toolbar-search {
+    position: relative;
+    width: 200px;
+    flex-shrink: 1;
+    min-width: 140px;
+}
+
+.list-toolbar-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--tblr-primary);
+    opacity: 0.7;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.list-toolbar-search-input {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px 0 30px !important;
+    border: 1px solid color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg)) !important;
+    border-radius: var(--tblr-border-radius, 4px) !important;
+    background: color-mix(in srgb, var(--tblr-primary) 6%, var(--tblr-card-bg)) !important;
+    color: var(--tblr-body-color) !important;
+    font-size: 0.8rem !important;
+    font-weight: 500;
+    transition: border-color 0.15s, background 0.15s;
+    box-sizing: border-box;
+}
+
+.list-toolbar-search-input:hover {
+    border-color: color-mix(in srgb, var(--tblr-primary) 30%, var(--tblr-card-bg)) !important;
+}
+
+.list-toolbar-search-input:focus {
+    border-color: color-mix(in srgb, var(--tblr-primary) 45%, var(--tblr-card-bg)) !important;
+    background: color-mix(in srgb, var(--tblr-primary) 10%, var(--tblr-card-bg)) !important;
+    outline: none;
+}
+
+.list-toolbar-search:focus-within .list-toolbar-search-icon {
+    opacity: 1;
+}
+
+.list-toolbar-search-input::placeholder {
+    color: var(--tblr-muted);
+    font-weight: 400;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+}
+
+.list-toolbar-filters {
+    display: contents;
+}
+
+.list-toolbar-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 36px;
+    max-width: 220px;
+    padding: 0 0.4rem 0 0.6rem;
+    border: 1px solid color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg));
+    border-radius: var(--tblr-border-radius, 4px);
+    background: color-mix(in srgb, var(--tblr-primary) 6%, var(--tblr-card-bg));
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    transition: border-color 0.15s, background 0.15s;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.list-toolbar-filter:hover {
+    border-color: color-mix(in srgb, var(--tblr-primary) 30%, var(--tblr-card-bg));
+}
+
+.list-toolbar-filter-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--tblr-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.list-toolbar-filter.is-filtered {
+    border-color: color-mix(in srgb, var(--tblr-primary) 35%, var(--tblr-card-bg));
+    background: color-mix(in srgb, var(--tblr-primary) 12%, var(--tblr-card-bg));
+}
+
+.list-toolbar-filter.is-filtered .list-toolbar-filter-label {
+    color: var(--tblr-primary);
+}
+
+.list-toolbar-filter .list-toolbar-filter-select {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 2px 18px 2px 2px !important;
+    border: none !important;
+    background: transparent !important;
+    color: var(--tblr-body-color) !important;
+    font-size: 0.8rem !important;
+    font-weight: 500;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--tblr-muted) 50%),
+        linear-gradient(135deg, var(--tblr-muted) 50%, transparent 50%) !important;
+    background-position: calc(100% - 10px) 50%, calc(100% - 6px) 50% !important;
+    background-size: 4px 4px, 4px 4px !important;
+    background-repeat: no-repeat !important;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.list-toolbar-filter .list-toolbar-filter-select:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.list-toolbar-filter-text {
+    height: 36px;
+    padding: 4px 8px !important;
+    border: 1px solid var(--tblr-border-color) !important;
+    border-radius: var(--tblr-border-radius, 4px) !important;
+    background: var(--tblr-card-bg) !important;
+    color: var(--tblr-body-color) !important;
+    font-size: 0.75rem !important;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 140px;
+}
+
+.list-toolbar-filter-text:focus {
+    border-color: var(--tblr-primary) !important;
+}
+
+.list-toolbar-filter-text.is-filtered {
+    border-left: 3px solid var(--tblr-primary) !important;
+    background: color-mix(in srgb, var(--tblr-primary) 6%, var(--tblr-card-bg)) !important;
+}
+
+.list-toolbar-overflow-toggle {
+    height: 36px;
+    padding: 4px 10px;
+    border: 1px dashed var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius, 4px);
+    background: var(--tblr-card-bg);
+    color: var(--tblr-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.list-toolbar-overflow-toggle:hover,
+.list-toolbar.show-overflow .list-toolbar-overflow-toggle {
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+}
+
+.list-toolbar-overflow-panel {
+    display: none;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+    padding-top: 10px;
+    margin-top: 4px;
+    border-top: 1px solid var(--tblr-border-color);
+    width: 100%;
+}
+
+.list-toolbar.show-overflow .list-toolbar-overflow-panel {
+    display: grid;
+}
+
+.list-toolbar-overflow-panel .list-toolbar-filter,
+.list-toolbar-overflow-panel .list-toolbar-filter-text {
+    width: 100%;
+}
+
+.list-toolbar-overflow-panel .list-toolbar-filter .list-toolbar-filter-select {
+    flex: 1;
+}
+
+.list-toolbar-spacer {
+    flex: 1;
+}
+
+.list-toolbar-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+    border: 1px solid color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg));
+    border-radius: var(--tblr-border-radius, 4px);
+    white-space: nowrap;
+}
+
+.list-toolbar-count-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--tblr-primary);
+    line-height: 1;
+}
+
+.list-toolbar-count-label {
+    font-size: 0.7rem;
+    color: var(--tblr-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.list-toolbar-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.75rem;
+    color: var(--tblr-muted);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: var(--tblr-border-radius, 4px);
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s;
+}
+
+.list-toolbar-clear:hover {
+    color: var(--tblr-body-color);
+    background: color-mix(in srgb, var(--tblr-primary) 10%, var(--tblr-card-bg));
 }

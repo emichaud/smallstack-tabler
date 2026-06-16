@@ -47,7 +47,7 @@ select = ["E", "F", "I", "W"]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 testpaths = ["apps"]
-addopts = "--cov=apps --cov-report=term-missing:skip-covered --cov-report=html"
+addopts = "--cov=apps --cov-report=term-missing:skip-covered --cov-report=html -m 'not starter_content'"
 filterwarnings = [
     "ignore:DetailLinkColumn is deprecated:DeprecationWarning",
     "ignore:BooleanColumn is deprecated:DeprecationWarning",

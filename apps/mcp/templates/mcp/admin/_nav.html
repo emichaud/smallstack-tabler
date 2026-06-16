@@ -1,37 +1,20 @@
 {% comment %}
-Internal tab nav for the MCP admin pages. Included near the top of each
-admin template. The owning view sets `page` ("health" / "tools" /
-"activity") so the active tab can be styled.
+Section tabs for the MCP admin pages. Uses the canonical .tab-btn
+component (also used by Backups). Owning view sets `page` to
+"health" / "tools" / "activity".
 {% endcomment %}
-<nav class="mcp-admin-nav" aria-label="MCP admin sections" style="
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border, #ddd);
-  padding-bottom: 0.5rem;
-">
-  <a href="{% url 'mcp_admin:health' %}" style="
-    padding: 0.4rem 0.9rem;
-    text-decoration: none;
-    border-radius: 6px 6px 0 0;
-    color: {% if page == 'health' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
-    border-bottom: 2px solid {% if page == 'health' %}var(--primary, #0066cc){% else %}transparent{% endif %};
-    font-weight: {% if page == 'health' %}600{% else %}400{% endif %};
-  ">Health</a>
-  <a href="{% url 'mcp_admin:tools' %}" style="
-    padding: 0.4rem 0.9rem;
-    text-decoration: none;
-    border-radius: 6px 6px 0 0;
-    color: {% if page == 'tools' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
-    border-bottom: 2px solid {% if page == 'tools' %}var(--primary, #0066cc){% else %}transparent{% endif %};
-    font-weight: {% if page == 'tools' %}600{% else %}400{% endif %};
-  ">Tools</a>
-  <a href="{% url 'mcp_admin:activity' %}" style="
-    padding: 0.4rem 0.9rem;
-    text-decoration: none;
-    border-radius: 6px 6px 0 0;
-    color: {% if page == 'activity' %}var(--primary, #0066cc){% else %}var(--body-quiet-color, #555){% endif %};
-    border-bottom: 2px solid {% if page == 'activity' %}var(--primary, #0066cc){% else %}transparent{% endif %};
-    font-weight: {% if page == 'activity' %}600{% else %}400{% endif %};
-  ">Activity</a>
-</nav>
+<div style="display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--hairline-color, color-mix(in srgb, var(--body-fg) 10%, var(--body-bg)));">
+  <a href="{% url 'mcp_admin:health' %}" class="tab-btn{% if page == 'health' %} active{% endif %}" style="text-decoration: none;">
+    Health
+    {% if page == 'health' and warn_count|add:fail_count %}
+      <span class="tab-count" style="background: color-mix(in srgb, var(--message-warning-bg, orange) 18%, var(--card-bg)); color: var(--message-warning-bg, orange);">{{ warn_count|add:fail_count }}</span>
+    {% endif %}
+  </a>
+  <a href="{% url 'mcp_admin:tools' %}" class="tab-btn{% if page == 'tools' %} active{% endif %}" style="text-decoration: none;">
+    Tools
+    {% if tools_count %}<span class="tab-count">{{ tools_count }}</span>{% endif %}
+  </a>
+  <a href="{% url 'mcp_admin:activity' %}" class="tab-btn{% if page == 'activity' %} active{% endif %}" style="text-decoration: none;">
+    Activity
+  </a>
+</div>

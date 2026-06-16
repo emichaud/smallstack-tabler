@@ -1,27 +1,41 @@
 {% comment %}
 htmx fragment swapped into #self-test-result on the Health page when
-the "Run self-test now" button is clicked. Renders the same row
-mcp_doctor would print in its CLI self-test, but as a small panel.
+"Run Self-Test" is clicked.
 {% endcomment %}
-<div id="self-test-result" style="
-  margin-top: 0.5rem;
-  padding: 0.85rem 1rem;
-  background: {% if entry.status == 'PASS' %}var(--success-bg, #e6f4ea){% else %}var(--error-bg, #fce8e6){% endif %};
-  color: {% if entry.status == 'PASS' %}var(--success-fg, #1e7e34){% else %}var(--error-fg, #c0392b){% endif %};
-  border-left: 4px solid {% if entry.status == 'PASS' %}var(--success-fg, #1e7e34){% else %}var(--error-fg, #c0392b){% endif %};
-  border-radius: 6px;
+<div id="self-test-result" class="card" style="
+  margin-bottom: 24px;
+  border-left: 4px solid {% if entry.status == 'PASS' %}var(--success-fg){% else %}var(--delete-button-bg, red){% endif %};
 ">
-  <strong>Self-test {{ entry.status }}</strong>
-  {% if entry.detail|stringformat:"s"|slice:":1" == "{" %}
-    <ul style="margin: 0.4rem 0 0 1.25rem; padding: 0; font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem;">
-      {% for step, ok in entry.detail.items %}
-        <li>{{ step }}: {% if ok %}✓{% else %}✗{% endif %}</li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <div style="margin-top: 0.25rem; font-size: 0.9rem;">{{ entry.detail }}</div>
-  {% endif %}
-  <div style="margin-top: 0.5rem; font-size: 0.8rem; opacity: 0.75;">
-    Token cleanup ran in a finally block — no APIToken was left active.
+  <div class="card-body" style="padding: 14px 18px;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+      {% if entry.status == "PASS" %}
+        <span style="
+          display: inline-block; padding: 2px 8px; border-radius: 4px;
+          font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+          background: color-mix(in srgb, var(--success-fg) 15%, var(--card-bg));
+          color: var(--success-fg);
+        ">✓ PASS</span>
+      {% else %}
+        <span style="
+          display: inline-block; padding: 2px 8px; border-radius: 4px;
+          font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+          background: color-mix(in srgb, var(--delete-button-bg, red) 15%, var(--card-bg));
+          color: var(--delete-button-bg, red);
+        ">✗ FAIL</span>
+      {% endif %}
+      <strong>Self-test result</strong>
+    </div>
+    {% if entry.detail|stringformat:"s"|slice:":1" == "{" %}
+      <ul style="margin: 0; padding-left: 18px; font-family: var(--font-monospace, ui-monospace, Menlo, monospace); font-size: 0.85rem; line-height: 1.7;">
+        {% for step, ok in entry.detail.items %}
+          <li>{{ step }} — {% if ok %}<span style="color: var(--success-fg);">✓</span>{% else %}<span style="color: var(--delete-button-bg, red);">✗</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div style="font-size: 0.9rem;">{{ entry.detail }}</div>
+    {% endif %}
+    <div style="margin-top: 8px; font-size: 0.75rem; color: var(--body-quiet-color);">
+      Token cleanup ran in a finally — no APIToken left active.
+    </div>
   </div>
 </div>

@@ -56,5 +56,5 @@ def test_self_test_button_form_present():
     c.force_login(_staff())
     resp = c.get(reverse("mcp_admin:health"), HTTP_HOST="localhost")
     body = resp.content.decode()
-    assert "Run self-test now" in body
+    assert "Run Self-Test" in body
     assert reverse("mcp_admin:self_test") in body

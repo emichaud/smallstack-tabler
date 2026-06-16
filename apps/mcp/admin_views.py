@@ -29,7 +29,18 @@ from apps.smallstack.mixins import StaffRequiredMixin
 
 
 class _AdminBase(StaffRequiredMixin, TemplateView):
-    """Common base — currently just composes the staff gate."""
+    """Common base — staff gate plus shared context every page needs."""
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from apps.mcp.server import TOOL_REGISTRY
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["tools_count"] = len(TOOL_REGISTRY)
+        # warn_count + fail_count are reset by Health view; safe defaults here
+        # so the tab badge logic doesn't crash on Tools / Activity.
+        ctx.setdefault("warn_count", 0)
+        ctx.setdefault("fail_count", 0)
+        return ctx
 
 
 class MCPAdminHealthView(_AdminBase):
@@ -71,9 +82,10 @@ class MCPAdminToolsView(_AdminBase):
 
         ctx = super().get_context_data(**kwargs)
         ctx["page"] = "tools"
-        # Sort by name for predictable display. Browse-time only — the
-        # registry order at registration time is preserved upstream.
-        ctx["tools"] = sorted(TOOL_REGISTRY.values(), key=lambda t: t.name)
+        tools = sorted(TOOL_REGISTRY.values(), key=lambda t: t.name)
+        ctx["tools"] = tools
+        ctx["write_count"] = sum(1 for t in tools if t.write)
+        ctx["read_only_count"] = sum(1 for t in tools if not t.write)
         return ctx
 
 
@@ -164,7 +176,8 @@ class MCPAdminActivityView(_AdminBase):
         if username:
             qs = qs.filter(user__username__icontains=username)
 
-        paginator = Paginator(qs.order_by("-timestamp"), self.PAGE_SIZE)
+        ordered = qs.order_by("-timestamp")
+        paginator = Paginator(ordered, self.PAGE_SIZE)
         page_num = self.request.GET.get("page") or 1
         try:
             page_obj = paginator.page(page_num)
@@ -174,6 +187,12 @@ class MCPAdminActivityView(_AdminBase):
         ctx["page_obj"] = page_obj
         ctx["paginator"] = paginator
         ctx["total"] = paginator.count
+        # Per-status breakdown across the FILTERED set (the filter form
+        # already narrowed `qs`; status_class doubles up but it's cheap
+        # and the user might want to see "of these, how many failed?").
+        ctx["count_2xx"] = ordered.filter(status_code__gte=200, status_code__lt=300).count()
+        ctx["count_4xx"] = ordered.filter(status_code__gte=400, status_code__lt=500).count()
+        ctx["count_5xx"] = ordered.filter(status_code__gte=500, status_code__lt=600).count()
         return ctx
 
     @staticmethod

@@ -95,12 +95,22 @@ class TokenCRUDView(CRUDView):
 
     @classmethod
     def get_list_queryset(cls, qs, request):
-        """Filter to the requester's tokens when they're not staff."""
+        """Filter to the requester's tokens when they're not staff.
+
+        Defaults to active-only on landings without an `is_active` query
+        param. Explicit choices in the toolbar — `?is_active=` (empty,
+        i.e. "All"), `?is_active=true`, `?is_active=false` — bypass the
+        default and let `_apply_list_filters` handle the filter itself.
+        """
         qs = qs.select_related("user")
         if not getattr(request, "user", None) or not request.user.is_authenticated:
             return qs.none()
         if not request.user.is_staff:
             qs = qs.filter(user=request.user)
+        # Hide revoked tokens by default. Users opt into them via the
+        # Is Active dropdown ("All" or "No").
+        if "is_active" not in request.GET:
+            qs = qs.filter(is_active=True)
         return qs
 
     @classmethod
@@ -126,6 +136,14 @@ class TokenCRUDView(CRUDView):
             def get_context_data(self, **kwargs):
                 context = original_get_context(self, **kwargs)
                 context["overview_stats"] = get_overview_stats(self.request.user)
+                # Mirror the queryset default: when is_active is absent
+                # from the GET params, pre-select "Yes" in the dropdown
+                # so the UI matches what the user is actually seeing.
+                if "is_active" not in self.request.GET:
+                    for f in context.get("toolbar_filters", []):
+                        if f.get("name") == "is_active":
+                            f["current_value"] = "true"
+                            break
                 return context
 
             view_class.get_context_data = get_context_data

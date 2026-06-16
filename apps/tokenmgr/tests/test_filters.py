@@ -93,6 +93,61 @@ def test_htmx_request_returns_content_partial(staff, alice):
     assert 'card-body" style="text-align: center' not in body
 
 
+def test_initial_load_defaults_to_active_only(staff, alice):
+    """Landing on /smallstack/tokens/ with no query string hides revoked
+    tokens by default. The user can opt into seeing them via the dropdown."""
+    APIToken.create_token(user=alice, name="alive")
+    dead, _ = APIToken.create_token(user=alice, name="dead")
+    dead.revoke()
+
+    c = Client()
+    c.force_login(staff)
+    resp = c.get(reverse("tokenmgr:tokens-list"), HTTP_HOST="localhost")
+    names = sorted(t.name for t in resp.context["object_list"])
+    assert names == ["alive"]
+
+
+def test_explicit_all_filter_includes_revoked(staff, alice):
+    """`?is_active=` (the "All" choice) bypasses the default and shows
+    both active and revoked rows."""
+    APIToken.create_token(user=alice, name="alive")
+    dead, _ = APIToken.create_token(user=alice, name="dead")
+    dead.revoke()
+
+    c = Client()
+    c.force_login(staff)
+    resp = c.get(reverse("tokenmgr:tokens-list") + "?is_active=", HTTP_HOST="localhost")
+    names = sorted(t.name for t in resp.context["object_list"])
+    assert names == ["alive", "dead"]
+
+
+def test_initial_load_dropdown_shows_yes_selected(staff, alice):
+    """The Is Active dropdown reflects the default — `Yes` is selected
+    so the URL state and the visible filter agree."""
+    APIToken.create_token(user=alice, name="anything")
+    c = Client()
+    c.force_login(staff)
+    resp = c.get(reverse("tokenmgr:tokens-list"), HTTP_HOST="localhost")
+    is_active_filter = next(
+        f for f in resp.context["toolbar_filters"] if f["name"] == "is_active"
+    )
+    assert is_active_filter["current_value"] == "true"
+
+
+def test_explicit_is_active_false_shows_revoked_only(staff, alice):
+    """`?is_active=false` narrows to revoked tokens only — the default
+    must not interfere with an explicit False choice."""
+    APIToken.create_token(user=alice, name="alive")
+    dead, _ = APIToken.create_token(user=alice, name="dead")
+    dead.revoke()
+
+    c = Client()
+    c.force_login(staff)
+    resp = c.get(reverse("tokenmgr:tokens-list") + "?is_active=false", HTTP_HOST="localhost")
+    names = [t.name for t in resp.context["object_list"]]
+    assert names == ["dead"]
+
+
 def test_record_count_badge_reflects_filter(staff, alice):
     APIToken.create_token(user=alice, name="zz-needle-yy")
     APIToken.create_token(user=alice, name="other-1")

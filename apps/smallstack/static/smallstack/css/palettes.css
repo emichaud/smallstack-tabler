@@ -142,31 +142,75 @@ html[data-palette="high-contrast"] a.button.button-secondary:hover {
 }
 
 html[data-palette="high-contrast"][data-theme="dark"] {
+    /* Pure-neutral high-contrast surfaces.
+       Unlike the accent palettes (django / blue / purple / orange) which
+       use a slight cool channel bias to resist color-context warming,
+       this palette uses STRICTLY neutral grays (R=G=B) for accessibility.
+       Predictable luminance values, no subtle hue shifts that might
+       confuse users with color-vision deficiencies.
+
+       Lightness hierarchy with strong steps between layers so visually-
+       impaired users see clear separation:
+
+         body-bg / footer-bg  #000000  pure black
+         sidebar-bg           #0a0a0a  near-black (subtle lift)
+         hero-gradient-end    #111111  used in page-header gradient
+         card-bg / input-bg   #1a1a1a  clear lift, distinct from body
+         card-header-bg       #262626  further lifted band on cards
+         card-border          #808080  HIGHLY visible hairline
+         input-border         #999999  even more visible for focus
+         text-muted           #cccccc  reads as obvious gray, not faded */
+
+    /* Accent — pure white for maximum contrast */
     --primary: #ffffff;
     --primary-hover: #e0e0e0;
     --secondary: #cccccc;
-    --header-bg: #000000;
-    --hero-gradient-end: #111111;
-    --body-fg: #ffffff;
-    --text-muted: #cccccc;
-    --sidebar-fg: #ffffff;
     --sidebar-active-bg: #ffffff;
     --sidebar-active-fg: #000000;
-    --sidebar-border: #666666;
     --input-focus-border: #ffffff;
-    --input-border: #999999;
     --button-bg: #ffffff;
     --button-fg: #000000;
     --button-hover-bg: #e0e0e0;
-    --card-border: #999999;
+
+    /* Text — pure white on pure black for max legibility */
+    --body-fg: #ffffff;
+    --sidebar-fg: #ffffff;
     --link-fg: #ffffff;
     --link-color: #ffffff;
     --link-hover: #cccccc;
-    --breadcrumb-fg: #cccccc;
     --breadcrumb-link: #ffffff;
-    --breadcrumb-separator: #999999;
+
+    /* Surfaces — pure neutral grays, no hue bias */
+    --body-bg: #000000;
+    --content-bg: #000000;
+    --header-bg: #000000;
+    --hero-gradient-end: #111111;
+    --card-bg: #1a1a1a;
+    --card-header-bg: #262626;
+    --card-border: #808080;
+    --hairline-color: #808080;
+    --sidebar-bg: #0a0a0a;
+    --sidebar-hover-bg: #1a1a1a;
+    --sidebar-border: #808080;
+    --footer-bg: #000000;
+    --input-bg: #1a1a1a;
+    --input-border: #999999;
+
+    /* Muted text — light enough to be clearly readable, not faded */
+    --text-muted: #cccccc;
     --body-quiet-color: #cccccc;
     --footer-fg: #cccccc;
+    --breadcrumb-fg: #cccccc;
+    --breadcrumb-separator: #999999;
+}
+
+/* Page-header band: high-contrast palette also skips the
+   color-mix(--primary 15%, --body-bg) recipe — with white as the
+   accent, 15% mix produces a medium-gray band that's visually noisy.
+   Use card-bg so the band is a clear lift from body but stays a
+   consistent neutral. */
+html[data-palette="high-contrast"][data-theme="dark"] .page-header-bleed {
+    background: var(--card-bg) !important;
 }
 
 /* High-contrast dark: explicit overrides for nav links and icons */

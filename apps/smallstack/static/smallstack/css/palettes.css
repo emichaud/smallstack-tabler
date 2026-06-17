@@ -150,55 +150,67 @@ html[data-palette="dark-blue"] {
 }
 
 html[data-palette="dark-blue"][data-theme="dark"] {
-    /* Accents — keep the existing blue identity. */
-    --primary: #4DA3FF;
-    --primary-hover: #82CFFF;
-    --secondary: #1E40AF;
-    --header-bg: #0A192F;
-    --hero-gradient-end: #1C355E;
-    --sidebar-active-bg: #4DA3FF;
-    --sidebar-active-fg: #000000;
-    --input-focus-border: #4DA3FF;
-    --button-bg: #4DA3FF;
-    --button-fg: #000000;
-    --button-hover-bg: #82CFFF;
-    --link-fg: #CFE8FF;
-    --link-color: #CFE8FF;
-    --link-hover: #E6F2FF;
-    --breadcrumb-link: #F1F5F9;
+    /* Modern black + vibrant blue accent. Surfaces are neutral near-
+       black (Tailwind zinc family) — no hue tint anywhere — so the
+       saturated blue accent does ALL the visual work. Pattern follows
+       Vercel / Linear / Anthropic console: a minimal dark canvas that
+       lets accents pop.
 
-    /* Navy-tinted surfaces. The base dark theme inherits warm-gray
-       surfaces (#212121 cards, #1e1e1e sidebar/footer) which read
-       "brownish" against the cool navy header. These overrides pull
-       every surface into the same cool hue family so the page reads
-       as one continuous modern dark-blue interface.
+       Accent: #3b82f6 (Tailwind blue-500) — vibrant, saturated, the
+       single source of color in the interface. Used for primary
+       buttons, sidebar-active, link color, focus borders, badges.
 
-       Lightness hierarchy (darkest → lightest):
-         footer-bg #08111f  ◀── deepest, frames the bottom edge
-         sidebar-bg #0a1525 ◀── base layer
-         body-bg / content-bg #0c1729
-         card-bg #15263e    ◀── elevated surface
-         card-header-bg #1b2e49  ◀── subtle band on cards
-         input-border #2a4264    ◀── slightly lighter for affordance
+       Surfaces (all neutral, zinc family):
+         body-bg / footer-bg  #0a0a0b  ◀── nearly-pure black canvas
+         header-bg            #111114  ◀── chrome band, slight lift
+         sidebar-bg           #0d0d0f  ◀── between body and card
+         card-bg / input-bg   #18181b  ◀── zinc-900, elevated surface
+         card-header-bg       #1f1f23  ◀── subtle band on cards
+         card-border          #27272a  ◀── zinc-800, visible hairline
+         input-border         #3f3f46  ◀── zinc-700, lifted for affordance
 
-       Borders + muted text follow the slate-blue family so badges and
-       color-mix surfaces stay cohesive. */
-    --body-bg: #0c1729;
-    --content-bg: #0c1729;
-    --card-bg: #15263e;
-    --card-header-bg: #1b2e49;
-    --card-border: #20335a;
-    --hairline-color: #20335a;
-    --sidebar-bg: #0a1525;
-    --sidebar-hover-bg: #15263e;
-    --sidebar-border: #20335a;
-    --footer-bg: #08111f;
-    --footer-fg: #94a3b8;
-    --input-bg: #15263e;
-    --input-border: #2a4264;
-    --text-muted: #94a3b8;
-    --breadcrumb-fg: #94a3b8;
-    --breadcrumb-separator: #4a5d7e;
+       Muted text uses zinc-400/-500 (slightly cool grays) so it reads
+       clean against the near-black surfaces. */
+
+    /* Vibrant blue accent */
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --secondary: #2563eb;
+    --sidebar-active-bg: #3b82f6;
+    --sidebar-active-fg: #ffffff;
+    --input-focus-border: #3b82f6;
+    --button-bg: #3b82f6;
+    --button-fg: #ffffff;
+    --button-hover-bg: #60a5fa;
+
+    /* Links — bright enough to pop on near-black, not so saturated they
+       fight the primary accent. Zinc-200 for breadcrumb (white-ish). */
+    --link-fg: #60a5fa;
+    --link-color: #60a5fa;
+    --link-hover: #93c5fd;
+    --breadcrumb-link: #e4e4e7;
+
+    /* Surfaces — neutral near-black */
+    --body-bg: #0a0a0b;
+    --content-bg: #0a0a0b;
+    --header-bg: #111114;
+    --hero-gradient-end: #18181b;
+    --card-bg: #18181b;
+    --card-header-bg: #1f1f23;
+    --card-border: #27272a;
+    --hairline-color: #27272a;
+    --sidebar-bg: #0d0d0f;
+    --sidebar-hover-bg: #18181b;
+    --sidebar-border: #27272a;
+    --footer-bg: #0a0a0b;
+    --footer-fg: #71717a;
+    --input-bg: #18181b;
+    --input-border: #3f3f46;
+
+    /* Muted text — zinc family, readable on near-black */
+    --text-muted: #a1a1aa;
+    --breadcrumb-fg: #a1a1aa;
+    --breadcrumb-separator: #52525b;
 }
 
 /* ============================================

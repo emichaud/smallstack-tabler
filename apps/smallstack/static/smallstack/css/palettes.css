@@ -412,16 +412,29 @@ html[data-palette="orange"][data-theme="dark"] {
     --breadcrumb-separator: #52525b;
 }
 
-/* Page-header band: skip the color-mix(--primary 15%, --body-bg) rule
+/* Page-header band + hero-section: skip the saturated-primary recipes
    from theme.css for orange AND django (emerald) palettes. Warm or
    yellow-shifted hues at low lightness mix toward muddy brown / olive
    instead of staying readable as their parent hue. Blue stays navy
    and purple stays plum at the same low lightness, so they keep the
-   tinted band. Orange and emerald use the neutral card surface
-   instead — the band reads clean and the saturated accent stays
-   reserved for data + actions where it pops. */
+   tinted band/gradient. Orange and emerald use the neutral card
+   surface instead — the band reads clean and the saturated accent
+   stays reserved for data + actions where it pops.
+
+   .page-header-bleed uses color-mix(--primary 15%, --body-bg) — a
+   subtle band on most pages.
+
+   .hero-section uses linear-gradient(135deg, var(--primary) 0%,
+   var(--hero-gradient-end) 100%) — a large dramatic hero gradient on
+   the help TOC and similar landing pages. For warm-shifted accents
+   this gradient produces a huge muddy-brown sweep across the page. */
 html[data-palette="orange"][data-theme="dark"] .page-header-bleed,
 html[data-palette="django"][data-theme="dark"] .page-header-bleed {
+    background: var(--card-bg) !important;
+}
+
+html[data-palette="orange"][data-theme="dark"] .hero-section,
+html[data-palette="django"][data-theme="dark"] .hero-section {
     background: var(--card-bg) !important;
 }
 

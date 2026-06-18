@@ -42,6 +42,9 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 
 | File | Description |
 |------|-------------|
+| [cli-tools.md](cli-tools.md) | **Start here for "is there a tool for X?"** — task → tool / failure → tool / tool → docs lookup tables |
+| [modern-dark-theme.md](modern-dark-theme.md) | **Read before building any page** — canonical patterns, anti-patterns, variable list for the v0.9.x modern-dark theme |
+| [modify-palettes.md](modify-palettes.md) | Add a new color palette or tune an existing one — file map, color-science gotchas, verification |
 | [django-apps.md](django-apps.md) | Creating apps, CRUDView + tables2 management pages, title bar pattern |
 | [templates.md](templates.md) | Template inheritance, blocks, includes, common patterns |
 | [admin-page-styling.md](admin-page-styling.md) | **Definitive UI reference**: buttons, cards, tables, stat cards, action cards, tabs, filter toggles, forms, modals, starter template |
@@ -66,6 +69,7 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [integration-workflow.md](integration-workflow.md) | Pulling upstream into downstream projects, deploying |
 | [api-discovery.md](api-discovery.md) | API discovery endpoints: schema introspection, OpenAPI spec, OPTIONS metadata |
 | [custom-api-endpoints.md](custom-api-endpoints.md) | Building non-CRUD API endpoints with the `@api_view` decorator |
+| [api-doctor.md](api-doctor.md) | Debug API setup + threat signals via `/smallstack/api/` (Health + Activity) and `python manage.py api_doctor` |
 | [dashboard-widgets.md](dashboard-widgets.md) | Dashboard widget protocol: `DashboardWidget` class, Explorer vs standalone registration, data layer, REST API |
 | [card-displays.md](card-displays.md) | Card grid displays: `CardDisplay` (key-value), `AvatarCardDisplay`, authoring new card variants |
 | [calendar-displays.md](calendar-displays.md) | Month-grid calendar display: `CalendarDisplay` config, ranged vs single-date events, month navigation |
@@ -91,12 +95,13 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 
 AI agents should read relevant skill files before making changes to the corresponding parts of the codebase. For example:
 
-- **Before building any Tabler-themed page → read `tabler-ui.md` first** (it routes you to the right specialized skill under `tabler/`)
+- **Before building any Tabler-themed page → read `tabler-ui.md` first** (it routes you to the right specialized skill under `tabler/`). This downstream uses the Tabler UI framework, NOT the upstream modern-dark theme — `tabler-ui.md` supersedes `modern-dark-theme.md` here
+- **Before running ANY operational command** (diagnose, smoke-test, mint token, backup, screenshot, deploy) → read `cli-tools.md` first
 - Before creating a new app → read `django-apps.md`
 - Before creating templates → read `templates.md`
-- Before building any admin/management page → read `admin-page-styling.md` (buttons, cards, tables, forms, etc.) — note: for Tabler-specific page building, `tabler-ui.md` is the authoritative starting point
-- Before modifying CSS/theming → read `theming-system.md` (for SmallStack base) or `tabler/theming.md` (for the Tabler engine)
-- Before building a new page that should fit the SmallStack theme → read `building-themed-pages.md`
+- Before building any admin/management page → read `admin-page-styling.md` for the SmallStack-base reference, OR `tabler-ui.md` for the Tabler-specific patterns this downstream actually uses
+- Before modifying CSS/theming → read `tabler/theming.md` (for the Tabler engine + accent palette) — `theming-system.md` and `modern-dark-theme.md` document the upstream SmallStack theme, which is NOT in use here
+- Before adding a new color palette to the upstream theme → read `modify-palettes.md` (rarely needed downstream — our accent palette lives in `tabler/theming.md`)
 - Before adding a custom theme (Bootstrap, Tailwind, etc.) → read `adding-your-own-theme.md`
 - Before deciding which theme approach to take → read `theme-scenarios.md`
 - Before working with auth → read `authentication.md`
@@ -114,6 +119,7 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before pulling upstream into downstream → read `integration-workflow.md`
 - Before integrating with the SmallStack API → read `api-discovery.md`
 - Before building custom (non-CRUD) API endpoints → read `custom-api-endpoints.md`
+- Before debugging an API setup, an empty Swagger, or a "weird traffic" report → read `api-doctor.md`
 - Before adding dashboard widgets → read `dashboard-widgets.md`
 - Before configuring or building card-grid list displays → read `card-displays.md`
 - Before adding a month-grid calendar to a model → read `calendar-displays.md`

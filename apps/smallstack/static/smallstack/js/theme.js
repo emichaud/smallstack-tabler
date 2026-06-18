@@ -131,12 +131,14 @@
     }
 
     function setPalette(palette) {
-        if (palette && palette !== 'django') {
-            document.documentElement.setAttribute('data-palette', palette);
-        } else {
-            document.documentElement.removeAttribute('data-palette');
-        }
-        localStorage.setItem(PALETTE_KEY, palette || 'django');
+        // Always set data-palette (including for the default "django"
+        // palette) so palette-specific CSS rules can target every state.
+        // Removing the attribute meant the django palette inherited the
+        // base [data-theme="dark"] surfaces (warm-gray) instead of the
+        // explicit modern-black override defined for data-palette="django".
+        var effective = palette || 'django';
+        document.documentElement.setAttribute('data-palette', effective);
+        localStorage.setItem(PALETTE_KEY, effective);
 
         // Update the hidden input on profile edit page
         var paletteInput = document.getElementById('id_color_palette');

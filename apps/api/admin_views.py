@@ -1,0 +1,253 @@
+"""Staff-only admin UI for the REST API surface.
+
+Two pages plus one POST endpoint:
+
+- Health (``api_admin:health``) — renders the same checks ``api_doctor``
+  prints, as color-coded HTML cards.
+- Activity (``api_admin:activity``) — per-endpoint group-by + threat panel
+  + filterable ``/api/*`` RequestLog table. (Implemented in Phase 3.)
+- Self-test (``api_admin:self_test``) — POST-only. Mints + revokes a temp
+  token, hits /api/schema/ + /api/schema/openapi.json + first list
+  endpoint via the Django test client. Returns an htmx fragment.
+
+The diagnostic work lives on the existing ``Command`` class in
+api_doctor; admin views rebind it to an HTML surface.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from django.views.generic import TemplateView, View
+
+from apps.smallstack.mixins import StaffRequiredMixin
+
+
+class _AdminBase(StaffRequiredMixin, TemplateView):
+    """Common base — staff gate plus shared context every page needs."""
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from apps.smallstack.api import _api_registry
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["endpoint_count"] = len(_api_registry)
+        ctx.setdefault("warn_count", 0)
+        ctx.setdefault("fail_count", 0)
+        return ctx
+
+
+class APIAdminHealthView(_AdminBase):
+    template_name = "api/admin/health.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from apps.api.management.commands.api_doctor import Command
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["page"] = "health"
+
+        # Rebind api_doctor's checks to an HTML surface — same `_check_*`
+        # methods, same `report` shape. Skip `_self_test` (HTTP + DB) —
+        # it lives behind the POST endpoint.
+        cmd = Command()
+        report: list[dict] = []
+        cmd._check_openapi_package(report)
+        cmd._check_dependencies(report)
+        cmd._check_registry(report)
+        cmd._check_urls(report)
+        cmd._check_swagger_redoc(report)
+        cmd._check_openapi_validity(report)
+        cmd._check_endpoint_consistency(report)
+        cmd._check_orphans(report)
+        cmd._check_token_auth(report)
+        ctx["report"] = report
+
+        ctx["pass_count"] = sum(1 for r in report if r["status"] == "PASS")
+        ctx["warn_count"] = sum(1 for r in report if r["status"] == "WARN")
+        ctx["fail_count"] = sum(1 for r in report if r["status"] == "FAIL")
+        return ctx
+
+
+class APIAdminActivityView(_AdminBase):
+    """Per-endpoint group-by + threat panel + filterable RequestLog table.
+
+    Three regions:
+    1. Per-endpoint summary — top 10 by hit count with avg latency + error rate.
+    2. Threat panel — heuristics from apps/api/threats.py (axes lockouts,
+       auth bursts, path scanning, request bursts, scanner UAs, revoked
+       token use). Empty card if nothing notable.
+    3. Filterable RequestLog table — method / status_class / since / IP /
+       user filters; paginated 50/page.
+
+    Graceful degradation: if apps.activity not installed, regions 1 + 3
+    show a banner; region 2 silently returns empty.
+    """
+
+    template_name = "api/admin/activity.html"
+    PAGE_SIZE = 50
+    SINCE_CHOICES = (
+        ("1h", "Last hour"),
+        ("24h", "Last 24 hours"),
+        ("7d", "Last 7 days"),
+        ("all", "All time"),
+    )
+    STATUS_CHOICES = (
+        ("any", "Any"),
+        ("2xx", "2xx success"),
+        ("4xx", "4xx client"),
+        ("5xx", "5xx server"),
+    )
+    METHOD_CHOICES = (
+        ("any", "Any"),
+        ("GET", "GET"),
+        ("POST", "POST"),
+        ("PUT", "PUT"),
+        ("PATCH", "PATCH"),
+        ("DELETE", "DELETE"),
+    )
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from datetime import timedelta
+
+        from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+        from django.db.models import Avg, Count, Q
+        from django.utils import timezone
+
+        from apps.api.threats import collect_threats
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["page"] = "activity"
+        ctx["activity_app_installed"] = self._activity_app_installed()
+        ctx["filters_method"] = self.METHOD_CHOICES
+        ctx["filters_status"] = self.STATUS_CHOICES
+        ctx["filters_since"] = self.SINCE_CHOICES
+        ctx["current"] = {
+            "method": self.request.GET.get("method", "any"),
+            "status_class": self.request.GET.get("status_class", "any"),
+            "since": self.request.GET.get("since", "24h"),
+            "ip": self.request.GET.get("ip", ""),
+            "user": self.request.GET.get("user", ""),
+            "scanner_only": self.request.GET.get("scanner_only", "") == "on",
+        }
+
+        # Threats: collect always (cheap when activity is empty; returns []
+        # when apps.activity isn't installed).
+        threats = collect_threats(window_hours=24)
+        ctx["threats"] = threats
+        ctx["threat_count"] = len(threats)
+        ctx["threats_by_severity"] = {
+            "high": [t for t in threats if t.severity == "high"],
+            "medium": [t for t in threats if t.severity == "medium"],
+            "low": [t for t in threats if t.severity == "low"],
+        }
+
+        if not ctx["activity_app_installed"]:
+            ctx["per_endpoint"] = []
+            ctx["entries"] = []
+            ctx["paginator"] = None
+            return ctx
+
+        from apps.activity.models import RequestLog
+
+        # Window cutoff for the per-endpoint summary + filtered table.
+        since = ctx["current"]["since"]
+        if since == "1h":
+            cutoff = timezone.now() - timedelta(hours=1)
+        elif since == "24h":
+            cutoff = timezone.now() - timedelta(hours=24)
+        elif since == "7d":
+            cutoff = timezone.now() - timedelta(days=7)
+        else:  # all
+            cutoff = None
+
+        base = RequestLog.objects.filter(path__startswith="/api")
+        if cutoff is not None:
+            base = base.filter(timestamp__gte=cutoff)
+
+        # Region 1: per-endpoint summary across the current `since` window.
+        per_endpoint = list(
+            base.values("path")
+            .annotate(
+                hits=Count("id"),
+                avg_ms=Avg("response_time_ms"),
+                errors=Count("id", filter=Q(status_code__gte=400)),
+            )
+            .order_by("-hits")[:10]
+        )
+        for row in per_endpoint:
+            row["error_rate"] = (row["errors"] / row["hits"] * 100) if row["hits"] else 0.0
+            row["avg_ms"] = round(row["avg_ms"] or 0, 1)
+        ctx["per_endpoint"] = per_endpoint
+
+        # Region 3: filtered table.
+        qs = base.select_related("user", "api_token")
+        method = ctx["current"]["method"]
+        if method != "any":
+            qs = qs.filter(method=method)
+        status_class = ctx["current"]["status_class"]
+        if status_class == "2xx":
+            qs = qs.filter(status_code__gte=200, status_code__lt=300)
+        elif status_class == "4xx":
+            qs = qs.filter(status_code__gte=400, status_code__lt=500)
+        elif status_class == "5xx":
+            qs = qs.filter(status_code__gte=500, status_code__lt=600)
+        ip = ctx["current"]["ip"].strip()
+        if ip:
+            qs = qs.filter(ip_address=ip)
+        username = ctx["current"]["user"].strip()
+        if username:
+            qs = qs.filter(user__username__icontains=username)
+        if ctx["current"]["scanner_only"]:
+            from apps.api.threats import SCANNER_UA_PATTERNS
+
+            ua_q = Q()
+            for pattern in SCANNER_UA_PATTERNS:
+                ua_q |= Q(user_agent__icontains=pattern)
+            qs = qs.filter(ua_q)
+
+        ordered = qs.order_by("-timestamp")
+        paginator = Paginator(ordered, self.PAGE_SIZE)
+        page_num = self.request.GET.get("page") or 1
+        try:
+            page_obj = paginator.page(page_num)
+        except (EmptyPage, PageNotAnInteger):
+            page_obj = paginator.page(1)
+        ctx["entries"] = page_obj.object_list
+        ctx["page_obj"] = page_obj
+        ctx["paginator"] = paginator
+        ctx["total"] = paginator.count
+
+        # Tab badge sees the threat count too — surfaces from any tab.
+        ctx["threat_count"] = len(threats)
+        return ctx
+
+    @staticmethod
+    def _activity_app_installed() -> bool:
+        from django.apps import apps as django_apps
+
+        return any(c.label == "activity" for c in django_apps.get_app_configs())
+
+
+class APIAdminSelfTestView(StaffRequiredMixin, View):
+    """POST-only endpoint backing the "Run Self-Test" button.
+
+    Mints a temp readonly APIToken, hits /api/schema/ + the OpenAPI JSON
+    + the first list endpoint via the Django test client, revokes in a
+    finally. Returns an htmx fragment.
+    """
+
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        from django.shortcuts import render
+
+        from apps.api.management.commands.api_doctor import Command
+
+        cmd = Command()
+        report: list[dict] = []
+        try:
+            cmd._self_test(report)
+        except Exception as exc:  # noqa: BLE001 — any failure becomes a FAIL row
+            report.append({"name": "Self-test", "status": "FAIL", "detail": str(exc)})
+
+        entry = report[0] if report else {"status": "FAIL", "detail": "self-test produced no result"}
+        return render(request, "api/admin/_self_test_result.html", {"entry": entry})

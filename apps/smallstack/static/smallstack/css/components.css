@@ -83,11 +83,13 @@
     background: transparent;
 }
 
-/* Table headers */
+/* Table headers — neutral lift of the surface (body-fg as tint, not
+   primary). Keeps the accent reserved for data (numbers, links, badges)
+   instead of painting every table header with the palette accent. */
 .crud-table thead tr,
 .table-plain thead tr,
 .main-content table thead tr {
-    background-color: color-mix(in srgb, var(--primary) 15%, var(--body-bg)) !important;
+    background-color: color-mix(in srgb, var(--body-fg) 8%, var(--card-bg)) !important;
     border: none !important;
 }
 
@@ -112,16 +114,20 @@
     border: none !important;
 }
 
+/* Zebra striping — neutral lifts of the card surface. Uses body-fg
+   (near-white) as the tint instead of primary so the accent stays
+   reserved for data. Reads as subtle alternating bands on every
+   palette without leaking palette color into every table. */
 .crud-table tbody tr:nth-child(odd),
 .table-plain tbody tr:nth-child(odd),
 .main-content table tbody tr:nth-child(odd) {
-    background-color: color-mix(in srgb, var(--primary) 4%, var(--body-bg)) !important;
+    background-color: var(--card-bg) !important;
 }
 
 .crud-table tbody tr:nth-child(even),
 .table-plain tbody tr:nth-child(even),
 .main-content table tbody tr:nth-child(even) {
-    background-color: color-mix(in srgb, var(--primary) 12%, var(--body-bg)) !important;
+    background-color: color-mix(in srgb, var(--body-fg) 4%, var(--card-bg)) !important;
 }
 
 .crud-table tbody td,

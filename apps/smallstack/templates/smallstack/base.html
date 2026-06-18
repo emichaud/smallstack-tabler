@@ -11,10 +11,11 @@
     (function() {
         var theme = localStorage.getItem('smallstack-theme') || 'dark';
         document.documentElement.setAttribute('data-theme', theme);
-        var palette = localStorage.getItem('smallstack-palette') || '{{ color_palette }}';
-        if (palette && palette !== 'django') {
-            document.documentElement.setAttribute('data-palette', palette);
-        }
+        var palette = localStorage.getItem('smallstack-palette') || '{{ color_palette }}' || 'django';
+        // Always set data-palette so palette-specific CSS rules (including
+        // the explicit dark-mode override for the default django palette)
+        // can target every state — including the default.
+        document.documentElement.setAttribute('data-palette', palette);
         // Suppress sidebar transition on initial load
         document.documentElement.classList.add('no-sidebar-transition');
     })();

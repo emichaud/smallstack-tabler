@@ -12,6 +12,75 @@
  */
 
 /* ============================================
+   Django (default) Palette — dark mode override
+   ============================================ */
+
+html[data-palette="django"][data-theme="dark"] {
+    /* Modern black + vibrant emerald accent. Same pattern as the other
+       dark palettes: near-black neutral surfaces with cool channel bias
+       (R<G<B by 3-7 points) + a saturated accent that does all the
+       visual work. Emerald (#10b981) was chosen over green-500 because
+       it keeps the slight teal character of Django's original brand
+       green (#44b78b) while modernizing the saturation and lightness.
+
+       Surfaces (identical to dark-blue / dark-purple / dark-orange —
+       palette-agnostic):
+         body-bg / footer-bg  #0a0b0f
+         header-bg            #111218
+         sidebar-bg           #0c0d12
+         card-bg / input-bg   #161b22
+         card-header-bg       #1d2230
+         card-border          #262d3d */
+
+    /* Vibrant emerald accent */
+    --primary: #10b981;
+    --primary-hover: #34d399;
+    --secondary: #059669;
+    --sidebar-active-bg: #10b981;
+    --sidebar-active-fg: #ffffff;
+    --input-focus-border: #10b981;
+    --button-bg: #10b981;
+    --button-fg: #ffffff;
+    --button-hover-bg: #34d399;
+
+    /* Links — lighter emerald to pop on near-black without competing
+       with the primary saturated emerald. */
+    --link-fg: #34d399;
+    --link-color: #34d399;
+    --link-hover: #6ee7b7;
+    --breadcrumb-link: #e4e4e7;
+
+    /* Surfaces — pushed MORE cool than the dark-blue/purple/orange
+       palettes because emerald's complement (magenta/red) is exactly
+       what neutral grays drift toward via simultaneous contrast.
+       For blue/purple/orange palettes, a subtle R<G<B bias of 3-7
+       points was enough. For green, we need 10-15 points of blue lift
+       to keep surfaces reading cool instead of brown. The result
+       still passes as "neutral dark" in isolation but holds its
+       color when surrounded by emerald accents. */
+    --body-bg: #07080f;
+    --content-bg: #07080f;
+    --header-bg: #10131c;
+    --hero-gradient-end: #171a26;
+    --card-bg: #131722;
+    --card-header-bg: #1a1e2b;
+    --card-border: #232838;
+    --hairline-color: #232838;
+    --sidebar-bg: #090b13;
+    --sidebar-hover-bg: #131722;
+    --sidebar-border: #232838;
+    --footer-bg: #07080f;
+    --footer-fg: #71717a;
+    --input-bg: #131722;
+    --input-border: #383c4c;
+
+    /* Muted text — zinc family, readable on near-black */
+    --text-muted: #a1a1aa;
+    --breadcrumb-fg: #a1a1aa;
+    --breadcrumb-separator: #52525b;
+}
+
+/* ============================================
    High Contrast Palette (Accessibility)
    ============================================ */
 
@@ -73,32 +142,70 @@ html[data-palette="high-contrast"] a.button.button-secondary:hover {
 }
 
 html[data-palette="high-contrast"][data-theme="dark"] {
+    /* Pure-neutral high-contrast surfaces.
+       Unlike the accent palettes (django / blue / purple / orange) which
+       use a slight cool channel bias to resist color-context warming,
+       this palette uses STRICTLY neutral grays (R=G=B) for accessibility.
+       Predictable luminance values, no subtle hue shifts that might
+       confuse users with color-vision deficiencies.
+
+       Lightness hierarchy with strong steps between layers so visually-
+       impaired users see clear separation:
+
+         body-bg / footer-bg  #000000  pure black
+         sidebar-bg           #0a0a0a  near-black (subtle lift)
+         hero-gradient-end    #111111  used in page-header gradient
+         card-bg / input-bg   #1a1a1a  clear lift, distinct from body
+         card-header-bg       #262626  further lifted band on cards
+         card-border          #808080  HIGHLY visible hairline
+         input-border         #999999  even more visible for focus
+         text-muted           #cccccc  reads as obvious gray, not faded */
+
+    /* Accent — pure white for maximum contrast */
     --primary: #ffffff;
     --primary-hover: #e0e0e0;
     --secondary: #cccccc;
-    --header-bg: #000000;
-    --hero-gradient-end: #111111;
-    --body-fg: #ffffff;
-    --text-muted: #cccccc;
-    --sidebar-fg: #ffffff;
     --sidebar-active-bg: #ffffff;
     --sidebar-active-fg: #000000;
-    --sidebar-border: #666666;
     --input-focus-border: #ffffff;
-    --input-border: #999999;
     --button-bg: #ffffff;
     --button-fg: #000000;
     --button-hover-bg: #e0e0e0;
-    --card-border: #999999;
+
+    /* Text — pure white on pure black for max legibility */
+    --body-fg: #ffffff;
+    --sidebar-fg: #ffffff;
     --link-fg: #ffffff;
     --link-color: #ffffff;
     --link-hover: #cccccc;
-    --breadcrumb-fg: #cccccc;
     --breadcrumb-link: #ffffff;
-    --breadcrumb-separator: #999999;
+
+    /* Surfaces — pure neutral grays, no hue bias */
+    --body-bg: #000000;
+    --content-bg: #000000;
+    --header-bg: #000000;
+    --hero-gradient-end: #111111;
+    --card-bg: #1a1a1a;
+    --card-header-bg: #262626;
+    --card-border: #808080;
+    --hairline-color: #808080;
+    --sidebar-bg: #0a0a0a;
+    --sidebar-hover-bg: #1a1a1a;
+    --sidebar-border: #808080;
+    --footer-bg: #000000;
+    --input-bg: #1a1a1a;
+    --input-border: #999999;
+
+    /* Muted text — light enough to be clearly readable, not faded */
+    --text-muted: #cccccc;
     --body-quiet-color: #cccccc;
     --footer-fg: #cccccc;
+    --breadcrumb-fg: #cccccc;
+    --breadcrumb-separator: #999999;
 }
+
+/* High-contrast page-header-bleed is now handled by the
+   --accent-band-bg override at the bottom of this file. */
 
 /* High-contrast dark: explicit overrides for nav links and icons */
 html[data-palette="high-contrast"][data-theme="dark"] .nav-link:not(.active),
@@ -150,21 +257,73 @@ html[data-palette="dark-blue"] {
 }
 
 html[data-palette="dark-blue"][data-theme="dark"] {
-    --primary: #4DA3FF;
-    --primary-hover: #82CFFF;
-    --secondary: #1E40AF;
-    --header-bg: #0A192F;
-    --hero-gradient-end: #1C355E;
-    --sidebar-active-bg: #4DA3FF;
-    --sidebar-active-fg: #000000;
-    --input-focus-border: #4DA3FF;
-    --button-bg: #4DA3FF;
-    --button-fg: #000000;
-    --button-hover-bg: #82CFFF;
-    --link-fg: #CFE8FF;
-    --link-color: #CFE8FF;
-    --link-hover: #E6F2FF;
-    --breadcrumb-link: #F1F5F9;
+    /* Modern black + vibrant blue accent. Surfaces are neutral near-
+       black (Tailwind zinc family) — no hue tint anywhere — so the
+       saturated blue accent does ALL the visual work. Pattern follows
+       Vercel / Linear / Anthropic console: a minimal dark canvas that
+       lets accents pop.
+
+       Accent: #3b82f6 (Tailwind blue-500) — vibrant, saturated, the
+       single source of color in the interface. Used for primary
+       buttons, sidebar-active, link color, focus borders, badges.
+
+       Surfaces (all neutral, zinc family):
+         body-bg / footer-bg  #0a0a0b  ◀── nearly-pure black canvas
+         header-bg            #111114  ◀── chrome band, slight lift
+         sidebar-bg           #0d0d0f  ◀── between body and card
+         card-bg / input-bg   #18181b  ◀── zinc-900, elevated surface
+         card-header-bg       #1f1f23  ◀── subtle band on cards
+         card-border          #27272a  ◀── zinc-800, visible hairline
+         input-border         #3f3f46  ◀── zinc-700, lifted for affordance
+
+       Muted text uses zinc-400/-500 (slightly cool grays) so it reads
+       clean against the near-black surfaces. */
+
+    /* Vibrant blue accent */
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --secondary: #2563eb;
+    --sidebar-active-bg: #3b82f6;
+    --sidebar-active-fg: #ffffff;
+    --input-focus-border: #3b82f6;
+    --button-bg: #3b82f6;
+    --button-fg: #ffffff;
+    --button-hover-bg: #60a5fa;
+
+    /* Links — bright enough to pop on near-black, not so saturated they
+       fight the primary accent. Zinc-200 for breadcrumb (white-ish). */
+    --link-fg: #60a5fa;
+    --link-color: #60a5fa;
+    --link-hover: #93c5fd;
+    --breadcrumb-link: #e4e4e7;
+
+    /* Surfaces — near-black with a subtle cool bias.
+       Same perceptual lightness as the pure-neutral zinc family, but
+       the channels are intentionally B > G > R by 3-7 points so the
+       surfaces resist looking "warm" when red content (error states,
+       failure timelines, alert banners) sits adjacent. Color-context
+       contrast pulls neutral grays toward warm hues when reds are
+       nearby — these values pre-correct for that. */
+    --body-bg: #0a0b0f;
+    --content-bg: #0a0b0f;
+    --header-bg: #111218;
+    --hero-gradient-end: #181d24;
+    --card-bg: #161b22;
+    --card-header-bg: #1d2230;
+    --card-border: #262d3d;
+    --hairline-color: #262d3d;
+    --sidebar-bg: #0c0d12;
+    --sidebar-hover-bg: #161b22;
+    --sidebar-border: #262d3d;
+    --footer-bg: #0a0b0f;
+    --footer-fg: #71717a;
+    --input-bg: #161b22;
+    --input-border: #3c4356;
+
+    /* Muted text — zinc family, readable on near-black */
+    --text-muted: #a1a1aa;
+    --breadcrumb-fg: #a1a1aa;
+    --breadcrumb-separator: #52525b;
 }
 
 /* ============================================
@@ -188,21 +347,87 @@ html[data-palette="orange"] {
 }
 
 html[data-palette="orange"][data-theme="dark"] {
-    --primary: #ff9800;
-    --primary-hover: #ffb74d;
-    --secondary: #e65100;
-    --header-bg: #4a2800;
-    --hero-gradient-end: #bf360c;
-    --sidebar-active-bg: #ff9800;
-    --sidebar-active-fg: #000000;
-    --input-focus-border: #ff9800;
-    --button-bg: #ff9800;
-    --button-fg: #000000;
-    --button-hover-bg: #ffb74d;
-    --link-fg: #ffffff;
-    --link-color: #ffffff;
-    --link-hover: #e0e0e0;
-    --breadcrumb-link: #ffffff;
+    /* Modern black + vibrant orange accent. Same pattern as dark-blue
+       and dark-purple: near-black neutral surfaces with a deliberate
+       cool channel bias (R<G<B by 3-7 points) that resists color-
+       context warming when red content sits adjacent. The saturated
+       orange accent does all the visual work — used for primary
+       buttons, sidebar-active, link color, focus borders, badges.
+
+       Accent: #f97316 (Tailwind orange-500) — vibrant, saturated.
+
+       Surfaces (identical to dark-blue and dark-purple — palette-
+       agnostic):
+         body-bg / footer-bg  #0a0b0f  ◀── deep near-black canvas
+         header-bg            #111218  ◀── chrome band, slight lift
+         sidebar-bg           #0c0d12  ◀── between body and card
+         card-bg / input-bg   #161b22  ◀── elevated surface
+         card-header-bg       #1d2230  ◀── subtle band on cards
+         card-border          #262d3d  ◀── visible hairline */
+
+    /* Vibrant orange accent */
+    --primary: #f97316;
+    --primary-hover: #fb923c;
+    --secondary: #ea580c;
+    --sidebar-active-bg: #f97316;
+    --sidebar-active-fg: #ffffff;
+    --input-focus-border: #f97316;
+    --button-bg: #f97316;
+    --button-fg: #ffffff;
+    --button-hover-bg: #fb923c;
+
+    /* Links — lighter orange to pop on near-black without competing
+       with the primary saturated orange. */
+    --link-fg: #fb923c;
+    --link-color: #fb923c;
+    --link-hover: #fdba74;
+    --breadcrumb-link: #e4e4e7;
+
+    /* Surfaces — same cool-biased near-black as dark-blue / dark-purple */
+    --body-bg: #0a0b0f;
+    --content-bg: #0a0b0f;
+    --header-bg: #111218;
+    --hero-gradient-end: #181d24;
+    --card-bg: #161b22;
+    --card-header-bg: #1d2230;
+    --card-border: #262d3d;
+    --hairline-color: #262d3d;
+    --sidebar-bg: #0c0d12;
+    --sidebar-hover-bg: #161b22;
+    --sidebar-border: #262d3d;
+    --footer-bg: #0a0b0f;
+    --footer-fg: #71717a;
+    --input-bg: #161b22;
+    --input-border: #3c4356;
+
+    /* Muted text — zinc family, readable on near-black */
+    --text-muted: #a1a1aa;
+    --breadcrumb-fg: #a1a1aa;
+    --breadcrumb-separator: #52525b;
+}
+
+/* Accent band override — orange, django (emerald), and high-contrast
+   palettes all have accent colors that go muddy at low lightness
+   (brown / olive / medium-gray) when mixed at 15% with body-bg.
+   Setting --accent-band-bg to the card surface makes every band that
+   references the variable (page-header-bleed, toc-header, hero-section,
+   etc.) clean up at once.
+
+   Blue and purple are unaffected — their accents stay readable as
+   navy/plum at the same mix, so they keep the tinted band. */
+html[data-palette="orange"][data-theme="dark"],
+html[data-palette="django"][data-theme="dark"],
+html[data-palette="high-contrast"][data-theme="dark"] {
+    --accent-band-bg: var(--card-bg);
+}
+
+/* .hero-section uses a saturated gradient, not the band variable, so it
+   needs an explicit override per palette where the gradient goes muddy.
+   Override matches the same set as --accent-band-bg above. */
+html[data-palette="orange"][data-theme="dark"] .hero-section,
+html[data-palette="django"][data-theme="dark"] .hero-section,
+html[data-palette="high-contrast"][data-theme="dark"] .hero-section {
+    background: var(--card-bg) !important;
 }
 
 /* ============================================
@@ -226,21 +451,63 @@ html[data-palette="purple"] {
 }
 
 html[data-palette="purple"][data-theme="dark"] {
-    --primary: #b39ddb;
-    --primary-hover: #ce93d8;
-    --secondary: #7e57c2;
-    --header-bg: #2a1a4a;
-    --hero-gradient-end: #5e35b1;
-    --sidebar-active-bg: #b39ddb;
-    --sidebar-active-fg: #000000;
-    --input-focus-border: #b39ddb;
-    --button-bg: #b39ddb;
-    --button-fg: #000000;
-    --button-hover-bg: #ce93d8;
-    --link-fg: #ffffff;
-    --link-color: #ffffff;
-    --link-hover: #e0e0e0;
-    --breadcrumb-link: #ffffff;
+    /* Modern black + vibrant purple accent. Same pattern as dark-blue:
+       near-black neutral surfaces with a deliberate cool channel bias
+       (R<G<B by 3-7 points) that resists color-context warming when
+       red content sits adjacent. The saturated purple accent does all
+       the visual work — used for primary buttons, sidebar-active, link
+       color, focus borders, badges.
+
+       Accent: #a855f7 (Tailwind purple-500) — vibrant, saturated, the
+       single source of color in the interface.
+
+       Surfaces (identical to dark-blue — palette-agnostic):
+         body-bg / footer-bg  #0a0b0f  ◀── deep near-black canvas
+         header-bg            #111218  ◀── chrome band, slight lift
+         sidebar-bg           #0c0d12  ◀── between body and card
+         card-bg / input-bg   #161b22  ◀── elevated surface
+         card-header-bg       #1d2230  ◀── subtle band on cards
+         card-border          #262d3d  ◀── visible hairline */
+
+    /* Vibrant purple accent */
+    --primary: #a855f7;
+    --primary-hover: #c084fc;
+    --secondary: #7c3aed;
+    --sidebar-active-bg: #a855f7;
+    --sidebar-active-fg: #ffffff;
+    --input-focus-border: #a855f7;
+    --button-bg: #a855f7;
+    --button-fg: #ffffff;
+    --button-hover-bg: #c084fc;
+
+    /* Links — lighter purple to pop on near-black without competing
+       with the primary saturated purple. */
+    --link-fg: #c084fc;
+    --link-color: #c084fc;
+    --link-hover: #d8b4fe;
+    --breadcrumb-link: #e4e4e7;
+
+    /* Surfaces — same cool-biased near-black as dark-blue */
+    --body-bg: #0a0b0f;
+    --content-bg: #0a0b0f;
+    --header-bg: #111218;
+    --hero-gradient-end: #181d24;
+    --card-bg: #161b22;
+    --card-header-bg: #1d2230;
+    --card-border: #262d3d;
+    --hairline-color: #262d3d;
+    --sidebar-bg: #0c0d12;
+    --sidebar-hover-bg: #161b22;
+    --sidebar-border: #262d3d;
+    --footer-bg: #0a0b0f;
+    --footer-fg: #71717a;
+    --input-bg: #161b22;
+    --input-border: #3c4356;
+
+    /* Muted text — zinc family, readable on near-black */
+    --text-muted: #a1a1aa;
+    --breadcrumb-fg: #a1a1aa;
+    --breadcrumb-separator: #52525b;
 }
 
 /* ============================================

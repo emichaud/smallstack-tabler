@@ -40,32 +40,15 @@ body:not(.theme-dark) {
     --control-height: 36px;
 }
 
-/* ── Dark-mode gray palette (on <html>, theme-base overrides these) ── */
-[data-bs-theme='dark'] {
-    --tblr-gray-50: #f8f9fa;
-    --tblr-gray-100: #e9ecef;
-    --tblr-gray-200: #c8ccd4;
-    --tblr-gray-300: #a0a4ab;
-    --tblr-gray-400: #656d77;
-    --tblr-gray-500: #3a3d44;
-    --tblr-gray-600: #2c2e34;
-    --tblr-gray-700: #212329;
-    --tblr-gray-800: #1a1c23;
-    --tblr-gray-900: #151820;
-    --tblr-gray-950: #101218;
-}
-
-/* ── Dark theme ──────────────────────────────────────────── */
+/* ── Dark-mode SmallStack-var aliases ─────────────────────────────
+   Only re-export Tabler 1.4's cool Tailwind-slate surface tokens
+   under SmallStack-style var names so downstream templates that
+   reference var(--primary), var(--card-bg), var(--body-fg), etc.
+   render correctly inside Tabler chrome. We intentionally do NOT
+   override --tblr-body-bg / --tblr-card-bg / --tblr-border-color /
+   --tblr-gray-* here — Tabler 1.4's defaults (#111827 body-bg,
+   cool blue-gray border, Tailwind slate scale) are what we want. */
 body.theme-dark, [data-bs-theme="dark"] {
-    --tblr-body-bg: var(--tblr-gray-800);
-    --tblr-bg-surface: var(--tblr-gray-700);
-    --tblr-card-bg: var(--tblr-gray-700);
-    --tblr-body-color: var(--tblr-gray-200);
-    --tblr-border-color: var(--tblr-gray-600);
-    --tblr-border-color-light: var(--tblr-gray-500);
-    --tblr-nav-link-color: var(--tblr-gray-200);
-    --tblr-muted: var(--tblr-gray-400);
-    /* SmallStack compat aliases for dark mode */
     --body-bg: var(--tblr-body-bg);
     --body-fg: var(--tblr-body-color);
     --body-quiet-color: var(--tblr-muted);
@@ -77,8 +60,6 @@ body.theme-dark, [data-bs-theme="dark"] {
     --input-border: var(--tblr-border-color);
     --code-bg: rgba(245, 159, 0, 0.08);
     --control-height: 36px;
-    background-color: var(--tblr-body-bg);
-    color: var(--tblr-body-color);
 }
 
 body.theme-dark .navbar, [data-bs-theme="dark"] .navbar {

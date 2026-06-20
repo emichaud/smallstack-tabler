@@ -8,7 +8,7 @@ For deep-dive references, see the [`tabler/`](tabler/) subdirectory — start wi
 
 ## Quick overview
 
-This project uses [Tabler v1.0.0-beta20](https://tabler.io), an admin UI framework built on Bootstrap 5. Tabler CSS/JS is loaded from a CDN (jsdelivr) by `apps/tabler/templates/tabler/base.html`. Local overrides live in `apps/tabler/static/tabler/css/tabler_overrides.css` and `apps/tabler/static/tabler/js/tabler_theme.js` (the settings-panel engine).
+This project uses [Tabler v1.4.0](https://tabler.io), an admin UI framework built on Bootstrap 5. Tabler CSS/JS + `tabler-themes.min.css` are loaded from a CDN (jsdelivr) by `apps/tabler/templates/tabler/base.html`, alongside the variable-font Inter build from rsms.me (matches `preview.tabler.io` glyph-for-glyph). Local overrides live in `apps/tabler/static/tabler/css/tabler_overrides.css` and `apps/tabler/static/tabler/js/tabler_theme.js` (the settings-panel engine).
 
 Every page **extends `tabler/base.html`** and uses Tabler component classes (`.card`, `.btn-primary`, `.row-deck row-cards`, etc.). The user can switch theme, color, font, base palette, corner radius, and layout at runtime via the offcanvas settings panel — all persist to localStorage and (for theme) to the user's profile.
 

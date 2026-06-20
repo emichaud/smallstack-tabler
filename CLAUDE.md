@@ -85,7 +85,7 @@ Settings split in `config/settings/`:
 
 ## Theming — Tabler, not modern-dark
 
-This project's UI chrome is **Tabler v1.0.0-beta20**, loaded from a CDN by `apps/tabler/templates/tabler/base.html`. Local customizations live in:
+This project's UI chrome is **Tabler v1.4.0**, loaded from a CDN by `apps/tabler/templates/tabler/base.html` (CSS, JS, and `tabler-themes.min.css` for full accent-color cascade), plus rsms.me variable Inter for glyph parity with `preview.tabler.io`. Local customizations live in:
 
 - `apps/tabler/static/tabler/css/tabler_overrides.css` — dark mode, accent colors, layout variants, and **SmallStack-var aliases** so upstream templates that reference `var(--primary)`, `var(--card-bg)`, `var(--body-fg)`, etc. render correctly inside Tabler chrome
 - `apps/tabler/static/tabler/js/tabler_theme.js` — the runtime settings engine (theme/color/font/base/radius/layout, persisted to localStorage and to the user's profile)

@@ -219,14 +219,16 @@ The CDN is convenient but adds an external dependency. To self-host:
 ```bash
 mkdir -p smallstack-tabler/apps/tabler/static/tabler/vendor
 cd smallstack-tabler/apps/tabler/static/tabler/vendor
-curl -O https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css
-curl -O https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js
+curl -O https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/css/tabler.min.css
+curl -O https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/css/tabler-themes.min.css
+curl -O https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/js/tabler.min.js
 ```
 
 Update `tabler/base.html`:
 
 ```django
 <link rel="stylesheet" href="{% static 'tabler/vendor/tabler.min.css' %}">
+<link rel="stylesheet" href="{% static 'tabler/vendor/tabler-themes.min.css' %}">
 ...
 <script src="{% static 'tabler/vendor/tabler.min.js' %}"></script>
 ```

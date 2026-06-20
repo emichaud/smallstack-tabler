@@ -29,7 +29,7 @@ The entry point for any Tabler work is **[../tabler-ui.md](../tabler-ui.md)** (t
 
 ## Quick orientation
 
-**Tabler v1.0.0-beta20** is loaded from a CDN (jsdelivr) by `apps/tabler/templates/tabler/base.html`. It is Bootstrap 5 under the hood — every Bootstrap utility works.
+**Tabler v1.4.0** is loaded from a CDN (jsdelivr) by `apps/tabler/templates/tabler/base.html` — both `tabler.min.css` and `tabler-themes.min.css` (the second is required for accent-color switching to fully cascade), plus rsms.me variable Inter for glyph parity with `preview.tabler.io`. It is Bootstrap 5 under the hood — every Bootstrap utility works.
 
 Three files own the Tabler integration:
 
@@ -63,7 +63,7 @@ When a skill cites Tabler upstream, it links to one of these:
 
 | Term | Meaning |
 |------|---------|
-| **CDN base** | Tabler CSS/JS loaded via `cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20` — no local copy. |
+| **CDN base** | Tabler CSS/JS + `tabler-themes.min.css` loaded via `cdn.jsdelivr.net/npm/@tabler/core@1.4.0` — no local copy. |
 | **Settings panel** | The offcanvas at `#offcanvas-settings`, defined in `tabler/includes/settings.html`. Lets the user change theme/color/font/base/radius/layout at runtime. |
 | **Theme engine** | `tabler_theme.js` — persists settings to `localStorage` under the `smallstack-` prefix, syncs to authenticated user profile via htmx. |
 | **`theme-dark` class** | Class on `<body>` that activates the dark palette. Toggled by the theme engine, also set by the blocking script in `<head>` to prevent FOUC. |

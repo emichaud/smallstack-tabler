@@ -217,7 +217,7 @@ Open DevTools → Network. Filter by "tabler". Look for failed requests.
 ### Local-fallback pattern
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css"
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/css/tabler.min.css"
       onerror="this.onerror=null;this.href='{% static "tabler/vendor/tabler.min.css" %}';">
 ```
 
@@ -464,3 +464,11 @@ Verify `resetAll()` in `tabler_theme.js` lines 262-285 removes each key and call
 - [charts.md](charts.md) — for chart-specific issues
 - [htmx-patterns.md](htmx-patterns.md) — for the JS re-init handler
 - [customization.md](customization.md) — when you've customized something and broken it
+
+## Upgrade history
+
+| Tabler version | Notes |
+|---|---|
+| `1.0.0-beta20` → `1.4.0` | Aligned with `preview.tabler.io`. Bumped CDN refs in `apps/tabler/templates/tabler/base.html`, `apps/tabler/templates/registration/tabler_auth_base.html`, and `apps/preview/templates/preview/base_preview.html`. Added `tabler-themes.min.css` (required for accent-color switching to fully cascade). Swapped Google Fonts Inter → rsms.me variable Inter (matches preview.tabler.io glyph-for-glyph). All `.theme-dark` selectors in `tabler_overrides.css` paired with `[data-bs-theme="dark"]` for forward compat. Full upgrade spec at `ai_cowork/tabler-1.4-upgrade-spec.md`. |
+
+**Downstream projects with a forked `base.html` or `tabler_auth_base.html`**: re-apply the four URL changes (Tabler core CSS → `1.4.0`, add `tabler-themes.min.css` link, swap Inter `<link>` to `https://rsms.me/inter/inter.css`, Tabler core JS → `1.4.0`). Then run the settings-panel sweep verification to confirm all 11 accents fully cascade.

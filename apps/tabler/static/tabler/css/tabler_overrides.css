@@ -49,11 +49,18 @@ body:not(.theme-dark) {
    --tblr-gray-* here — Tabler 1.4's defaults (#111827 body-bg,
    cool blue-gray border, Tailwind slate scale) are what we want. */
 body.theme-dark, [data-bs-theme="dark"] {
+    /* Tabler 1.4 only scopes --tblr-card-bg to .card elements
+       (via `.card { --tblr-card-bg: var(--tblr-bg-surface); }`).
+       Re-expose it at the root so our overrides for non-.card
+       surfaces (dropdown-menu, modal-content, list-group-item,
+       and the ported SmallStack components) get an opaque
+       surface color instead of resolving to empty/transparent. */
+    --tblr-card-bg: var(--tblr-bg-surface);
     --body-bg: var(--tblr-body-bg);
     --body-fg: var(--tblr-body-color);
     --body-quiet-color: var(--tblr-muted);
     --muted-fg: var(--tblr-muted);
-    --card-bg: var(--tblr-card-bg);
+    --card-bg: var(--tblr-bg-surface);
     --border: var(--tblr-border-color);
     --border-color: var(--tblr-border-color);
     --hairline-color: var(--tblr-border-color);

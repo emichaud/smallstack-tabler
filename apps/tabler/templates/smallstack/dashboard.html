@@ -33,16 +33,16 @@
 <div class="row row-deck row-cards">
     {% for w in widgets %}
     <div class="col-sm-6 col-lg-4">
-        <a href="{{ w.url }}" class="card card-link{% if w.status == 'degraded' %} border-warning{% elif w.status == 'down' %} border-danger{% endif %}">
+        <a href="{{ w.url }}" class="card card-link{% if w.data.status == 'degraded' %} border-warning{% elif w.data.status == 'down' %} border-danger{% endif %}">
             <div class="card-body">
                 <div class="d-flex align-items-center mb-3">
                     <span class="avatar avatar-sm me-2" style="background: rgba(var(--tblr-primary-rgb), 0.1); color: var(--tblr-primary);">
-                        {{ w.icon }}
+                        {{ w.icon_safe }}
                     </span>
-                    <span class="text-secondary fw-semibold text-uppercase" style="font-size: 0.8rem; letter-spacing: 0.04em;">{{ w.title }}</span>
+                    <span class="text-secondary fw-semibold text-uppercase" style="font-size: 0.8rem; letter-spacing: 0.04em;">{{ w.widget.title }}</span>
                 </div>
-                <div class="h2 mb-1{% if w.status == 'operational' %} text-success{% elif w.status == 'degraded' %} text-warning{% elif w.status == 'down' %} text-danger{% endif %}">{{ w.headline }}</div>
-                <div class="text-secondary">{{ w.detail }}</div>
+                <div class="h2 mb-1{% if w.data.status == 'operational' %} text-success{% elif w.data.status == 'degraded' %} text-warning{% elif w.data.status == 'down' %} text-danger{% endif %}">{{ w.data.headline }}</div>
+                <div class="text-secondary">{{ w.data.detail }}</div>
             </div>
         </a>
     </div>

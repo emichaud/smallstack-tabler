@@ -115,6 +115,15 @@
     <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
     <!-- Tabler JS -->
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/js/tabler.min.js"></script>
+    <!-- Tabler 1.4 bundles Bootstrap under window.tabler.bootstrap and no
+         longer exposes the conventional global `bootstrap`. Alias it so
+         code using `new bootstrap.Modal(...)`, tooltips/popovers, and the
+         htmx re-init patterns keep working. -->
+    <script>
+        if (typeof window.bootstrap === 'undefined' && window.tabler && window.tabler.bootstrap) {
+            window.bootstrap = window.tabler.bootstrap;
+        }
+    </script>
     <!-- Theme switching -->
     <script src="{% static 'tabler/js/tabler_theme.js' %}"></script>
 

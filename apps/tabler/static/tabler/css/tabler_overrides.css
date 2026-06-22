@@ -67,6 +67,12 @@ body.theme-dark, [data-bs-theme="dark"] {
     --input-border: var(--tblr-border-color);
     --code-bg: rgba(245, 159, 0, 0.08);
     --control-height: 36px;
+    /* Tabler 1.4 sets --tblr-code-bg to #111827 in dark mode — identical
+       to the body background — so <code> pills (e.g. request paths in the
+       activity tables) render darker than the card and look recessed.
+       Lift it to a subtle cool surface so the pill reads on both the body
+       and card backgrounds. */
+    --tblr-code-bg: rgba(255, 255, 255, 0.07);
 }
 
 body.theme-dark .navbar, [data-bs-theme="dark"] .navbar {
@@ -1194,6 +1200,24 @@ body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
 .crud-form .crud-field.has-error select,
 .crud-form .crud-field.has-error textarea {
     border-color: #d63939;
+}
+
+/* ── SmallStack config copy button (backup page paths, etc.) ──────────
+   Ported from apps/smallstack/static/smallstack/css/theme.css. Without it
+   the inline copy buttons next to file paths fall back to the default
+   raised gray browser button instead of a flat icon-only affordance. */
+.config-copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    vertical-align: middle;
+    color: var(--tblr-muted);
+    transition: color 0.15s;
+}
+
+.config-copy-btn:hover {
+    color: var(--tblr-body-color);
 }
 
 /* ── SmallStack list-toolbar (search + filter dropdowns) ──────────────

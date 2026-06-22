@@ -1473,3 +1473,231 @@ body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
     color: var(--tblr-body-color);
     background: color-mix(in srgb, var(--tblr-primary) 10%, var(--tblr-card-bg));
 }
+
+/* ── SmallStack tab bar (mcp/api admin _nav, related tabs) ─────────────
+   Ported from apps/smallstack/static/smallstack/css/components.css. These
+   underline-style tabs are used by the MCP and API admin nav and CRUD
+   related-record tabs; without the port they fall back to plain text. */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--tblr-border-color);
+    margin-bottom: 1rem;
+}
+
+.tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--tblr-muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+    border-radius: var(--radius-sm, 4px) var(--radius-sm, 4px) 0 0;
+    text-decoration: none;
+}
+
+.tab-btn:hover {
+    color: var(--tblr-body-color);
+    background-color: color-mix(in srgb, var(--tblr-body-color) 5%, transparent);
+}
+
+.tab-btn.active {
+    color: var(--tblr-primary);
+    border-bottom-color: var(--tblr-primary);
+}
+
+.tab-count {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg));
+    color: var(--tblr-primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.3rem;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* ── SmallStack paginator (explorer/CRUD list pagination) ──────────────
+   Ported from apps/smallstack/static/smallstack/css/theme.css. Renders
+   the prev/next nav + "page X of Y" control used at the foot of CRUD
+   list pages; otherwise it falls back to cramped plain-text arrows. */
+.paginator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 1rem 0 0;
+    font-size: 0.85rem;
+}
+
+.paginator-info {
+    color: var(--tblr-muted);
+}
+
+.paginator-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 4px);
+    overflow: hidden;
+}
+
+.paginator-btn,
+a.paginator-btn:link,
+a.paginator-btn:visited {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: none;
+    color: var(--tblr-muted);
+    text-decoration: none;
+    font-size: 0.95rem;
+    transition: color 0.15s, background 0.15s;
+    cursor: pointer;
+    border: none;
+}
+
+a.paginator-btn:hover {
+    color: var(--tblr-primary);
+    background: color-mix(in srgb, var(--tblr-primary) 10%, var(--tblr-body-bg));
+    text-decoration: none;
+}
+
+.paginator-btn.disabled {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+.paginator-current {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
+    height: 2rem;
+    color: var(--tblr-body-color);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.paginator-of {
+    font-weight: 400;
+    color: var(--tblr-muted);
+}
+
+/* ── SmallStack crud-table / table-plain (activity logs, CRUD lists, ──
+   mcp & api admin tables). Ported from smallstack/crud/_table_styles.html
+   so these classes render their tinted header + zebra striping globally —
+   the CRUD object_list includes that partial, but the activity tab tables
+   (.crud-table on Recent/Top Paths, .table-plain on Errors/By Method) and
+   the mcp/api admin tables (.table-plain) use them without it and rendered
+   flat. The visual rules are shared; only table-layout:fixed and the cell
+   ellipsis are crud-table-only (those tables carry a <colgroup>; the
+   .table-plain tables have none and must keep auto layout). */
+.crud-table,
+.table-plain {
+    width: 100%;
+    border-collapse: collapse;
+}
+.crud-table {
+    table-layout: fixed;
+}
+.crud-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.crud-table tr:nth-child(odd),
+.crud-table tr:nth-child(even),
+.table-plain tr:nth-child(odd),
+.table-plain tr:nth-child(even) {
+    background: transparent;
+}
+.crud-table thead tr,
+.table-plain thead tr {
+    background-color: rgba(var(--tblr-primary-rgb), 0.15) !important;
+    border: none !important;
+}
+.crud-table thead th,
+.table-plain thead th {
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 10px 16px;
+    border: none !important;
+    background-color: transparent !important;
+    color: var(--tblr-secondary) !important;
+    text-align: left;
+}
+.crud-table tbody tr,
+.table-plain tbody tr {
+    border: none !important;
+}
+.crud-table tbody tr:nth-child(odd),
+.table-plain tbody tr:nth-child(odd) {
+    background-color: rgba(var(--tblr-primary-rgb), 0.04) !important;
+}
+.crud-table tbody tr:nth-child(even),
+.table-plain tbody tr:nth-child(even) {
+    background-color: rgba(var(--tblr-primary-rgb), 0.12) !important;
+}
+.crud-table tbody td,
+.crud-table tbody th,
+.table-plain tbody td,
+.table-plain tbody th {
+    border: none !important;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+}
+.crud-table tbody tr:hover,
+.table-plain tbody tr:hover {
+    background-color: rgba(var(--tblr-primary-rgb), 0.20) !important;
+}
+.crud-table a,
+.table-plain a {
+    color: var(--tblr-primary);
+    text-decoration: none;
+}
+.crud-table a:hover,
+.table-plain a:hover {
+    text-decoration: underline;
+}
+.crud-actions-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+.crud-action-delete {
+    color: var(--delete-button-bg, #dc3545) !important;
+}
+
+/* ── SmallStack clickable stat cards (backup activity KPIs, etc.) ──────
+   Ported from theme.css. These .card stat tiles open a drill-down modal
+   on click but, without the port, gave no pointer cursor or hover cue. */
+.stat-card-clickable {
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.stat-card-clickable:hover {
+    border-color: var(--tblr-primary) !important;
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+}

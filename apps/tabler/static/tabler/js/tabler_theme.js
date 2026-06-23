@@ -59,7 +59,8 @@
     }
 
     // ─── Theme (dark/light) ─────────────────────────────────
-    function applyTheme(theme) {
+    function applyTheme(theme, persist) {
+        if (persist === undefined) persist = true;
         set('theme', theme);
         if (theme === 'dark') {
             document.body.classList.add('theme-dark');
@@ -78,8 +79,11 @@
             btn.classList.toggle('active', btn.dataset.theme === theme);
         });
 
-        // Persist to profile if authenticated
-        if (typeof htmx !== 'undefined') {
+        // Persist to profile only on an actual user-initiated change.
+        // init() applies the stored theme on every page load with
+        // persist=false so we don't POST /profile/theme/ on each navigation
+        // (the value is unchanged — it just re-saved the same theme).
+        if (persist && typeof htmx !== 'undefined') {
             htmx.ajax('POST', '/profile/theme/', {
                 values: { theme: theme },
                 swap: 'none'
@@ -298,8 +302,9 @@
             set('layout', 'navbar-sticky');
         }
 
-        // Apply all saved settings
-        applyTheme(get('theme'));
+        // Apply all saved settings (persist=false: applying the stored
+        // theme on load must not re-POST it to the profile every navigation)
+        applyTheme(get('theme'), false);
         applyColor(get('color'));
         applyFont(get('font'));
         applyBase(get('base'));

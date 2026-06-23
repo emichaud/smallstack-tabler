@@ -227,15 +227,17 @@ def crud_table(context):
 
 
 @register.inclusion_tag("smallstack/crud/includes/sortable_th.html", takes_context=True)
-def sortable_th(context, field_name, label, target="#tab-content", include_selector=""):
+def sortable_th(context, field_name, label, target="#tab-content", include_selector="", align="left"):
     """Render a sortable <th> header for manual tables.
 
     Usage in templates:
         {% load crud_tags %}
         {% sortable_th "timestamp" "Time" target="#tab-content" %}
+        {% sortable_th "response_time_ms" "Time (ms)" align="right" %}
 
     Reads ?ordering= from the current request to show sort direction.
-    Clicking toggles asc ↔ desc (two-state).
+    Clicking toggles asc ↔ desc (two-state). Pass align="right" to match a
+    column whose cells are right-aligned (e.g. numeric values).
     """
     request = context.get("request")
     current_ordering = request.GET.get("ordering", "").strip() if request else ""
@@ -262,6 +264,7 @@ def sortable_th(context, field_name, label, target="#tab-content", include_selec
         "hx_target": target,
         "hx_include": include_selector,
         "query_string": params.urlencode(),
+        "align": "right" if align == "right" else "left",
     }
 
 

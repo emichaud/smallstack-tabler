@@ -440,6 +440,21 @@ body:not(.theme-dark) .welcome-card .mini-stat-bar { background-color: #dee2e6; 
 
 body.theme-dark .chart-donut-label { color: #ffffff; }
 
+/* ── Text selection ──────────────────────────────────────────
+   No ::selection style was defined, so selected text used the faint
+   browser default — which gets visually swallowed by the amber row
+   :hover tint on the data tables, making it look like selection wasn't
+   working. Give it a solid, high-contrast highlight so selected text is
+   clearly visible everywhere (including over hovered rows). */
+::selection {
+    background: rgba(var(--tblr-primary-rgb, 245, 159, 0), 0.85);
+    color: #1a1c23;
+}
+::-moz-selection {
+    background: rgba(var(--tblr-primary-rgb, 245, 159, 0), 0.85);
+    color: #1a1c23;
+}
+
 /* ── Utilities ───────────────────────────────────────────── */
 .text-amber { color: #f59f00 !important; }
 .bg-amber { background-color: #f59f00 !important; }
@@ -873,28 +888,38 @@ body:not(.theme-dark) .timeline-dot svg { width: 10px; height: 10px; fill: #ffff
 
 .theme-bar {
     display: flex;
-    height: 24px;
-    border-radius: 4px;
+    min-height: 34px;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 999px;
     overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .theme-bar-segment {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 600;
-    min-width: 30px;
+    min-width: 44px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    transition: filter 0.15s;
 }
 
+.theme-bar-segment:hover {
+    filter: brightness(1.05);
+}
+
+/* Accent-filled "dark" segment + faint accent tint for "light", matching
+   the base SmallStack theme bar (was flat gray before). */
 .theme-bar-segment.is-dark {
-    background: var(--tblr-gray-600, #2c2e34);
-    color: var(--tblr-gray-200, #c8ccd4);
+    background: var(--tblr-primary);
+    color: #1a1c23;
 }
 
 .theme-bar-segment.is-light {
-    background: #e9ecef;
-    color: #495057;
+    background: color-mix(in srgb, var(--tblr-primary) 18%, var(--tblr-card-bg));
+    color: var(--tblr-body-color);
+    border-left: 1px solid color-mix(in srgb, var(--tblr-primary) 35%, var(--tblr-border-color));
 }
 
 /* ── Apps grid dropdown ────────────────────────────────── */
@@ -1626,6 +1651,13 @@ a.paginator-btn:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* Checkbox + actions columns must never truncate (the ellipsis would
+   render a stray "..." next to the select checkbox). */
+.crud-table td:has(.bulk-select-row),
+.crud-table td.crud-actions-cell {
+    overflow: visible;
+    text-overflow: clip;
+}
 .crud-table tr:nth-child(odd),
 .crud-table tr:nth-child(even),
 .table-plain tr:nth-child(odd),
@@ -1648,6 +1680,10 @@ a.paginator-btn:hover {
     background-color: transparent !important;
     color: var(--tblr-secondary) !important;
     text-align: left;
+    /* Headers are short labels — never break them mid-word. With
+       table-layout:fixed the column must be wide enough (set via the
+       template's <colgroup>); nowrap keeps "METHOD"/"STATUS" on one line. */
+    white-space: nowrap;
 }
 .crud-table tbody tr,
 .table-plain tbody tr {
@@ -1700,4 +1736,346 @@ a.paginator-btn:hover {
 .stat-card-clickable:hover {
     border-color: var(--tblr-primary) !important;
     background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+}
+
+/* ── SmallStack display-palette (CRUD list/detail view switcher) ───────
+   The icon buttons that toggle table/grid display. Ported from
+   components.css; without it they render as default gray browser buttons. */
+.display-palette {
+    display: inline-flex;
+    gap: 0.25rem;
+    margin-right: 0.75rem;
+}
+.display-palette-btn {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--tblr-border-color) !important;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    background: var(--tblr-card-bg) !important;
+    color: var(--tblr-body-color) !important;
+    transition: background 0.15s, color 0.15s;
+}
+.display-palette-btn.active {
+    background: var(--tblr-primary) !important;
+    color: #1a1c23 !important;
+}
+.display-palette-btn:hover:not(.active) {
+    background: color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg)) !important;
+}
+
+/* ── SmallStack CRUD detail grid (object detail, ?display=grid) ─────────
+   Two-column label/value grid. Ported from the inline <style> in
+   smallstack/crud/_form_styles.html, which the Tabler detail page doesn't
+   include — so the detail rendered as an unstyled stacked list. */
+.crud-detail-grid {
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 6px);
+    overflow: hidden;
+}
+.crud-detail-grid .crud-grid-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.35fr) 1fr;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.crud-detail-grid .crud-grid-row:last-child {
+    border-bottom: none;
+}
+.crud-detail-grid .crud-grid-label {
+    padding: 0.7rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--tblr-body-color);
+    background: color-mix(in srgb, var(--tblr-body-color) 5%, var(--tblr-card-bg));
+    border-right: 1px solid var(--tblr-border-color);
+    display: flex;
+    align-items: center;
+}
+.crud-detail-grid .crud-grid-value {
+    padding: 0.7rem 0.9rem;
+    font-size: 0.9rem;
+    color: var(--tblr-body-color);
+    background: color-mix(in srgb, var(--tblr-body-color) 2%, var(--tblr-card-bg));
+    min-height: 2.6rem;
+    box-sizing: border-box;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+}
+.crud-detail-grid .crud-grid-value:empty::before {
+    content: "\2014";
+    color: var(--tblr-muted);
+}
+
+/* ── SmallStack calendar display (CRUD ?display=calendar) ──────────────
+   Ported from components.css; without it the calendar renders as a flat
+   vertical list of weekday names + day numbers instead of a 7-col grid. */
+.calendar-display {
+    background: var(--tblr-card-bg);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 6px);
+    overflow: hidden;
+}
+.calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.65rem 1rem;
+    background: color-mix(in srgb, var(--tblr-body-color) 4%, var(--tblr-card-bg));
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.calendar-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.calendar-nav-btn,
+.calendar-nav-btn:link,
+.calendar-nav-btn:visited {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--tblr-body-bg);
+    color: var(--tblr-body-color);
+    text-decoration: none;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: border-color 0.15s, background 0.15s;
+}
+.calendar-nav-btn:hover {
+    border-color: var(--tblr-primary);
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-body-bg));
+}
+.calendar-title {
+    margin: 0 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--tblr-body-color);
+}
+.calendar-today-btn,
+.calendar-today-btn:link,
+.calendar-today-btn:visited {
+    margin-left: 0.5rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--tblr-body-bg);
+    color: var(--tblr-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    transition: border-color 0.15s, color 0.15s;
+}
+.calendar-today-btn:hover {
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+}
+.calendar-count {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+    border: 1px solid color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg));
+    border-radius: var(--radius-sm, 4px);
+}
+.calendar-count-value {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--tblr-primary);
+    line-height: 1;
+}
+.calendar-count-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--tblr-muted);
+}
+.calendar-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    background: color-mix(in srgb, var(--tblr-body-color) 3%, var(--tblr-card-bg));
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+.calendar-weekday {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--tblr-muted);
+    text-align: center;
+}
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-auto-rows: minmax(68px, auto);
+}
+.calendar-cell {
+    position: relative;
+    padding: 0.2rem;
+    border-right: 1px solid var(--tblr-border-color);
+    border-bottom: 1px solid var(--tblr-border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+.calendar-cell:nth-child(7n) {
+    border-right: none;
+}
+.calendar-cell--blank {
+    background: color-mix(in srgb, var(--tblr-body-color) 2%, var(--tblr-card-bg));
+}
+.calendar-cell--today {
+    background: color-mix(in srgb, var(--tblr-primary) 6%, var(--tblr-card-bg));
+}
+.calendar-cell-day {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--tblr-muted);
+    padding: 0 0.15rem 0.1rem;
+}
+.calendar-cell--today .calendar-cell-day {
+    color: var(--tblr-primary);
+    font-weight: 700;
+}
+.calendar-event,
+.calendar-event:link,
+.calendar-event:visited {
+    position: relative;
+    display: block;
+    padding: 0.2rem 0.4rem;
+    background: color-mix(in srgb, var(--tblr-primary) 12%, var(--tblr-card-bg));
+    border-left: 3px solid var(--tblr-primary);
+    border-radius: var(--radius-sm, 3px);
+    font-size: 0.78rem;
+    color: var(--tblr-body-color);
+    text-decoration: none;
+    transition: background 0.15s;
+}
+.calendar-event-label {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.calendar-event:hover {
+    background: color-mix(in srgb, var(--tblr-primary) 22%, var(--tblr-card-bg));
+    z-index: 2;
+}
+.calendar-event--success,
+.calendar-event--success:link,
+.calendar-event--success:visited {
+    background: color-mix(in srgb, var(--tblr-success) 15%, var(--tblr-card-bg));
+    border-left-color: var(--tblr-success);
+    color: var(--tblr-success);
+}
+.calendar-event--success:hover {
+    background: color-mix(in srgb, var(--tblr-success) 25%, var(--tblr-card-bg));
+}
+.calendar-event--warning,
+.calendar-event--warning:link,
+.calendar-event--warning:visited {
+    background: color-mix(in srgb, var(--tblr-warning) 15%, var(--tblr-card-bg));
+    border-left-color: var(--tblr-warning);
+    color: var(--tblr-warning);
+}
+.calendar-event--warning:hover {
+    background: color-mix(in srgb, var(--tblr-warning) 25%, var(--tblr-card-bg));
+}
+.calendar-event--danger,
+.calendar-event--danger:link,
+.calendar-event--danger:visited {
+    background: color-mix(in srgb, var(--tblr-danger) 15%, var(--tblr-card-bg));
+    border-left-color: var(--tblr-danger);
+    color: var(--tblr-danger);
+}
+.calendar-event--danger:hover {
+    background: color-mix(in srgb, var(--tblr-danger) 25%, var(--tblr-card-bg));
+}
+.calendar-display--block .calendar-grid {
+    grid-auto-rows: minmax(90px, auto);
+}
+.calendar-display--block .calendar-cell {
+    padding: 0.3rem;
+    gap: 0.25rem;
+}
+.calendar-display--block .calendar-event {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 0.5rem;
+    border-left-width: 4px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.calendar-display--block .calendar-event-label {
+    text-align: center;
+}
+.calendar-event-tooltip {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    margin-top: 4px;
+    min-width: 200px;
+    max-width: 280px;
+    padding: 0.5rem 0.65rem;
+    background: var(--tblr-card-bg);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-sm, 4px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    font-size: 0.7rem;
+    color: var(--tblr-body-color);
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.12s, transform 0.12s, visibility 0.12s;
+    pointer-events: none;
+    z-index: 10;
+}
+.calendar-event:hover .calendar-event-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+.calendar-event-tooltip-title {
+    font-weight: 700;
+    font-size: 0.75rem;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+    color: var(--tblr-body-color);
+    white-space: normal;
+}
+.calendar-event-tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.15rem;
+}
+.calendar-event-tooltip-label {
+    text-transform: uppercase;
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    color: var(--tblr-muted);
+    font-weight: 600;
+}
+.calendar-cell:nth-child(7n) .calendar-event-tooltip,
+.calendar-cell:nth-child(7n-1) .calendar-event-tooltip {
+    left: auto;
+    right: 0;
 }

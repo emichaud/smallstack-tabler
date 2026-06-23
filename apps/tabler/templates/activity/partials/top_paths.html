@@ -4,15 +4,15 @@
         {% if top_paths_list %}
         <table class="crud-table">
             <colgroup>
-                <col style="width: 60%;">
-                <col style="width: 20%;">
-                <col style="width: 20%;">
+                <col style="width: 70%;">
+                <col style="width: 14%;">
+                <col style="width: 16%;">
             </colgroup>
             <thead>
                 <tr>
                     {% sortable_th "path" "Path" target="#tab-content" %}
-                    {% sortable_th "hits" "Hits" target="#tab-content" %}
-                    {% sortable_th "avg_time" "Avg Time" target="#tab-content" %}
+                    {% sortable_th "hits" "Hits" target="#tab-content" align="right" %}
+                    {% sortable_th "avg_time" "Avg Time" target="#tab-content" align="right" %}
                 </tr>
             </thead>
             <tbody>

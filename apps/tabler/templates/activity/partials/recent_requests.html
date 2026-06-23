@@ -14,13 +14,13 @@
             {% if recent_requests %}
             <table class="crud-table">
                 <colgroup>
-                    <col style="width: 22%;">
-                    <col style="width: 7%;">
-                    <col style="width: 28%;">
-                    <col style="width: 7%;">
-                    <col style="width: 12%;">
+                    <col style="width: 18%;">
+                    <col style="width: 9%;">
+                    <col style="width: 33%;">
+                    <col style="width: 9%;">
                     <col style="width: 10%;">
-                    <col style="width: 14%;">
+                    <col style="width: 6%;">
+                    <col style="width: 15%;">
                 </colgroup>
                 <thead>
                     <tr>
@@ -29,7 +29,7 @@
                         {% sortable_th "path" "Path" target="#tab-content" %}
                         {% sortable_th "status_code" "Status" target="#tab-content" %}
                         <th style="text-align: left; padding: 10px 16px; color: var(--tblr-secondary); font-size: 0.85rem;">User</th>
-                        {% sortable_th "response_time_ms" "Time (ms)" target="#tab-content" %}
+                        {% sortable_th "response_time_ms" "ms" target="#tab-content" align="right" %}
                         {% sortable_th "ip_address" "IP" target="#tab-content" %}
                     </tr>
                 </thead>
@@ -39,7 +39,7 @@
                         <td style="font-size: 0.85rem;" title="{{ log.timestamp }}">{% localtime_tooltip log.timestamp "M d g:i:s A T" %}</td>
                         <td title="{{ log.method }}"><code style="font-weight: 600;">{{ log.method }}</code></td>
                         <td style="font-family: monospace; font-size: 0.9rem;" title="{{ log.path }}">{{ log.path }}</td>
-                        <td style="text-align: right;" title="{{ log.status_code }}">
+                        <td title="{{ log.status_code }}">
                             <span style="{% if log.status_code >= 500 %}color: var(--tblr-danger);{% elif log.status_code >= 400 %}color: var(--tblr-warning);{% endif %}">
                                 {{ log.status_code }}
                             </span>

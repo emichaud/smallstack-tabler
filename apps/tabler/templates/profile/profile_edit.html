@@ -205,15 +205,17 @@
                         <div class="col-md-6">
                             <label class="form-label" for="id_timezone">Your timezone</label>
                             <select name="timezone" id="id_timezone" class="form-select">
-                                {% for group_label, group_options in form.timezone.field.widget.optgroups %}
-                                    {% if group_label %}
-                                    <optgroup label="{{ group_label }}">
-                                    {% endif %}
-                                    {% for option in group_options %}
-                                    <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
-                                    {% endfor %}
-                                    {% if group_label %}
+                                {% for grp, opts in form.timezone.field.choices %}
+                                    {% if opts.0.1 %}
+                                    {# grouped: grp is the region label, opts is a list of (value, label) #}
+                                    <optgroup label="{{ grp }}">
+                                        {% for val, lbl in opts %}
+                                        <option value="{{ val }}"{% if val == form.timezone.value %} selected{% endif %}>{{ lbl }}</option>
+                                        {% endfor %}
                                     </optgroup>
+                                    {% else %}
+                                    {# flat choice: grp is the value, opts is the label #}
+                                    <option value="{{ grp }}"{% if grp == form.timezone.value %} selected{% endif %}>{{ opts }}</option>
                                     {% endif %}
                                 {% endfor %}
                             </select>

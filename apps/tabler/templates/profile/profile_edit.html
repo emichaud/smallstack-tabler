@@ -201,7 +201,38 @@
                     <h3 class="card-title">Timezone</h3>
                 </div>
                 <div class="card-body">
-                    <div class="row align-items-end">
+                    <style>
+                        .tz-preview {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 0.4rem;
+                            padding: 0.65rem 0.9rem;
+                            border: 1px solid var(--tblr-border-color);
+                            border-radius: var(--tblr-border-radius);
+                            background: color-mix(in srgb, var(--tblr-primary) 4%, var(--tblr-card-bg));
+                        }
+                        .tz-preview:empty { display: none; }
+                        .tz-preview-row {
+                            display: flex;
+                            align-items: baseline;
+                            justify-content: space-between;
+                            gap: 1rem;
+                        }
+                        .tz-preview-label {
+                            font-size: 0.65rem;
+                            font-weight: 600;
+                            text-transform: uppercase;
+                            letter-spacing: 0.05em;
+                            color: var(--tblr-muted);
+                        }
+                        .tz-preview-time {
+                            font-family: var(--tblr-font-monospace, monospace);
+                            font-size: 0.8rem;
+                            color: var(--tblr-body-color);
+                            white-space: nowrap;
+                        }
+                    </style>
+                    <div class="row align-items-center">
                         <div class="col-md-6">
                             <label class="form-label" for="id_timezone">Your timezone</label>
                             <select name="timezone" id="id_timezone" class="form-select">
@@ -222,7 +253,7 @@
                             <small class="form-hint">Used to display dates and times in your local time</small>
                         </div>
                         <div class="col-md-6">
-                            <div id="tz-preview" class="text-secondary small font-monospace"></div>
+                            <div id="tz-preview" class="tz-preview"></div>
                         </div>
                     </div>
                     {% if form.timezone.errors %}
@@ -286,27 +317,34 @@ document.getElementById('id_background_photo').addEventListener('change', functi
     var preview = document.getElementById('tz-preview');
     if (!tzSelect || !preview) return;
 
-    function formatTime(date, tz) {
+    function formatTime(date, tz, withZone) {
         try {
-            return date.toLocaleString('en-US', {
+            var opts = {
                 timeZone: tz,
                 month: 'short', day: 'numeric', year: 'numeric',
                 hour: 'numeric', minute: '2-digit', second: '2-digit',
-                hour12: true, timeZoneName: 'short'
-            });
+                hour12: true
+            };
+            if (withZone) opts.timeZoneName = 'short';
+            return date.toLocaleString('en-US', opts);
         } catch (e) { return null; }
+    }
+
+    function row(label, time) {
+        return '<div class="tz-preview-row"><span class="tz-preview-label">' + label +
+               '</span><span class="tz-preview-time">' + time + '</span></div>';
     }
 
     function updatePreview() {
         var tz = tzSelect.value;
-        if (!tz) { preview.textContent = ''; return; }
+        if (!tz) { preview.innerHTML = ''; return; }
         var now = new Date();
-        var utcStr = formatTime(now, 'UTC');
-        var localStr = formatTime(now, tz);
+        var utcStr = formatTime(now, 'UTC', false);
+        var localStr = formatTime(now, tz, true);
         if (utcStr && localStr) {
-            preview.innerHTML = utcStr + '<br>' + localStr;
+            preview.innerHTML = row('UTC', utcStr) + row('Local', localStr);
         } else {
-            preview.textContent = '';
+            preview.innerHTML = '';
         }
     }
 

@@ -1,7 +1,7 @@
 from django.shortcuts import render
 
 PREVIEW_PAGES = [
-    {"slug": "dashboard", "title": "Dashboard", "icon": "home", "description": "Main admin dashboard with stats and charts"},
+    {"slug": "dashboard", "title": "Dashboard", "icon": "home", "description": "Main dashboard with stats and charts"},
     {"slug": "cards", "title": "Cards", "icon": "layout", "description": "Card components and layouts"},
     {"slug": "forms", "title": "Forms", "icon": "edit", "description": "Form elements and inputs"},
     {"slug": "tables", "title": "Tables", "icon": "grid", "description": "Data tables and lists"},

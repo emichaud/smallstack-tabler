@@ -83,8 +83,8 @@ class TimezoneTable(tables.Table):
         avatar_html = format_html(
             '<span style="display:inline-flex;align-items:center;justify-content:center;'
             'width:26px;height:26px;border-radius:50%;font-size:0.7rem;font-weight:700;'
-            'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 20%,var(--tblr-body-bg, #1a1c23));color:var(--tblr-primary, #f59f00);'
-            'flex-shrink:0;">{}</span>',
+            'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 20%,var(--tblr-body-bg, #1a1c23));'
+            'color:var(--tblr-primary, #f59f00);flex-shrink:0;">{}</span>',
             initial,
         )
         if profile and profile.profile_photo:
@@ -98,7 +98,8 @@ class TimezoneTable(tables.Table):
         if user.is_staff:
             staff_badge = format_html(
                 ' <span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:3px;'
-                'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 15%,var(--tblr-body-bg, #1a1c23));color:var(--tblr-primary, #f59f00);">{}</span>',
+                'background:color-mix(in srgb,var(--tblr-primary, #f59f00) 15%,var(--tblr-body-bg, #1a1c23));'
+                'color:var(--tblr-primary, #f59f00);">{}</span>',
                 "staff",
             )
         return format_html(

@@ -1803,6 +1803,90 @@ a.btn-cancel:visited {
 .btn-cancel:hover {
     color: var(--tblr-body-color);
 }
+/* Bare SmallStack .btn-secondary / .btn-outline (used without Tabler's .btn,
+   e.g. runbook "Download All"). Scoped :not(.btn) so Tabler's own
+   .btn.btn-secondary keeps its styling. */
+.btn-secondary:not(.btn),
+a.btn-secondary:not(.btn):link,
+a.btn-secondary:not(.btn):visited {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg));
+    color: var(--tblr-primary);
+    font: 500 0.85rem/1.2 inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.btn-secondary:not(.btn):hover {
+    background: color-mix(in srgb, var(--tblr-primary) 25%, var(--tblr-card-bg));
+}
+.btn-outline:not(.btn),
+a.btn-outline:not(.btn):link,
+a.btn-outline:not(.btn):visited {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--tblr-body-color) 20%, var(--tblr-card-bg));
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--tblr-muted);
+    font: 500 0.85rem/1.2 inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-outline:not(.btn):hover {
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+}
+
+/* ── SmallStack crud-modal (runbook download modal, CRUD delete/bulk) ────
+   Ported from components.css. The overlay defaults to display:flex and the
+   template toggles an inline display:none, so this only styles the panel. */
+.crud-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1055;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+}
+.crud-modal {
+    width: 90%;
+    max-width: 420px;
+    overflow: hidden;
+    background: var(--tblr-card-bg);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-md, 8px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+.crud-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--tblr-border-color);
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+}
+.crud-modal-body {
+    padding: 16px;
+}
+.crud-modal-close {
+    border: none;
+    background: none;
+    color: var(--tblr-muted);
+    cursor: pointer;
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 2px 6px;
+}
+.crud-modal-close:hover {
+    color: var(--tblr-body-color);
+}
 
 /* ── SmallStack clickable stat cards (backup activity KPIs, etc.) ──────
    Ported from theme.css. These .card stat tiles open a drill-down modal
@@ -1814,6 +1898,127 @@ a.btn-cancel:visited {
 .stat-card-clickable:hover {
     border-color: var(--tblr-primary) !important;
     background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+}
+
+/* ── SmallStack stat-card GRID (runbook dashboard, admin KPI tiles) ─────
+   The {% stat_card %} tag / .stat-cards grid. Ported from components.css so
+   the tiles render as accent-striped metric cards instead of a flat list. */
+.stat-cards {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.9rem 1.1rem 1rem 1rem;
+    text-align: left;
+    background: var(--tblr-card-bg);
+    border: 1px solid color-mix(in srgb, var(--tblr-body-color) 9%, transparent);
+    border-left: 3px solid var(--tblr-primary);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.stat-card-value {
+    font-size: 1.85rem;
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--tblr-primary);
+    font-feature-settings: "tnum", "lnum";
+    letter-spacing: -0.015em;
+}
+.stat-card-unit {
+    font-size: 0.55em;
+    color: var(--tblr-muted);
+    margin-left: 2px;
+}
+.stat-card-label {
+    font-family: var(--font-monospace);
+    font-size: 0.68rem;
+    color: var(--tblr-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.stat-card--success { border-left-color: var(--success-fg); }
+.stat-card--success .stat-card-value { color: var(--success-fg); }
+.stat-card--warning { border-left-color: var(--warning-fg); }
+.stat-card--warning .stat-card-value { color: var(--warning-fg); }
+.stat-card--danger { border-left-color: var(--error-fg); }
+.stat-card--danger .stat-card-value { color: var(--error-fg); }
+.stat-card--muted { border-left-color: color-mix(in srgb, var(--tblr-body-color) 20%, transparent); }
+.stat-card--muted .stat-card-value { color: var(--tblr-muted); }
+
+/* ── SmallStack .stat-modal (runbook drill-downs use this, NOT the Tabler
+   bootstrap stat_modal). Without the port .stat-modal has no display:none,
+   so the "Details / Loading…" panel renders inline on the page. */
+.stat-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1055;
+    align-items: center;
+    justify-content: center;
+}
+.stat-modal.open {
+    display: flex;
+}
+.stat-modal-panel {
+    width: min(80%, 90vw);
+    height: min(520px, 80vh);
+    display: flex;
+    flex-direction: column;
+    background: var(--tblr-card-bg);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--radius-md, 6px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+.stat-modal-panel > .card-body {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
+}
+.stat-modal-panel table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.stat-modal-panel thead tr,
+.stat-modal-panel thead th {
+    background-color: color-mix(in srgb, var(--tblr-primary) 15%, var(--tblr-card-bg)) !important;
+    border: none !important;
+}
+.stat-modal-panel thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 10px 16px;
+    color: var(--tblr-muted) !important;
+    text-align: left;
+}
+.stat-modal-panel tbody tr { border: none !important; }
+.stat-modal-panel tbody tr:nth-child(odd) {
+    background-color: color-mix(in srgb, var(--tblr-primary) 4%, var(--tblr-card-bg)) !important;
+}
+.stat-modal-panel tbody tr:nth-child(even) {
+    background-color: color-mix(in srgb, var(--tblr-primary) 12%, var(--tblr-card-bg)) !important;
+}
+.stat-modal-panel tbody td {
+    border: none !important;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+}
+.stat-modal-panel tbody tr:hover {
+    background-color: color-mix(in srgb, var(--tblr-primary) 20%, var(--tblr-card-bg)) !important;
 }
 
 /* ── SmallStack display-palette (CRUD list/detail view switcher) ───────

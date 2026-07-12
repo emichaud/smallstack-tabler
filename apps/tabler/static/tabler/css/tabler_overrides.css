@@ -1685,6 +1685,30 @@ a.paginator-btn:hover {
        template's <colgroup>); nowrap keeps "METHOD"/"STATUS" on one line. */
     white-space: nowrap;
 }
+/* Sortable-column discoverability: the built-in crud_table renders sortable
+   headers as <th hx-get> (HTMX list) or <th><a> (hand-rolled list) with a
+   sort arrow that's hidden until active. Highlight the header and reveal a
+   faint arrow on hover so it's clear the column can be clicked to sort. */
+.crud-table thead th[hx-get],
+.table-plain thead th[hx-get],
+.crud-table thead th a[href],
+.table-plain thead th a[href] {
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.crud-table thead th[hx-get]:hover,
+.table-plain thead th[hx-get]:hover,
+.crud-table thead th a[href]:hover,
+.table-plain thead th a[href]:hover {
+    color: var(--tblr-primary) !important;
+}
+.crud-table thead th[hx-get]:hover > span,
+.crud-table thead th a[href]:hover > span,
+.table-plain thead th[hx-get]:hover > span,
+.table-plain thead th a[href]:hover > span {
+    visibility: visible !important;
+    opacity: 0.55;
+}
 .crud-table tbody tr,
 .table-plain tbody tr {
     border: none !important;
@@ -1724,6 +1748,60 @@ a.paginator-btn:hover {
 }
 .crud-action-delete {
     color: var(--delete-button-bg, #dc3545) !important;
+}
+
+/* ── SmallStack form/action buttons (btn-tint / btn-save / btn-cancel) ──
+   Ported from components.css. Upstream forms rendered via the Tabler bridge
+   (e.g. the tabbed user-edit form) use these SmallStack-specific button
+   classes, which Tabler doesn't define — so Save / password-reset / unlock
+   rendered as plain gray browser buttons. (btn-danger / btn-secondary are
+   left to Tabler's own styling.) */
+.btn-tint,
+a.btn-tint:link,
+a.btn-tint:visited {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--tblr-primary) 20%, var(--tblr-card-bg));
+    color: var(--tblr-primary);
+    font: 500 0.85rem/1.2 inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-tint:hover,
+.btn-tint:focus-visible {
+    background: color-mix(in srgb, var(--tblr-primary) 35%, var(--tblr-card-bg));
+    color: var(--tblr-primary);
+    text-decoration: none;
+    outline: none;
+}
+.btn-save {
+    padding: 0.6rem 2rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: var(--tblr-primary);
+    color: #1a1c23;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.btn-save:hover {
+    background: color-mix(in srgb, var(--tblr-primary) 88%, black);
+}
+.btn-cancel,
+a.btn-cancel:link,
+a.btn-cancel:visited {
+    padding: 0.6rem 1.5rem;
+    color: var(--tblr-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.15s;
+}
+.btn-cancel:hover {
+    color: var(--tblr-body-color);
 }
 
 /* ── SmallStack clickable stat cards (backup activity KPIs, etc.) ──────

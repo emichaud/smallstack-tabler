@@ -4,15 +4,17 @@ and timezone conversion.
 """
 
 import datetime
+import logging
 import zoneinfo
 from typing import Any
 
 from django import template
 from django.conf import settings
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils import dateformat
 
 register = template.Library()
+logger = logging.getLogger("smallstack")
 
 
 class BreadcrumbNode(template.Node):
@@ -112,7 +114,8 @@ def nav_active(context, *url_names) -> str:
                     base_url = reverse(f"{namespace}:index")
                     if request.path.startswith(base_url):
                         return "active"
-                except Exception:
+                except NoReverseMatch:
+                    # Namespace has no ``:index`` route — not resolvable, so not active.
                     pass
 
             url = reverse(url_name)
@@ -121,8 +124,9 @@ def nav_active(context, *url_names) -> str:
             # For nested URLs, check if current path starts with the URL
             if request.path.startswith(url) and url != "/":
                 return "active"
-        except Exception:
-            pass
+        except NoReverseMatch:
+            # This url_name doesn't reverse (needs args, or isn't registered) — skip it.
+            continue
 
     return ""
 
@@ -203,7 +207,9 @@ def user_localtime(dt, request) -> datetime.datetime | None:
         if request and hasattr(request, "user") and request.user.is_authenticated:
             return request.user.profile.to_local_time(dt)
     except Exception:
-        pass
+        # Broad by design: a template filter must never raise. Log for debugging
+        # a missing profile / bad timezone, then fall back to the system tz below.
+        logger.debug("user_localtime: falling back to system tz", exc_info=True)
     # Fall back to system timezone
     return dt.astimezone(zoneinfo.ZoneInfo(settings.TIME_ZONE))
 
@@ -258,3 +264,111 @@ def localtime_tooltip(context, dt, fmt="M d, Y g:i A T", force_tooltip=False) ->
         f"UTC: {utc_str}",
         user_str,
     )
+
+
+# Map common status keywords -> semantic badge variant. Used when a call site
+# passes the raw status as the label and lets the tag infer the colour.
+_BADGE_VARIANTS = {"success", "warning", "error", "info", "neutral"}
+_STATUS_VARIANT_MAP = {
+    # success / healthy
+    "pass": "success", "ok": "success", "active": "success", "success": "success",
+    "up": "success", "operational": "success", "healthy": "success", "met": "success",
+    "commit": "success", "enabled": "success", "yes": "success",
+    # warning / degraded
+    "warn": "warning", "warning": "warning", "degraded": "warning", "below": "warning",
+    "pending": "warning", "partial": "warning",
+    # error / failed
+    "fail": "error", "failed": "error", "failure": "error", "error": "error",
+    "down": "error", "revoked": "error", "breach": "error", "missing": "error",
+    "disabled": "error", "no": "error",
+    # neutral / informational
+    "pruned": "neutral", "neutral": "neutral", "staff": "neutral", "unknown": "neutral",
+    "info": "info",
+}
+
+
+@register.inclusion_tag("smallstack/includes/stat_card.html")
+def stat_card(
+    value,
+    label,
+    title=None,
+    detail_url=None,
+    detail_arg=None,
+    link_url=None,
+    link_arg=None,
+    state=None,
+    unit=None,
+):
+    """Render a dashboard stat card.
+
+    Three modes, picked by which argument you pass:
+
+    Static metric (no interaction)::
+
+        {% stat_card value=count label="Avg Response" unit="ms" %}
+
+    Drill-down (opens the always-present modal via htmx)::
+
+        {% stat_card value=count label="Users" title="All Users"
+                     detail_url="manage/users-stat-detail" detail_arg="total" %}
+
+    Navigation (plain link to a full page — for content too large for a modal)::
+
+        {% stat_card value=count label="Endpoints →" link_url="api_admin:endpoints" %}
+
+    Args:
+        value: The big number / metric.
+        label: The small mono caption below the value.
+        title: Modal heading (drill-down mode). Defaults to ``label``.
+        detail_url: URL name of the ``hx-get`` drill-down endpoint. The endpoint
+            should return a stat list (see ``render_stat_list``) or a ``<table>``.
+        detail_arg: Single positional URL argument for ``detail_url``.
+        link_url: URL name to navigate to (navigation mode). Mutually exclusive
+            with ``detail_url`` — ``detail_url`` wins if both are given.
+        link_arg: Single positional URL argument for ``link_url``.
+        state: ``success`` | ``warning`` | ``danger`` | ``muted`` — drives the
+            accent stripe and value color. Anything else is ignored.
+        unit: Small trailing unit rendered after the value (e.g. ``ms``).
+
+    The clickable wiring (``hx-get`` / ``hx-target`` / ``onclick``) and the modal
+    include are handled for you — never hand-write them. See
+    ``docs/skills/dashboard-cards.md``.
+    """
+    href = None
+    mode = None
+    if detail_url:
+        href = reverse(detail_url, args=[detail_arg]) if detail_arg is not None else reverse(detail_url)
+        mode = "modal"
+    elif link_url:
+        href = reverse(link_url, args=[link_arg]) if link_arg is not None else reverse(link_url)
+        mode = "link"
+    return {
+        "value": value,
+        "label": label,
+        "title": title or label,
+        "href": href,
+        "mode": mode,
+        "state": state if state in {"success", "warning", "danger", "muted"} else None,
+        "unit": unit,
+    }
+
+
+@register.simple_tag
+def status_badge(label, variant=None):
+    """Render a consistent status pill.
+
+    ``{% status_badge "active" %}`` -> ``<span class="badge badge-success">active</span>``
+    (variant inferred from the label via ``_STATUS_VARIANT_MAP``).
+
+    Pass ``variant`` explicitly when the label is not a known keyword — e.g.
+    HTTP codes: ``{% status_badge code "warning" %}`` for a 4xx.
+    """
+    from django.utils.html import format_html
+
+    label = "" if label is None else str(label)
+    if variant is None:
+        variant = _STATUS_VARIANT_MAP.get(label.strip().lower(), "neutral")
+    variant = str(variant).lower()
+    if variant not in _BADGE_VARIANTS:
+        variant = "neutral"
+    return format_html('<span class="badge badge-{}">{}</span>', variant, label)

@@ -143,9 +143,23 @@ class McpHttpView(View):
             logger.warning("MCP REQ parse_error body=%s", _truncate(body_bytes))
             return _rpc_error(None, _RPC_PARSE_ERROR, "Parse error", status=400)
 
+        # A syntactically valid but non-object body (array/string/number/null,
+        # e.g. a JSON-RPC batch) must yield -32600 Invalid Request, not an
+        # uncaught AttributeError → HTTP 500. This runs pre-auth, so it also
+        # closes a trivial unauthenticated way to spam 500s. (Audit L2.)
+        if not isinstance(payload, dict):
+            logger.warning("MCP REQ invalid_request: non-object body")
+            return _rpc_error(
+                None, _RPC_INVALID_REQUEST, "Invalid Request: body must be a JSON object", status=400
+            )
+
         method = payload.get("method", "")
         rpc_id = payload.get("id")
         params = payload.get("params") or {}
+        if not isinstance(params, dict):
+            return _rpc_error(
+                rpc_id, _RPC_INVALID_REQUEST, "Invalid Request: params must be an object", status=400
+            )
         logger.info("MCP REQ method=%s id=%s params_keys=%s", method, rpc_id, list(params.keys()))
 
         response: HttpResponse | None = None
@@ -201,14 +215,41 @@ class McpHttpView(View):
         ctx_token = set_context(ToolContext(user=user, token=token))
         try:
             if method == "tools/list":
-                tools = [
-                    {
+                # Round-2 surfaces audit §3.3 follow-up + quality review:
+                # filter tools/list so the caller only sees tools their
+                # token is actually allowed to invoke. Two checks:
+                #
+                # 1. check_tool_access — same gate used at call time, plus
+                #    write-tool blocking for readonly tokens. Covers most
+                #    cases.
+                # 2. td.visible_to(user) — opt-in callable a tool can set
+                #    when its gate isn't expressible as a flat
+                #    ``requires_access`` level. The search MCP tools use
+                #    this to honour the underlying view's ``search_access``
+                #    tier, which check_tool_access can't see (round-2 audit
+                #    §3.3 follow-up: search_users was visible-but-non-
+                #    functional to non-staff callers in v0.11.10).
+                tools = []
+                for td in TOOL_REGISTRY.values():
+                    if check_tool_access(token, td, mixins=None) is not None:
+                        continue
+                    if td.visible_to is not None:
+                        try:
+                            if not td.visible_to(user):
+                                continue
+                        except Exception:
+                            # A misconfigured visible_to callback fails
+                            # SAFE: hide the tool rather than expose it.
+                            logger.exception(
+                                "MCP tool %r visible_to callback raised — hiding from list",
+                                td.name,
+                            )
+                            continue
+                    tools.append({
                         "name": td.name,
                         "description": td.description,
                         "inputSchema": td.input_schema,
-                    }
-                    for td in TOOL_REGISTRY.values()
-                ]
+                    })
                 return _rpc_result(rpc_id, {"tools": tools})
 
             if method == "tools/call":

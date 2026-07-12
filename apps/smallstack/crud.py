@@ -26,6 +26,7 @@ from typing import Any
 
 from django import forms
 from django.contrib import messages
+from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError
 from django.db.models import ProtectedError, QuerySet, RestrictedError
 from django.http import Http404, HttpRequest, HttpResponse, QueryDict
@@ -121,11 +122,41 @@ def _apply_list_search(qs, request: HttpRequest, crud_config) -> QuerySet:
     return qs.filter(query)
 
 
+def _field_is_orderable(qs, field_path: str) -> bool:
+    """Whether ``qs`` can actually be ordered by ``field_path``.
+
+    Handles ``pk``, FK traversal (``category__name``), and query annotations.
+    Returns False for computed / property columns that aren't DB fields — so a
+    misconfigured ``ordering_fields`` (e.g. a display-only ``price_display``)
+    degrades to "no sort" instead of raising ``FieldError`` when the queryset is
+    evaluated (which would surface as a 500).
+    """
+    if field_path in qs.query.annotations:
+        return True
+    model = qs.model
+    parts = field_path.split("__")
+    for i, part in enumerate(parts):
+        if part == "pk":
+            field = model._meta.pk
+        else:
+            try:
+                field = model._meta.get_field(part)
+            except FieldDoesNotExist:
+                return False
+        if i < len(parts) - 1:  # more segments → must be a relation to keep walking
+            model = getattr(field, "related_model", None)
+            if model is None:
+                return False
+    return True
+
+
 def _apply_ordering_fields(qs, ordering: str, allowed: set[str]) -> QuerySet:
     """Apply comma-separated ordering fields to a queryset.
 
     Each field may be prefixed with ``-`` for descending.  Fields not in
-    *allowed* are silently ignored (matches Django/DRF convention).
+    *allowed*, or not actually orderable on the model (e.g. a computed column a
+    caller mistakenly listed in ``ordering_fields``), are silently ignored —
+    matching the Django/DRF convention and keeping a bad sort from 500-ing.
 
     This is the low-level helper used by both the HTML list view and the
     REST API layer.
@@ -133,7 +164,7 @@ def _apply_ordering_fields(qs, ordering: str, allowed: set[str]) -> QuerySet:
     validated = []
     for part in ordering.split(","):
         field = part.strip().lstrip("-")
-        if field in allowed:
+        if field in allowed and _field_is_orderable(qs, field):
             validated.append(part.strip())
     if validated:
         return qs.order_by(*validated)
@@ -468,35 +499,13 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
             # Per-display bulk opt-out: displays can set supports_bulk=False
             if not getattr(display, "supports_bulk", True):
                 context["enable_bulk"] = False
-        elif cfg.table_class:
-            # Legacy table2 path (no displays configured, but table_class set)
-            warnings.warn(
-                f"{cfg.__name__}.table_class is deprecated. Use TableDisplay "
-                "instead — the built-in table now supports column sorting.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            from django_tables2 import RequestConfig
-
-            table = cfg.table_class(qs)
-            paginate = {"per_page": cfg.paginate_by} if cfg.paginate_by else False
-            RequestConfig(self.request, paginate=paginate).configure(table)
-            context["table"] = table
-            context["use_tables2"] = True
         else:
-            # Legacy basic table path — pagination display helpers
+            # Legacy basic table path — attach the shared pagination helpers.
             page_obj = context.get("page_obj")
             if page_obj:
-                page_obj.showing_start = page_obj.start_index()
-                page_obj.showing_end = page_obj.end_index()
-                page_obj.total_count = page_obj.paginator.count
-                # list-cast: get_elided_page_range returns a one-shot
-                # generator, which silently empties on second iteration.
-                page_obj.page_range_display = list(
-                    page_obj.paginator.get_elided_page_range(
-                        page_obj.number, on_each_side=2, on_ends=1
-                    )
-                )
+                from .pagination import attach_display_helpers
+
+                attach_display_helpers(page_obj)
         return context
 
 
@@ -662,7 +671,14 @@ class _CRUDUpdateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, UpdateView):
         return self._inject_display_context(context, obj=self.object)
 
     def get_success_url(self):
-        return self.crud_config._reverse(f"{self.crud_config._get_url_base()}-detail", kwargs={"pk": self.object.pk})
+        # Redirect to the detail page when the view exposes DETAIL; otherwise
+        # fall back to the list (a DETAIL-less CRUDView has no `-detail` route,
+        # so reversing it would 500 after a successful save).
+        cfg = self.crud_config
+        base = cfg._get_url_base()
+        if Action.DETAIL in cfg.actions:
+            return cfg._reverse(f"{base}-detail", kwargs={"pk": self.object.pk})
+        return cfg._reverse(f"{base}-list")
 
 
 class _CRUDDeleteBase(_CRUDContextMixin, DeleteView):
@@ -1132,7 +1148,6 @@ class CRUDView:
         form_class:       Custom ModelForm (auto-generated if None)
         queryset:         Custom queryset (model.objects.all() if None)
         field_formatters: Deprecated — use field_transforms
-        table_class:      Optional django-tables2 Table class for enhanced list view
         preview_fields:   Deprecated — use field_transforms
         field_transforms: {field_name: "transform_name" | ("name", {opts}) | callable}
     """
@@ -1140,12 +1155,21 @@ class CRUDView:
     # Model→CRUDView registry: populated eagerly via __init_subclass__ so
     # apps.mcp.AppConfig.ready() can iterate before URL config runs.
     # get_urls() still tops it up — that path remains for legacy compatibility.
+    #
+    # First-wins (setdefault) on both write paths: the user's CRUDView is
+    # defined when its module is imported by Django's app loader. Any
+    # CRUDView subclass defined later — notably the Explorer<Model>CRUDView
+    # classes apps.explorer dynamically synthesises in its AppConfig.ready()
+    # — must not overwrite it. Overwriting silently displaces the user's
+    # class from any code that walks _registry at runtime (mcp_doctor's
+    # orphan detector, related-tabs URL resolution, etc.), pointing them at
+    # Explorer's clone instead.
     _registry: dict[type, type["CRUDView"]] = {}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if getattr(cls, "model", None) is not None:
-            CRUDView._registry[cls.model] = cls
+            CRUDView._registry.setdefault(cls.model, cls)
 
     # Config source
     admin_class = None  # ModelAdmin subclass — the standard Django config DSL
@@ -1193,6 +1217,23 @@ class CRUDView:
     filter_class = None  # Optional django-filters FilterSet class
     export_formats = []  # e.g. ["csv", "json"] — enables ?format= on API list
 
+    # Search exposure — opt-in keyword search via FTS5 (SQLite) /
+    # SearchVector+GIN (Postgres) / __icontains (fallback). When
+    # enable_search=True, the model joins the unified search index
+    # and gets:
+    #   - A search_<plural> MCP tool that Claude can call directly
+    #   - Results in /smallstack/search/?q= and the topbar Ctrl+K omnibar
+    #   - GET /api/search/?q= entries
+    # search_fields above is reused for the indexed columns.
+    # Optional knobs:
+    #   search_display  — field name for the result row title (defaults to str(obj))
+    #   search_subtitle — field name for the secondary line (truncated)
+    #   search_weight   — {field: int} per-field BM25/ts_rank weight (default 1)
+    enable_search = False
+    search_display: str | None = None
+    search_subtitle: str | None = None
+    search_weight: dict | None = None
+
     # MCP (Model Context Protocol) exposure — opt-in surface for AI clients.
     # When enable_mcp=True, apps.mcp.factory emits list_<base>, get_<singular>,
     # and (when CREATE/UPDATE/DELETE are in `actions`) create_/update_/delete_
@@ -1224,7 +1265,6 @@ class CRUDView:
     form_class = None
     queryset = None
     field_formatters = {}  # Deprecated — use field_transforms
-    table_class = None  # Optional django-tables2 Table class for enhanced list view
     preview_fields = []  # Deprecated — use field_transforms
     field_transforms = {}  # {field_name: "transform_name" | ("name", {opts}) | callable}
     column_widths = None  # Optional {field_name: "30%"} for custom column proportions
@@ -1486,6 +1526,45 @@ class CRUDView:
         return True
 
     @classmethod
+    def row_actions(cls, obj, request, default_actions):
+        """Per-row hook to filter the actions rendered for ``obj`` in the
+        list view (TableDisplay et al.).
+
+        Receives the default action list (each item is a dict with at
+        least ``url`` and ``label``; delete actions also carry
+        ``is_delete: True``) and returns whatever subset should render
+        for this row. Override to hide e.g. ``Delete`` for the current
+        user's own row, or to suppress ``Edit`` for archived items.
+
+        Default: return the full list unchanged.
+
+        Example — protect against self-delete on a User CRUDView::
+
+            @classmethod
+            def row_actions(cls, obj, request, default_actions):
+                if request and obj.pk == getattr(request.user, "pk", None):
+                    return [a for a in default_actions if not a.get("is_delete")]
+                return default_actions
+
+        Note: ``can_update`` / ``can_delete`` still gate the actual write
+        when the action is invoked. ``row_actions`` is the *render-time*
+        filter — using it alone leaves the action endpoint callable
+        directly via URL; pair both for defense in depth.
+        """
+        return default_actions
+
+    @classmethod
+    def row_link_url(cls, obj, request):
+        """Per-row hook for where the list view's link column points.
+
+        By default a row's name links to the detail page (or the edit page when the
+        CRUDView has no DETAIL action). Override to send rows somewhere else — e.g.
+        link a monitored-endpoint row to its status timeline instead of its edit form.
+        Return ``None`` to keep the default target.
+        """
+        return None
+
+    @classmethod
     def get_list_queryset(cls, qs, request):
         """Filter the list queryset per-request. Override for tenant scoping, etc."""
         return qs
@@ -1597,9 +1676,9 @@ class CRUDView:
         name = f"{cls.model.__name__}{base_class.__name__.lstrip('_')}"
         bases = tuple(cls.mixins) + (base_class,)
         resolved_paginate_by = cls._resolve_paginate_by()
-        # When displays are configured or table_class is set, the display/table
-        # handles pagination — skip Django's built-in paginate_by.
-        if base_class is _CRUDListBase and (cls.displays or cls.table_class):
+        # When displays are configured, the display handles pagination —
+        # skip Django's built-in paginate_by.
+        if base_class is _CRUDListBase and cls.displays:
             resolved_paginate_by = None
         return type(
             name,
@@ -1614,8 +1693,10 @@ class CRUDView:
     @classmethod
     def get_urls(cls):
         """Generate URL patterns for configured actions."""
-        # Register model→CRUDView mapping for related tabs discovery
-        CRUDView._registry[cls.model] = cls
+        # Register model→CRUDView mapping for related tabs discovery.
+        # First-wins (see _registry docstring): don't displace a previously-
+        # registered class for the same model.
+        CRUDView._registry.setdefault(cls.model, cls)
 
         url_base = cls._get_url_base()
         urls = []
@@ -1676,8 +1757,11 @@ class CRUDView:
             view = cls._make_view(_CRUDDeleteBase)
             urls.append(path(f"{url_base}/<pk>/delete/", view.as_view(), name=f"{url_base}-delete"))
 
-        # API endpoints (opt-in)
-        if cls.enable_api:
+        # API endpoints (opt-in per CRUDView, and gated site-wide by
+        # SMALLSTACK_API_ENABLED — off ⇒ enable_api is a no-op, registry stays empty).
+        from django.conf import settings
+
+        if cls.enable_api and getattr(settings, "SMALLSTACK_API_ENABLED", True):
             from .api import build_api_urls
 
             urls.extend(build_api_urls(cls))

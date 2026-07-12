@@ -2,20 +2,50 @@
 
 from typing import Any
 
+from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Max
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
+from django.views.decorators.http import require_POST
 
 from apps.activity.models import RequestLog
 from apps.smallstack.crud import Action, CRUDView
 from apps.smallstack.mixins import StaffRequiredMixin
+from apps.smallstack.stat_lists import render_stat_list, stat_list_row
 
-from .forms import UserAccountForm, UserProfileForm
-from .tables import UserTable
+from .forms import UserAccountForm, UserCreateForm, UserProfileForm
 
 User = get_user_model()
+
+
+def _active_superuser_count(exclude_pk=None) -> int:
+    qs = User.objects.filter(is_superuser=True, is_active=True)
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    return qs.count()
+
+
+def _render_name(value, obj):
+    """Show the user's full name when set, else the username."""
+    return obj.get_full_name() or obj.username
+
+
+def _render_timezone(value, obj):
+    """Show the city part of the user's profile timezone (e.g. "New York" for
+    ``America/New_York``) with the full tz name as a tooltip; em-dash when
+    no timezone is set."""
+    profile = getattr(obj, "profile", None)
+    tz = profile.timezone if profile and profile.timezone else ""
+    if not tz:
+        return mark_safe('<span style="color: var(--body-quiet-color);">—</span>')
+    city = tz.split("/")[-1].replace("_", " ")
+    return format_html('<span title="{}">{}</span>', tz, city)
 
 
 class UserCRUDView(CRUDView):
@@ -24,14 +54,53 @@ class UserCRUDView(CRUDView):
     url_base = "manage/users"
     paginate_by = 10
     mixins = [StaffRequiredMixin]
-    table_class = UserTable
     form_class = UserAccountForm
     actions = [Action.LIST, Action.CREATE, Action.UPDATE, Action.DELETE]
-    field_transforms = {"first_name": "preview"}
+
+    # List rendering — TableDisplay + per-row action filter (was UserTable
+    # + UserActionsColumn pre-v0.12, when django-tables2 was still around).
+    list_fields = ["username", "email", "name", "timezone", "is_staff", "is_active"]
+    link_field = "username"   # clickable username → goes to update view
+    field_transforms = {
+        "first_name": "preview",
+        "name": _render_name,
+        "timezone": _render_timezone,
+    }
+
+    # Opted into the unified search index by default. Lights up an MCP
+    # `search_users` tool so Claude Desktop can answer "find the user
+    # named X" out of the box, plus surfaces users in the global
+    # /smallstack/search/ page and topbar omnibar.
+    enable_search = True
+    search_fields = ["username", "email", "first_name", "last_name"]
+    search_display = "username"
+    search_subtitle = "email"
+
+    @classmethod
+    def row_actions(cls, obj, request, default_actions):
+        """Don't render the Delete button on the current user's own row —
+        admins shouldn't be able to delete themselves out of the system.
+        The corresponding write gate is in the ``_CRUDDeleteBase.delete``
+        override below (renders + view both deny; defense in depth)."""
+        if request and getattr(request.user, "pk", None) == obj.pk:
+            return [a for a in default_actions if not a.get("is_delete")]
+        return default_actions
+
+    @classmethod
+    def get_list_queryset(cls, qs, request):
+        """Prefetch the profile for the timezone column. Free-text ``?q=``
+        search (over ``search_fields``), filtering, sort, and pagination are
+        all handled by the framework's list view — no custom queryset needed."""
+        return qs.select_related("profile")
 
     @classmethod
     def _get_template_names(cls, suffix):
-        if suffix == "form":
+        # The CRUD engine asks for suffix "create"/"edit" (plus the legacy
+        # "form"); match all three so the custom tabbed user form keeps being
+        # used. v0.11.19 renamed the suffix, so this override stopped matching
+        # and the create/edit pages silently fell back to the generic CRUD
+        # form — losing the Profile + Activity tabs.
+        if suffix in ("form", "create", "edit"):
             return ["accounts/user_form.html"]
         if suffix == "list":
             return ["usermanager/user_list.html"]
@@ -40,46 +109,35 @@ class UserCRUDView(CRUDView):
     @classmethod
     def _make_view(cls, base_class):
         """Override to inject custom logic into update and detail views."""
-        from apps.smallstack.crud import _CRUDDeleteBase, _CRUDListBase, _CRUDUpdateBase
+        from apps.smallstack.crud import (
+            _CRUDCreateBase,
+            _CRUDDeleteBase,
+            _CRUDListBase,
+            _CRUDUpdateBase,
+        )
 
         view_class = super()._make_view(base_class)
 
-        if base_class is _CRUDListBase:
+        if base_class is _CRUDCreateBase:
+            # Create with a password set up front, so the new account is
+            # immediately usable (never passwordless). The Invite action is
+            # the email-based alternative.
+            def get_form_class(self):
+                return UserCreateForm
 
-            def get_queryset(self):
-                qs = super(view_class, self).get_queryset().select_related("profile")
-                q = self.request.GET.get("q", "").strip()
-                if q:
-                    from django.db.models import Q
+            view_class.get_form_class = get_form_class
 
-                    qs = qs.filter(
-                        Q(username__icontains=q)
-                        | Q(email__icontains=q)
-                        | Q(first_name__icontains=q)
-                        | Q(last_name__icontains=q)
-                    )
-                return qs
-
+        elif base_class is _CRUDListBase:
+            # Add the dashboard stat cards to the list page. Search / filter /
+            # sort / pagination are all handled by the base list view (the
+            # toolbar's ?q= search reuses search_fields), so no get_queryset or
+            # get_template_names override is needed here anymore.
             def get_context_data(self, **kwargs):
                 context = super(view_class, self).get_context_data(**kwargs)
-                # Stamp current_user_pk on the table so UserActionsColumn can
-                # hide the delete button for the logged-in user's own row.
-                table = context.get("table")
-                if table is not None:
-                    table.current_user_pk = self.request.user.pk
-                # Dashboard stats
                 context["dashboard_stats"] = _get_dashboard_stats()
-                context["search_query"] = self.request.GET.get("q", "")
                 return context
 
-            def get_template_names(self):
-                if self.request.headers.get("HX-Request"):
-                    return ["usermanager/_user_table.html"]
-                return super(view_class, self).get_template_names()
-
-            view_class.get_queryset = get_queryset
             view_class.get_context_data = get_context_data
-            view_class.get_template_names = get_template_names
 
         elif base_class is _CRUDUpdateBase:
             # Add profile form + activity stats to edit view
@@ -111,6 +169,13 @@ class UserCRUDView(CRUDView):
 
             def post(self, request, *args, **kwargs):
                 self.object = self.get_object()
+                # Capture the ORIGINAL flag values before form validation —
+                # form.is_valid() runs construct_instance(), which mutates
+                # self.object to the submitted values, so reading them after
+                # would compare new-vs-new and defeat the guardrails.
+                was_staff = self.object.is_staff
+                was_active = self.object.is_active
+                is_superuser = self.object.is_superuser
                 form = self.get_form()
                 profile = getattr(self.object, "profile", None)
                 profile_form = UserProfileForm(
@@ -124,6 +189,36 @@ class UserCRUDView(CRUDView):
                     from django.db import transaction
                     from django.http import HttpResponseRedirect
                     from django.urls import reverse
+
+                    # ── Guardrails (compare ORIGINAL vs submitted) ──────
+                    new_is_staff = form.cleaned_data.get("is_staff", False)
+                    new_is_active = form.cleaned_data.get("is_active", False)
+                    editing_self = self.object.pk == request.user.pk
+                    guard_error = None
+                    if editing_self and was_staff and not new_is_staff:
+                        guard_error = "You can't remove your own staff access."
+                    elif editing_self and was_active and not new_is_active:
+                        guard_error = "You can't deactivate your own account."
+                    elif (
+                        is_superuser
+                        and not request.user.is_superuser
+                        and (not new_is_active or not new_is_staff)
+                    ):
+                        guard_error = (
+                            "Only a superuser can deactivate or remove staff from a superuser account."
+                        )
+                    elif (
+                        is_superuser
+                        and was_active
+                        and not new_is_active
+                        and _active_superuser_count(exclude_pk=self.object.pk) == 0
+                    ):
+                        guard_error = "You can't deactivate the last active superuser."
+                    if guard_error:
+                        messages.error(request, guard_error)
+                        context = self.get_context_data(form=form)
+                        context["profile_form"] = profile_form
+                        return self.render_to_response(context)
 
                     with transaction.atomic():
                         # Save profile fields directly to avoid the
@@ -151,16 +246,28 @@ class UserCRUDView(CRUDView):
             view_class.post = post
 
         elif base_class is _CRUDDeleteBase:
-            # Prevent users from deleting themselves
-            def delete(self, request, *args, **kwargs):
+            # Guard self-delete and superuser/last-superuser deletion. NOTE:
+            # Django 5+/6 DeleteView routes POST through post()/form_valid(),
+            # NOT delete() — guarding delete() alone is a no-op (the reason the
+            # old self-delete guard silently stopped working). Guard in post().
+            def post(self, request, *args, **kwargs):
+                from django.http import HttpResponseForbidden
+
                 self.object = self.get_object()
-                if self.object.pk == request.user.pk:
-                    from django.http import HttpResponseForbidden
-
+                target = self.object
+                if target.pk == request.user.pk:
                     return HttpResponseForbidden("You cannot delete your own account.")
-                return super(view_class, self).delete(request, *args, **kwargs)
+                if target.is_superuser and not request.user.is_superuser:
+                    return HttpResponseForbidden("Only a superuser can delete a superuser account.")
+                if (
+                    target.is_superuser
+                    and target.is_active
+                    and _active_superuser_count(exclude_pk=target.pk) == 0
+                ):
+                    return HttpResponseForbidden("You can't delete the last active superuser.")
+                return super(view_class, self).post(request, *args, **kwargs)
 
-            view_class.delete = delete
+            view_class.post = post
 
         return view_class
 
@@ -230,6 +337,16 @@ def _get_user_activity_stats(user_obj) -> dict[str, Any]:
     }
 
 
+def _user_list_row(u):
+    """A clickable user row for the stat modal: avatar · name · meta · chevron."""
+    return stat_list_row(
+        u.username,
+        href=reverse("manage/users-update", args=[u.pk]),
+        avatar=True,
+        meta=u.email or "No email on file",
+    )
+
+
 @staff_member_required
 def user_stat_detail(request, stat_type: str) -> HttpResponse:
     """HTMX endpoint returning HTML for stat card drill-down modals."""
@@ -237,17 +354,21 @@ def user_stat_detail(request, stat_type: str) -> HttpResponse:
     thirty_days_ago = now - timezone.timedelta(days=30)
     users = User.objects.filter(is_active=True).order_by("username")
 
+    rows: list = []
+    empty_msg = "Nothing to show."
+
     if stat_type == "recent":
-        items = users.filter(date_joined__gte=thirty_days_ago)
-        rows = [{"label": u.username, "value": u.date_joined.strftime("%b %d, %Y")} for u in items]
-        if not rows:
-            rows = [{"label": "No new users in the last 30 days", "value": ""}]
+        rows = [_user_list_row(u) for u in users.filter(date_joined__gte=thirty_days_ago)]
+        empty_msg = "No new users in the last 30 days."
     elif stat_type == "total":
-        rows = [{"label": u.username, "value": u.email or "—"} for u in users]
+        rows = [_user_list_row(u) for u in users]
+        empty_msg = "No active users."
     elif stat_type == "staff":
-        items = users.filter(is_staff=True)
-        rows = [{"label": u.username, "value": u.email or "—"} for u in items]
+        rows = [_user_list_row(u) for u in users.filter(is_staff=True)]
+        empty_msg = "No staff users."
     elif stat_type == "timezones":
+        from urllib.parse import urlencode
+
         from apps.profile.models import UserProfile
 
         tz_counts = (
@@ -257,19 +378,50 @@ def user_stat_detail(request, stat_type: str) -> HttpResponse:
             .annotate(count=Count("id"))
             .order_by("-count")
         )
-        rows = [{"label": t["timezone"].split("/")[-1].replace("_", " "), "value": str(t["count"])} for t in tz_counts]
-        if not rows:
-            rows = [{"label": "No timezones configured", "value": ""}]
-    else:
-        rows = []
+        tz_dashboard = reverse("manage/users-timezones")
+        rows = [
+            # Links into the Timezones dashboard filtered to this zone
+            # (its search matches the raw IANA name, e.g. America/New_York).
+            stat_list_row(
+                t["timezone"].split("/")[-1].replace("_", " "),
+                href=f"{tz_dashboard}?{urlencode({'q': t['timezone']})}",
+                count=t["count"],
+            )
+            for t in tz_counts
+        ]
+        empty_msg = "No timezones configured."
 
-    html = '<table style="width:100%;"><thead><tr><th>Name</th><th>Detail</th></tr></thead><tbody>'
-    for row in rows:
-        html += (
-            f"<tr>"
-            f'<td style="font-size:0.85rem;">{row["label"]}</td>'
-            f'<td style="font-size:0.85rem;text-align:right;">{row["value"]}</td>'
-            f"</tr>"
-        )
-    html += "</tbody></table>"
-    return HttpResponse(html)
+    return render_stat_list(rows, empty=empty_msg)
+
+
+@require_POST
+@staff_member_required
+def send_user_link(request, pk: int) -> HttpResponse:
+    """Email the user a set-password link (resend invite if they never set one,
+    otherwise a standard branded password-reset link)."""
+    from apps.accounts.views import send_setup_or_reset
+
+    user = get_object_or_404(User, pk=pk)
+    kind = send_setup_or_reset(request, user)
+    if kind == "invite":
+        messages.success(request, f"Invite link sent to {user.email}.")
+    elif kind == "reset":
+        messages.success(request, f"Password reset link sent to {user.email}.")
+    else:
+        messages.error(request, "Couldn't send a link — this user has no email address on file.")
+    return redirect("manage/users-update", pk=pk)
+
+
+@require_POST
+@staff_member_required
+def unlock_user(request, pk: int) -> HttpResponse:
+    """Clear django-axes failed-login lockouts for a user."""
+    user = get_object_or_404(User, pk=pk)
+    try:
+        from axes.utils import reset
+
+        reset(username=user.get_username())
+        messages.success(request, f"Cleared login lockouts for {user.get_username()}.")
+    except Exception:
+        messages.error(request, "Couldn't clear lockouts for this account.")
+    return redirect("manage/users-update", pk=pk)

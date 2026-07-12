@@ -158,13 +158,17 @@ def crud_table(context):
     has_update = Action.UPDATE in crud_actions
     has_delete = Action.DELETE in crud_actions
     show_actions = has_update or has_delete
+    # The link_field column links to the detail view; when the CRUDView has no
+    # DETAIL action, fall back to the edit view so the name stays clickable
+    # (the common admin-list pattern: click a row to edit it).
+    row_linkable = has_detail or has_update
 
     # Build rows
     rows = []
     for obj in object_list:
         cells = []
         for field_name in list_fields:
-            is_link = field_name == link_field and has_detail
+            is_link = field_name == link_field and row_linkable
             # Raw value for title tooltip (before transforms add HTML)
             raw = getattr(obj, field_name, "")
             if isinstance(raw, (dict, list)):
@@ -189,7 +193,22 @@ def crud_table(context):
                 }
             )
 
-        detail_url = _ns_reverse(f"{url_base}-detail", url_namespace, kwargs={"pk": obj.pk}) if has_detail else None
+        if has_detail:
+            detail_url = _ns_reverse(f"{url_base}-detail", url_namespace, kwargs={"pk": obj.pk})
+        elif has_update:
+            detail_url = _ns_reverse(f"{url_base}-update", url_namespace, kwargs={"pk": obj.pk})
+        else:
+            detail_url = None
+
+        # Per-row hook: a CRUDView may redirect the row link elsewhere (e.g. a
+        # monitored-endpoint row → its status timeline instead of the edit form).
+        if crud_config is not None:
+            try:
+                custom_link = crud_config.row_link_url(obj, request)
+            except Exception:  # pragma: no cover — defensive
+                custom_link = None
+            if custom_link is not None:
+                detail_url = custom_link
 
         actions = []
         if has_update:
@@ -207,6 +226,16 @@ def crud_table(context):
                     "is_delete": True,
                 }
             )
+
+        # Per-row action filter — CRUDView subclasses can hide actions
+        # for specific rows (e.g. suppress "Delete" on the current user's
+        # own row in a User CRUDView). Default impl returns actions
+        # unchanged. See CRUDView.row_actions for the contract.
+        if crud_config is not None:
+            try:
+                actions = crud_config.row_actions(obj, request, actions)
+            except Exception:  # pragma: no cover — defensive
+                pass
 
         rows.append(
             {

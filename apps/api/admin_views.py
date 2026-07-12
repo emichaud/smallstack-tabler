@@ -18,9 +18,41 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.http import Http404, HttpResponse
 from django.views.generic import TemplateView, View
 
 from apps.smallstack.mixins import StaffRequiredMixin
+from apps.smallstack.stat_lists import render_stat_list, stat_list_row
+
+
+def _build_api_report() -> list[dict]:
+    """Run the api_doctor checks and return the report list.
+
+    Same ``_check_*`` methods, same report shape the CLI prints — minus the
+    self-test (HTTP + DB). Shared by the health page and its stat-card
+    drill-downs.
+    """
+    from apps.api.management.commands.api_doctor import Command
+
+    cmd = Command()
+    report: list[dict] = []
+    cmd._check_openapi_package(report)
+    cmd._check_dependencies(report)
+    cmd._check_registry(report)
+    cmd._check_urls(report)
+    cmd._check_swagger_redoc(report)
+    cmd._check_openapi_validity(report)
+    cmd._check_endpoint_consistency(report)
+    cmd._check_orphans(report)
+    cmd._check_token_auth(report)
+    return report
+
+
+def _detail_summary(detail) -> str:
+    """Condense a check's ``detail`` (str or dict) into a one-line meta string."""
+    if isinstance(detail, dict):
+        return ", ".join(f"{k}: {v}" for k, v in detail.items())
+    return "" if detail is None else str(detail)
 
 
 class _AdminBase(StaffRequiredMixin, TemplateView):
@@ -36,34 +68,110 @@ class _AdminBase(StaffRequiredMixin, TemplateView):
         return ctx
 
 
+def _resolve_service_url(url_name: str) -> str | None:
+    """Reverse an API service route, returning None if it isn't wired."""
+    from django.urls import NoReverseMatch, reverse
+
+    try:
+        return reverse(url_name)
+    except NoReverseMatch:
+        return None
+
+
+# Ordered map of the runtime REST services the admin can link to. `kind`
+# drives styling: primary = interactive UIs, schema = raw JSON, auth = API
+# calls listed for reference (not "viewable" in a browser).
+_API_SERVICES: tuple[tuple[str, str, str, str], ...] = (
+    ("api-docs", "Swagger UI", "Interactive API explorer", "primary"),
+    ("api-redoc", "ReDoc", "Reference documentation", "primary"),
+    ("api-openapi-schema", "OpenAPI JSON", "OpenAPI 3.0.3 spec", "schema"),
+    ("api-schema", "Schema JSON", "Endpoint registry + fields", "schema"),
+    ("api-auth-token", "Auth: token", "POST — obtain a bearer token", "auth"),
+    ("api-auth-me", "Auth: me", "GET — current token's user", "auth"),
+)
+
+
 class APIAdminHealthView(_AdminBase):
     template_name = "api/admin/health.html"
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        from apps.api.management.commands.api_doctor import Command
-
         ctx = super().get_context_data(**kwargs)
         ctx["page"] = "health"
+        # Quick "Open Swagger" link in the header — only when docs are wired.
+        ctx["swagger_url"] = _resolve_service_url("api-docs")
 
-        # Rebind api_doctor's checks to an HTML surface — same `_check_*`
-        # methods, same `report` shape. Skip `_self_test` (HTTP + DB) —
-        # it lives behind the POST endpoint.
-        cmd = Command()
-        report: list[dict] = []
-        cmd._check_openapi_package(report)
-        cmd._check_dependencies(report)
-        cmd._check_registry(report)
-        cmd._check_urls(report)
-        cmd._check_swagger_redoc(report)
-        cmd._check_openapi_validity(report)
-        cmd._check_endpoint_consistency(report)
-        cmd._check_orphans(report)
-        cmd._check_token_auth(report)
+        report = _build_api_report()
         ctx["report"] = report
 
         ctx["pass_count"] = sum(1 for r in report if r["status"] == "PASS")
         ctx["warn_count"] = sum(1 for r in report if r["status"] == "WARN")
         ctx["fail_count"] = sum(1 for r in report if r["status"] == "FAIL")
+        return ctx
+
+
+class APIAdminStatDetailView(StaffRequiredMixin, View):
+    """htmx drill-down for the health stat cards: ``pass`` / ``warn`` / ``fail``
+    list the individual checks in that status."""
+
+    def get(self, request, stat_type: str) -> HttpResponse:
+        status = {"pass": "PASS", "warn": "WARN", "fail": "FAIL"}.get(stat_type)
+        if status is None:
+            raise Http404("Unknown stat type")
+        report = _build_api_report()
+        rows = [
+            stat_list_row(r["name"], meta=_detail_summary(r.get("detail")))
+            for r in report
+            if r["status"] == status
+        ]
+        empty = {"PASS": "No passing checks.", "WARN": "No warnings.", "FAIL": "No failures."}[status]
+        return render_stat_list(rows, empty=empty)
+
+
+class APIAdminEndpointsView(_AdminBase):
+    """Navigable map of the REST surface: service links + enabled models.
+
+    Pure read-only introspection over ``_api_registry`` — the same source
+    of truth ``api_doctor`` and the OpenAPI generator use. No DB access.
+    """
+
+    template_name = "api/admin/endpoints.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from apps.smallstack.api import _api_registry, _build_endpoint_schema
+
+        ctx = super().get_context_data(**kwargs)
+        ctx["page"] = "endpoints"
+
+        # Service links — only those that actually resolve.
+        services: list[dict[str, str]] = []
+        for url_name, label, desc, kind in _API_SERVICES:
+            url = _resolve_service_url(url_name)
+            if url is not None:
+                services.append({"label": label, "desc": desc, "url": url, "kind": kind})
+        ctx["services"] = services
+
+        # One row per CRUDView with enable_api=True. Per-row try/except so a
+        # single misconfigured config can't 500 the whole page.
+        resources: list[dict[str, Any]] = []
+        for crud_config, list_url_name in _api_registry:
+            try:
+                schema = _build_endpoint_schema(crud_config, list_url_name)
+                model = crud_config.model
+                resources.append(
+                    {
+                        "model": schema["model"],
+                        "verbose_name": str(model._meta.verbose_name).title(),
+                        "list_url": schema["url"],
+                        "detail_url": schema["url"].rstrip("/") + "/<int:pk>/",
+                        "methods": schema["methods"],
+                        "filter_count": len(schema["filter_fields"]),
+                        "search_count": len(schema["search_fields"]),
+                    }
+                )
+            except Exception:  # noqa: BLE001 — skip a broken config, keep the page up
+                continue
+        resources.sort(key=lambda r: r["model"].lower())
+        ctx["resources"] = resources
         return ctx
 
 

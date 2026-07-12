@@ -168,6 +168,70 @@ class TestPruneBackups:
 
         assert pruned == []
 
+    def test_prune_keep_zero_is_disabled_not_delete_all(self, db, tmp_path):
+        """Audit L8: keep<1 means retention disabled — it must NOT delete every
+        backup (including the one just created)."""
+        from .views import _prune_backups
+
+        for i in range(3):
+            (tmp_path / f"db-20260301-00000{i}.sqlite3").write_bytes(b"x" * 100)
+
+        with override_settings(BACKUP_DIR=str(tmp_path)):
+            pruned = _prune_backups(keep=0)
+
+        assert pruned == []
+        assert len(list(tmp_path.glob("db-*.sqlite3"))) == 3
+
+
+class TestBackupDbCommand:
+    """Tests for the backup_db management command."""
+
+    def test_records_skip_on_non_sqlite(self, db):
+        """Audit L7: on a non-SQLite engine the command must record a failed
+        BackupRecord (not silently no-op), so the dashboard isn't misread as
+        healthy."""
+        from unittest import mock
+
+        from django.conf import settings
+        from django.core.management import call_command
+
+        before = BackupRecord.objects.count()
+        with mock.patch.dict(
+            settings.DATABASES["default"], {"ENGINE": "django.db.backends.postgresql"}
+        ):
+            call_command("backup_db")
+        assert BackupRecord.objects.count() == before + 1
+        rec = BackupRecord.objects.latest("id")
+        assert rec.status == "failed"
+        assert "only supports SQLite" in rec.error_message
+
+
+class TestCreateDevSuperuser:
+    """Tests for the create_dev_superuser command's production guard."""
+
+    def test_refuses_when_not_debug(self, db):
+        """Audit L3: must refuse to mint admin/admin when DEBUG=False."""
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        with override_settings(DEBUG=False):
+            with pytest.raises(CommandError):
+                call_command("create_dev_superuser")
+        assert not get_user_model().objects.filter(username="admin").exists()
+
+    def test_creates_in_debug(self, db, monkeypatch):
+        from django.core.management import call_command
+
+        # Hermetic: create_dev_superuser reads DEV_SUPERUSER_* via python-decouple
+        # config(), which reads os.environ *before* the .env file. Pin them here so
+        # the test doesn't depend on the developer's ambient .env (e.g. a custom
+        # DEV_SUPERUSER_USERNAME would otherwise cause a false failure).
+        monkeypatch.setenv("DEV_SUPERUSER_USERNAME", "admin")
+        monkeypatch.setenv("DEV_SUPERUSER_PASSWORD", "admin")
+        with override_settings(DEBUG=True):
+            call_command("create_dev_superuser")
+        assert get_user_model().objects.filter(username="admin", is_superuser=True).exists()
+
 
 # ── View Permission Tests ────────────────────────────────────
 
@@ -204,7 +268,6 @@ class TestBackupViewPermissions:
         response = client.get(reverse("smallstack:backup_detail", kwargs={"pk": success_record.pk}))
         assert response.status_code == 200
 
-    @pytest.mark.starter_content
     def test_backup_list_has_breadcrumbs(self, client, staff_user):
         client.force_login(staff_user)
         response = client.get(reverse("smallstack:backups"))
@@ -212,7 +275,6 @@ class TestBackupViewPermissions:
         assert "Home" in content
         assert "Backups" in content
 
-    @pytest.mark.starter_content
     def test_backup_detail_has_breadcrumbs(self, client, staff_user, success_record):
         client.force_login(staff_user)
         response = client.get(reverse("smallstack:backup_detail", kwargs={"pk": success_record.pk}))
@@ -605,6 +667,13 @@ class TestLegalPages:
     @pytest.mark.starter_content
     def test_signup_terms_notice(self, client, db):
         """Signup page should show terms notice."""
+        from django.conf import settings
+
+        # Self-guard: a downstream may disable signup (the page 404s). The
+        # starter_content marker also covers this, but guarding here keeps the
+        # test correct even when run without the marker filter.
+        if not getattr(settings, "SMALLSTACK_SIGNUP_ENABLED", True):
+            pytest.skip("signup disabled (SMALLSTACK_SIGNUP_ENABLED=False)")
         response = client.get("/smallstack/accounts/signup/")
         content = response.content.decode()
         assert "Terms of Service" in content
@@ -626,14 +695,12 @@ class TestTopbarNav:
             request.user = type("AnonymousUser", (), {"is_authenticated": False, "is_staff": False})()
         return request
 
-    @pytest.mark.starter_content
     def test_topbar_nav_renders(self, client, db):
         """Topbar nav should render with registered nav items."""
         response = client.get("/")
         content = response.content.decode()
         assert "topbar-nav" in content
 
-    @pytest.mark.starter_content
     @override_settings(
         SMALLSTACK_TOPBAR_NAV_ENABLED=True,
         SMALLSTACK_TOPBAR_NAV_ITEMS=[
@@ -1083,6 +1150,36 @@ class TestFieldValueRendering:
         assert "<script>" not in result
         assert "&lt;script&gt;" in result
 
+    def test_markdown_preview_neutralizes_xss(self):
+        """The field-preview markdown renderer must neutralize raw HTML, attribute
+        injection, and dangerous URL schemes — the expanded view renders arbitrary
+        (often user-supplied) field content, so it must not be a stored-XSS vector."""
+        from apps.smallstack.transforms import _render_markdown_preview
+
+        raw = str(_render_markdown_preview("<script>alert(1)</script>\n<img src=x onerror=alert(1)>"))
+        assert "<script" not in raw  # no live script tag (escaped &lt;script is fine)
+        assert "<img" not in raw  # no live img tag
+
+        # attr_list must be disabled: {: onclick=...} stays literal text, never an <h1 onclick=...> attribute
+        attr = str(_render_markdown_preview('# Heading {: onclick="alert(1)"}'))
+        assert "<h1>" in attr and "<h1 " not in attr  # bare h1 → no injected attribute
+
+        # dangerous URL schemes in link/image syntax must be blanked
+        assert "javascript:" not in str(_render_markdown_preview("[x](javascript:alert(1))"))
+        assert "javascript:" not in str(_render_markdown_preview("[x](java\tscript:alert(1))"))  # tab-hidden
+        assert 'src="data:' not in str(_render_markdown_preview("![a](data:text/html;base64,PHN2Zz4=)"))
+        # …but legitimate links/images survive
+        assert 'href="https://example.com"' in str(_render_markdown_preview("[x](https://example.com)"))
+        assert 'href="/foo"' in str(_render_markdown_preview("[x](/foo)"))
+
+        # fenced code containing HTML is *single*-escaped (not double — guards the regression)
+        code = str(_render_markdown_preview("```\n<div>a & b</div>\n```"))
+        assert "&lt;div&gt;" in code and "&amp;lt;" not in code
+
+        # legitimate structural markdown still renders
+        assert "<h1" in str(_render_markdown_preview("# Heading"))
+        assert "<table" in str(_render_markdown_preview("| a | b |\n|---|---|\n| 1 | 2 |"))
+
     def test_field_transform_tag_with_url_base(self):
         """{% field_transform %} with explicit url_base generates hx-get."""
         from apps.smallstack.transforms import TRUNCATE_THRESHOLD
@@ -1222,3 +1319,109 @@ class TestFormatDetection:
         from apps.smallstack.crud import _detect_format
 
         assert _detect_format('{"key": "value"}') == "json"
+
+
+# ─── Pluggable monitor registry ──────────────────────────────────────
+
+
+class TestMonitorsRegistry:
+    @pytest.fixture
+    def registry(self):
+        """Snapshot + restore the module-level registry so tests don't leak state."""
+        from apps.smallstack import monitors as m
+
+        services, monitors, sources = dict(m._services), dict(m._monitors), list(m._monitor_sources)
+        yield m
+        m._services.clear()
+        m._services.update(services)
+        m._monitors.clear()
+        m._monitors.update(monitors)
+        m._monitor_sources[:] = sources
+
+    def test_register_and_get_service(self, registry):
+        registry.register_service(registry.Service(key="t_demo", title="Demo", order=5))
+        assert registry.get_service("t_demo").title == "Demo"
+        assert any(s.key == "t_demo" for s in registry.get_services())
+
+    def test_register_and_filter_monitors_by_service(self, registry):
+        registry.register_monitor(registry.Monitor(key="t_a", service="t_demo"))
+        registry.register_monitor(registry.Monitor(key="t_b", service="other"))
+        assert [m.key for m in registry.get_monitors("t_demo")] == ["t_a"]
+
+    def test_dynamic_source_monitor(self, registry):
+        registry.register_monitor_source(lambda: [registry.Monitor(key="t_dyn", service="t_demo")])
+        assert registry.get_monitor("t_dyn") is not None
+
+    def test_dynamic_source_overrides_code_monitor(self, registry):
+        registry.register_monitor(registry.Monitor(key="t_x", service="s", title="code"))
+        registry.register_monitor_source(lambda: [registry.Monitor(key="t_x", service="s", title="dynamic")])
+        assert registry.get_monitor("t_x").title == "dynamic"
+
+    def test_monitors_ordered_by_order_then_key(self, registry):
+        registry.register_monitor(registry.Monitor(key="t_2", service="s", order=20))
+        registry.register_monitor(registry.Monitor(key="t_1", service="s", order=10))
+        ordered = [m.key for m in registry.get_monitors("s")]
+        assert ordered.index("t_1") < ordered.index("t_2")
+
+    def test_check_result_helpers(self, registry):
+        up = registry.CheckResult.up(5, "fine")
+        down = registry.CheckResult.down("bad", 3)
+        assert up.ok and up.response_time_ms == 5 and up.note == "fine"
+        assert (not down.ok) and down.response_time_ms == 3 and down.note == "bad"
+
+
+class TestVisualizationsRegistry:
+    @pytest.fixture
+    def viz(self):
+        from apps.smallstack import visualizations as v
+
+        saved = dict(v._visualizations)
+        yield v
+        v._visualizations.clear()
+        v._visualizations.update(saved)
+
+    def test_register_and_order(self, viz):
+        viz.register(viz.Visualization(key="t_v2", order=20))
+        viz.register(viz.Visualization(key="t_v1", order=10))
+        keys = [x.key for x in viz.get_visualizations()]
+        assert keys.index("t_v1") < keys.index("t_v2")
+
+    def test_public_only_filter(self, viz):
+        viz.register(viz.Visualization(key="t_pub", public_safe=True))
+        viz.register(viz.Visualization(key="t_priv", public_safe=False))
+        public = [x.key for x in viz.get_visualizations(public_only=True)]
+        assert "t_pub" in public
+        assert "t_priv" not in public
+
+
+class TestNavActivePrefix:
+    """active_prefix marks an item active for any URL beneath it (the status-page fix)."""
+
+    def test_active_prefix_matches_subpath(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        from .navigation import NavRegistry
+
+        reg = NavRegistry()
+        reg.register(
+            section="admin",
+            label="Status",
+            url_name="heartbeat:status_overview",
+            active_prefix="/smallstack/status/",
+        )
+        request = RequestFactory().get("/smallstack/status/monitor/site/")
+        request.user = AnonymousUser()
+        active = [i["label"] for g in reg.get_nav_items(request) for i in g["items"] if i["active"]]
+        assert active == ["Status"]
+
+    def test_without_active_prefix_no_subpath_match(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        from .navigation import NavRegistry
+
+        reg = NavRegistry()
+        reg.register(section="admin", label="Status", url_name="heartbeat:status_overview")
+        request = RequestFactory().get("/smallstack/status/monitor/site/")
+        request.user = AnonymousUser()
+        active = [i["label"] for g in reg.get_nav_items(request) for i in g["items"] if i["active"]]
+        assert active == []

@@ -6,18 +6,37 @@ from datetime import datetime
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.views.generic import TemplateView
-from django_tables2 import RequestConfig
 
 from apps.profile.models import TIMEZONE_CHOICES
 from apps.smallstack.mixins import StaffRequiredMixin
-
-from .tables import TimezoneTable
+from apps.smallstack.sorting import build_sort_headers
 
 User = get_user_model()
 
 
 class TimezoneDashboardView(StaffRequiredMixin, TemplateView):
     template_name = "usermanager/timezone_dashboard.html"
+
+    # Sortable columns — parity with the old django-tables2 table. Sorting is a
+    # full-page reload (preserving search ``q``) so the inline dashboard JS
+    # re-stamps row data + live-updates clocks; the rendered row order always
+    # matches the ``sorted_rows`` context the JS indexes against.
+    SORT_KEYS = {
+        "user": lambda r: r["user"].username.lower(),
+        "timezone": lambda r: r["tz_display"].lower(),
+        "local_time": lambda r: r["offset_hours"],
+        "offset": lambda r: r["offset_hours"],
+        "status": lambda r: not r["is_workday"],  # working-hours users first (asc)
+        "region": lambda r: r["region"].lower(),
+    }
+    SORT_COLUMNS = [
+        ("user", "User"),
+        ("timezone", "Timezone"),
+        ("local_time", "Local Time"),
+        ("offset", "UTC Offset"),
+        ("status", "Status"),
+        ("region", "Region"),
+    ]
 
     def get_template_names(self):
         if self.request.headers.get("HX-Request"):
@@ -104,10 +123,25 @@ class TimezoneDashboardView(StaffRequiredMixin, TemplateView):
                 or q_lower in r["region"].lower()
             ]
 
-        # Build table — sorted by offset (west to east)
-        sorted_rows = sorted(user_rows, key=lambda r: (r["offset_hours"], r["user"].username))
-        table = TimezoneTable(sorted_rows)
-        RequestConfig(self.request, paginate={"per_page": 10}).configure(table)
+        # Column sort (default: UTC offset, west to east). The dashboard JS
+        # zips the `sorted_rows` data array against the rendered table rows by
+        # index to stamp data attributes + live-update local-time cells, so the
+        # rendered rows and that array must be the SAME paginated page (below).
+        ordering = self.request.GET.get("ordering", "offset").strip()
+        key = ordering.lstrip("-")
+        if key not in self.SORT_KEYS:
+            ordering, key = "offset", "offset"
+        # Stable secondary sort by username, then the chosen column.
+        by_name = sorted(user_rows, key=lambda r: r["user"].username.lower())
+        sorted_rows = sorted(by_name, key=self.SORT_KEYS[key], reverse=ordering.startswith("-"))
+
+        # Paginate to 15 rows. `page_obj` feeds BOTH the table loop and the JS
+        # data array (via the "sorted_rows" context key), keeping their indexes
+        # aligned. Pagination links are full-reload, so each page rebuilds the
+        # array + clocks cleanly.
+        from apps.smallstack.pagination import paginate_queryset
+
+        page_obj = paginate_queryset(sorted_rows, self.request, page_size=10)
 
         # Unique regions for filter buttons
         regions = sorted(set(r["region"] for r in user_rows))
@@ -122,8 +156,12 @@ class TimezoneDashboardView(StaffRequiredMixin, TemplateView):
                 "region_counts": sorted_regions,
                 "total_users": len(user_rows),
                 "unique_timezones": len(tz_groups),
-                "table": table,
-                "sorted_rows": sorted_rows,
+                "sorted_rows": page_obj,
+                "page_obj": page_obj,
+                "tz_headers": build_sort_headers(self.SORT_COLUMNS, ordering),
+                # Carry the active sort through an HTMX search so results stay
+                # sorted (default "offset" needs no param — keeps URLs clean).
+                "search_preserve": {} if ordering == "offset" else {"ordering": ordering},
                 "regions": regions,
                 "search_query": search_query,
             }

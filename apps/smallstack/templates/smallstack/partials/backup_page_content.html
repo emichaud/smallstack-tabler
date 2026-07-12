@@ -1,74 +1,29 @@
 {% load theme_tags %}
 <!-- ── Tab navigation ─────────────────────────────────────────── -->
-<div style="display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--hairline-color);">
-    <button type="button" id="tab-activity" onclick="switchBackupTab('activity')"
-            style="padding: 10px 20px; font-size: 0.9rem; font-weight: 600; background: none; border: none; border-bottom: 2px solid var(--primary); margin-bottom: -2px; color: var(--primary); cursor: pointer;">
+<div class="tab-bar">
+    <button type="button" id="tab-activity" class="tab-btn active" onclick="switchBackupTab('activity')">
         Backup Activity
     </button>
-    <button type="button" id="tab-files" onclick="switchBackupTab('files')"
-            style="padding: 10px 20px; font-size: 0.9rem; font-weight: 600; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; color: var(--body-quiet-color); cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+    <button type="button" id="tab-files" class="tab-btn" onclick="switchBackupTab('files')">
         Files
-        <span style="display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 0.7rem; font-weight: 700; background: color-mix(in srgb, var(--primary) 15%, var(--card-bg)); color: var(--primary);">{{ backup_files|length }}</span>
+        <span class="tab-count">{{ backup_files|length }}</span>
     </button>
-    <button type="button" id="tab-config" onclick="switchBackupTab('config')"
-            style="padding: 10px 20px; font-size: 0.9rem; font-weight: 600; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; color: var(--body-quiet-color); cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+    <button type="button" id="tab-config" class="tab-btn" onclick="switchBackupTab('config')">
         Configuration
-        <span style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: {% if email_is_console or not admins %}var(--delete-button-bg, red){% else %}var(--success-fg){% endif %};"></span>
+        <span style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: {% if email_is_console or not admins %}var(--error-fg){% else %}var(--success-fg){% endif %};"></span>
     </button>
 </div>
 
 <!-- ── Tab: Backup Activity (default) ─────────────────────────── -->
 <div id="panel-activity">
     <!-- Top-level stats -->
-    <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px;">
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'smallstack:backup_stat_detail' 'recent' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Recent Backups (24h)')">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">{{ recent_count }}</div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Recent (24h)</div>
-            </div>
-        </div>
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'smallstack:backup_stat_detail' 'success' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Successful Backups')">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: var(--success-fg);">{{ success_count }}</div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Successful</div>
-            </div>
-        </div>
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'smallstack:backup_stat_detail' 'failed' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Failed Backups')">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: {% if failed_count %}var(--delete-button-bg, red){% else %}var(--primary){% endif %};">{{ failed_count }}</div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Failed</div>
-            </div>
-        </div>
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'smallstack:backup_stat_detail' 'pruned' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Pruned Backups')">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">{{ pruned_count }}</div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Pruned</div>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">{{ avg_duration }}<span style="font-size: 0.9rem;">ms</span></div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Avg Duration</div>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-body" style="text-align: center; padding: 14px 8px;">
-                <div style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">{{ total_backup_size|filesizeformat }}</div>
-                <div style="color: var(--body-quiet-color); font-size: 0.8rem;">Total Size</div>
-            </div>
-        </div>
+    <div class="stat-cards" style="margin-bottom: 24px;">
+        {% stat_card value=recent_count label="Recent (24h)" title="Recent Backups (24h)" detail_url="smallstack:backup_stat_detail" detail_arg="recent" %}
+        {% stat_card value=success_count label="Successful" title="Successful Backups" state="success" detail_url="smallstack:backup_stat_detail" detail_arg="success" %}
+        {% stat_card value=failed_count label="Failed" title="Failed Backups" state=failed_count|yesno:"danger," detail_url="smallstack:backup_stat_detail" detail_arg="failed" %}
+        {% stat_card value=pruned_count label="Pruned" title="Pruned Backups" detail_url="smallstack:backup_stat_detail" detail_arg="pruned" %}
+        {% stat_card value=avg_duration label="Avg Duration" unit="ms" %}
+        {% stat_card value=total_backup_size|filesizeformat label="Total Size" %}
     </div>
 
     <!-- Backup History -->
@@ -195,7 +150,9 @@
                         <tr>
                             <td class="config-label">Scheduled</td>
                             <td>
-                                {% if settings_info.backup_cron_enabled %}
+                                {% if not is_sqlite %}
+                                <span style="color: var(--error-fg);">Not effective (SQLite-only)</span>
+                                {% elif settings_info.backup_cron_enabled %}
                                 <span style="color: var(--success-fg);">Enabled</span>
                                 {% else %}
                                 <span style="color: var(--body-quiet-color);">Disabled</span>
@@ -227,12 +184,10 @@ function switchBackupTab(tab) {
         var btn = document.getElementById('tab-' + t);
         if (t === tab) {
             panel.style.display = '';
-            btn.style.borderBottomColor = 'var(--primary)';
-            btn.style.color = 'var(--primary)';
+            btn.classList.add('active');
         } else {
             panel.style.display = 'none';
-            btn.style.borderBottomColor = 'transparent';
-            btn.style.color = 'var(--body-quiet-color)';
+            btn.classList.remove('active');
         }
     });
 }

@@ -16,15 +16,20 @@ the `is_owner_or_staff` helper.
 from __future__ import annotations
 
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
+from django.utils import timezone
 from django.views import View
 from django.views.generic import FormView, TemplateView
 
 from apps.smallstack.crud import Action, CRUDView
 from apps.smallstack.models import APIToken
+from apps.smallstack.stat_lists import render_stat_list, stat_list_row
 
 from .forms import TokenCreateForm
 from .mixins import is_owner_or_staff
@@ -73,6 +78,14 @@ class TokenCRUDView(CRUDView):
     ]
     search_fields = ["name", "prefix"]
     filter_fields = ["is_active", "user", "token_type", "access_level"]
+
+    # Opted into the unified search index by default. Same search_fields
+    # already drive the list-page search box; opting in lights up the
+    # global /smallstack/search/ page, the topbar omnibar, and an MCP
+    # `search_api_tokens` tool Claude can call.
+    enable_search = True
+    search_display = "name"
+    search_subtitle = "prefix"
     paginate_by = 20
     link_field = "name"
 
@@ -250,3 +263,73 @@ class TokenStatsView(LoginRequiredMixin, TemplateView):
         context["stats"] = get_usage_stats(token, hours=hours)
         context["selected_hours"] = hours
         return context
+
+
+def _token_list_row(token, meta):
+    """A clickable token row for the stat modal: avatar · name · meta · chevron."""
+    return stat_list_row(
+        token.name,
+        href=reverse("tokenmgr:tokens-detail", kwargs={"pk": token.pk}),
+        avatar=True,
+        meta=meta,
+    )
+
+
+@login_required
+def token_stat_detail(request, stat_type: str) -> HttpResponse:
+    """HTMX endpoint returning HTML for the token stat-card drill-down modals.
+
+    Respects self-service scoping: non-staff callers only ever see their own
+    tokens (same rule as the overview counts).
+    """
+    user = request.user
+    is_staff = bool(getattr(user, "is_staff", False))
+    qs = APIToken.objects.select_related("user").order_by("-created_at")
+    if not is_staff:
+        qs = qs.filter(user=user)
+
+    def _meta(token) -> str:
+        # Staff see the owner; an owner viewing their own tokens sees the
+        # access level + key prefix instead (owner would be redundant).
+        if is_staff and token.user:
+            return str(token.user)
+        return f"{token.access_level or 'staff'} · {token.prefix}…"
+
+    rows: list = []
+    empty_msg = "Nothing to show."
+
+    if stat_type == "total":
+        rows = [_token_list_row(t, _meta(t)) for t in qs]
+        empty_msg = "No tokens yet."
+    elif stat_type == "active":
+        rows = [_token_list_row(t, _meta(t)) for t in qs.filter(is_active=True)]
+        empty_msg = "No active tokens."
+    elif stat_type == "revoked":
+        rows = [_token_list_row(t, _meta(t)) for t in qs.filter(is_active=False)]
+        empty_msg = "No revoked tokens."
+    elif stat_type == "volume":
+        empty_msg = "No API requests in the last 24 hours."
+        try:
+            from apps.activity.models import RequestLog
+
+            cutoff = timezone.now() - timezone.timedelta(hours=24)
+            counts = dict(
+                RequestLog.objects.filter(api_token__in=qs, timestamp__gte=cutoff)
+                .values_list("api_token")
+                .annotate(c=Count("id"))
+            )
+            tokens_by_id = {t.pk: t for t in qs}
+            rows = [
+                stat_list_row(
+                    tokens_by_id[tid].name,
+                    href=reverse("tokenmgr:tokens-detail", kwargs={"pk": tid}),
+                    avatar=True,
+                    count=cnt,
+                )
+                for tid, cnt in sorted(counts.items(), key=lambda kv: -kv[1])
+                if tid in tokens_by_id
+            ]
+        except Exception:  # noqa: BLE001 — activity app optional / any query failure → empty
+            rows = []
+
+    return render_stat_list(rows, empty=empty_msg)

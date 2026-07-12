@@ -23,6 +23,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse, QueryDict
 from django.urls import URLPattern, path
 from django.views.decorators.csrf import csrf_exempt
 
+from .audit import ADDITION, CHANGE, DELETION, log_write
 from .crud import Action, BulkAction, _apply_ordering_fields
 
 if TYPE_CHECKING:
@@ -34,6 +35,44 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 _api_registry: list[tuple] = []
+
+# Hand-rolled (non-CRUDView) endpoints that opt into the OpenAPI schema.
+_custom_api_registry: list[dict] = []
+
+
+def register_api_path(
+    url_name,
+    *,
+    methods,
+    summary,
+    subpath="",
+    tags=None,
+    parameters=None,
+    request_body=None,
+    responses=None,
+):
+    """Register a hand-rolled ``@api_view`` endpoint in the OpenAPI schema.
+
+    CRUDView endpoints self-register; custom function views don't. Call this at
+    import time (e.g. next to the view) so ``/api/schema/openapi.json`` — and
+    Swagger/ReDoc — advertise the endpoint too.
+
+    ``url_name`` is a **parameter-free, reversible** URL name that anchors the
+    resource's base path; its mount prefix is resolved at schema-build time, so
+    a package need not know where the host mounts it. ``subpath`` is appended to
+    that base and may contain ``{param}`` tokens. The rest is standard OpenAPI
+    operation metadata (``parameters``, ``request_body``, ``responses``).
+    """
+    _custom_api_registry.append({
+        "url_name": url_name,
+        "subpath": subpath,
+        "methods": [m.upper() for m in methods],
+        "summary": summary,
+        "tags": tags or ["Custom"],
+        "parameters": parameters or [],
+        "request_body": request_body,
+        "responses": responses or {"200": {"description": "Success"}},
+    })
 
 
 def build_api_urls(crud_config) -> list[URLPattern]:
@@ -55,7 +94,13 @@ def build_api_urls(crud_config) -> list[URLPattern]:
     detail_view = _make_api_detail_view(crud_config)
 
     list_url_name = f"{name_base}-api-list"
-    _api_registry.append((crud_config, list_url_name))
+    # The path is registered with the bare name, but when the CRUDView is mounted
+    # inside a namespaced app include (``app_name`` set, e.g. heartbeat), reverse()
+    # needs the namespace prefix. Store the *reversible* name in the registry so the
+    # OpenAPI schema/spec resolve it whether or not the host app is namespaced.
+    namespace = getattr(crud_config, "namespace", None)
+    registry_name = f"{namespace}:{list_url_name}" if namespace else list_url_name
+    _api_registry.append((crud_config, registry_name))
 
     urls = [
         path(f"{prefix}{url_base}/", list_view, name=list_url_name),
@@ -190,10 +235,9 @@ def api_view(methods=None, require_auth=True, require_staff=False, require_auth_
 
             # Parse JSON body for write methods
             if request.method not in ("GET", "HEAD") and request.body:
-                try:
-                    request.json = json.loads(request.body)
-                except (json.JSONDecodeError, ValueError):
-                    return _error("Invalid JSON", 400)
+                request.json, err = _load_json_body(request, require_object=False)
+                if err:
+                    return err
             else:
                 request.json = None
 
@@ -229,6 +273,18 @@ def _authenticate_api_request(
         raw_key = auth_header[7:]
         user, token = APIToken.authenticate(raw_key)
         if user is None:
+            # Distinguish "credential was real but is now invalid" from
+            # "credential is wrong" so CI logs and human debuggers see
+            # the failure mode immediately. Round-2 audit §4.6.
+            if token is not None:
+                if token.revoked_at is not None or not token.is_active:
+                    return None, _error("Token revoked", 401)
+                if token.expires_at is not None:
+                    expired_at = token.expires_at.isoformat()
+                    return None, _error(f"Token expired at {expired_at}", 401)
+                # Found but failed is_valid() for some other reason —
+                # treat as inactive.
+                return None, _error("Token inactive", 401)
             return None, _error("Invalid token", 401)
         request.user = user
         request._api_token = token
@@ -256,11 +312,15 @@ def _check_api_permissions(request, crud_config, method="GET"):
             if not request.user.is_staff:
                 return _error("Staff access required", 403)
 
-    # Enforce access_level on manual tokens
+    # Enforce read-only regardless of token_type. OAuth tokens minted with
+    # scope=read carry token_type="oauth", access_level="readonly" — they must
+    # be blocked from writes here exactly as the MCP channel blocks them
+    # (apps/mcp/auth.py gates on access_level, not token_type). Gating on
+    # token_type="manual" let a read-scoped OAuth bearer POST/PUT/DELETE on the
+    # REST surface. Login tokens carry access_level="" and stay unaffected. (Audit H2/H3.)
     token = getattr(request, "_api_token", None)
-    if token and token.token_type == "manual":
-        if token.access_level == "readonly" and method not in ("GET", "HEAD", "OPTIONS"):
-            return _error("Token is read-only", 403)
+    if token and token.access_level == "readonly" and method not in ("GET", "HEAD", "OPTIONS"):
+        return _error("Token is read-only", 403)
     return None
 
 
@@ -277,12 +337,29 @@ def _require_auth_token(request):
 # ---------------------------------------------------------------------------
 
 
-def _parse_json_body(request):
-    """Parse JSON body into a QueryDict for ModelForm compatibility."""
+def _load_json_body(request, *, require_object: bool = True):
+    """Parse the request body as JSON.
+
+    Returns ``(data, None)`` on success or ``(None, error)`` where ``error`` is a
+    standard 400 "Invalid JSON" :class:`JsonResponse`. When ``require_object`` is
+    True (the default) a body that parses to something other than a JSON object
+    is also rejected, so callers can safely ``.get()`` the result. Custom
+    endpoints that accept arrays/scalars pass ``require_object=False``.
+    """
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
-        return None, JsonResponse({"errors": {"__all__": ["Invalid JSON"]}}, status=400)
+        return None, _error("Invalid JSON", 400)
+    if require_object and not isinstance(data, dict):
+        return None, _error("Invalid JSON", 400)
+    return data, None
+
+
+def _parse_json_body(request):
+    """Parse JSON body into a QueryDict for ModelForm compatibility."""
+    data, err = _load_json_body(request)
+    if err:
+        return None, err
 
     q = QueryDict(mutable=True)
     for key, value in data.items():
@@ -798,6 +875,7 @@ def _make_api_detail_view(crud_config):
                 return _error("Method not allowed", 405)
             if not crud_config.can_delete(obj, request):
                 return _error("Permission denied", 403)
+            log_write(request.user, obj, DELETION, "REST API")  # before delete
             obj.delete()
             return HttpResponse(status=204)
 
@@ -819,79 +897,106 @@ def _apply_ordering(qs, ordering: str, allowed: set[str]) -> QuerySet:
     return _apply_ordering_fields(qs, ordering, allowed)
 
 
-def _api_list(request, crud_config):
-    """Handle GET on list endpoint: list, search, filter, paginate, export."""
+def _apply_list_search(request, qs, search_fields):
+    """Apply the ``?q=`` icontains search across ``search_fields``; return the (maybe) filtered qs."""
+    if not search_fields:
+        return qs
+    q = request.GET.get("q", "").strip()
+    if not q:
+        return qs
+
     from django.db.models import Q
 
+    query = Q()
+    for field in search_fields:
+        query |= Q(**{f"{field}__icontains": q})
+    return qs.filter(query)
+
+
+def _apply_list_filter(request, qs, crud_config):
+    """Apply django-filter filtering. Return ``(qs, error)``.
+
+    ``error`` is a 400 JsonResponse when a value is invalid — surfacing typos like
+    ``?status=garbage`` instead of silently returning every row (round-2 audit §4.5).
+    """
+    filter_fields = crud_config._resolve_filter_fields()
+    filter_class = crud_config._resolve_filter_class()
+    if not (filter_fields or filter_class):
+        return qs, None
+
+    import django_filters
+
+    fs_class = filter_class
+    if not fs_class:
+        fields_spec = _build_filter_fields_spec(crud_config.model, filter_fields)
+        fs_class = type(
+            "AutoFilter",
+            (django_filters.FilterSet,),
+            {"Meta": type("Meta", (), {"model": crud_config.model, "fields": fields_spec})},
+        )
+    filterset = fs_class(request.GET, queryset=qs)
+    if filterset.errors:
+        problems = [f"{field}: {', '.join(str(e) for e in errs)}" for field, errs in filterset.errors.items()]
+        return None, _error(f"Invalid filter value(s): {'; '.join(problems)}.", 400)
+    return filterset.qs, None
+
+
+def _apply_list_ordering(request, qs, crud_config):
+    """Apply ``?ordering=``. Return ``(qs, error)``.
+
+    Unknown fields return a 400 rather than being silently dropped — the API is
+    stricter than the HTML list view, whose rendered controls never emit bogus
+    values (round-2 audit §4.5).
+    """
+    ordering = request.GET.get("ordering", "").strip()
+    if not ordering:
+        return qs, None
+    allowed = set(crud_config._get_list_fields()) | set(getattr(crud_config, "api_extra_fields", []))
+    requested = [part.strip().lstrip("-") for part in ordering.split(",") if part.strip()]
+    invalid = [f for f in requested if f not in allowed]
+    if invalid:
+        return None, _error(
+            f"Invalid ordering field(s): {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}.",
+            400,
+        )
+    return _apply_ordering(qs, ordering, allowed), None
+
+
+def _api_list(request, crud_config):
+    """Handle GET on the list endpoint: search → filter → export → order → aggregate → paginate."""
     qs = crud_config._get_queryset()
     qs = crud_config.get_list_queryset(qs, request)
 
-    # Search
-    search_fields = crud_config._resolve_search_fields()
-    if search_fields:
-        q = request.GET.get("q", "").strip()
-        if q:
-            query = Q()
-            for field in search_fields:
-                query |= Q(**{f"{field}__icontains": q})
-            qs = qs.filter(query)
+    qs = _apply_list_search(request, qs, crud_config._resolve_search_fields())
 
-    # Filter
-    filter_fields = crud_config._resolve_filter_fields()
-    filter_class = crud_config._resolve_filter_class()
-    if filter_fields or filter_class:
-        import django_filters
+    qs, err = _apply_list_filter(request, qs, crud_config)
+    if err:
+        return err
 
-        fs_class = filter_class
-        if not fs_class:
-            fields_spec = _build_filter_fields_spec(crud_config.model, filter_fields)
-            fs_class = type(
-                "AutoFilter",
-                (django_filters.FilterSet,),
-                {
-                    "Meta": type(
-                        "Meta",
-                        (),
-                        {"model": crud_config.model, "fields": fields_spec},
-                    )
-                },
-            )
-        filterset = fs_class(request.GET, queryset=qs)
-        qs = filterset.qs
-
-    # Export
+    # Export runs on the searched + filtered set, before ordering/pagination.
     export_fmt = request.GET.get("format")
-    export_formats = crud_config._resolve_export_formats()
-    if export_fmt and export_fmt in export_formats:
+    if export_fmt and export_fmt in crud_config._resolve_export_formats():
         return _api_export(qs, crud_config, export_fmt)
 
-    # Ordering
-    ordering = request.GET.get("ordering", "").strip()
-    if ordering:
-        allowed = set(crud_config._get_list_fields()) | set(getattr(crud_config, "api_extra_fields", []))
-        qs = _apply_ordering(qs, ordering, allowed)
+    qs, err = _apply_list_ordering(request, qs, crud_config)
+    if err:
+        return err
 
-    # Aggregation (computed before pagination, on the full filtered queryset)
+    # Aggregation is computed before pagination, on the full filtered queryset.
     agg_extra, agg_err = _compute_aggregations(request, qs, crud_config)
     if agg_err:
         return agg_err
 
-    # FK expansion
     expand_fields = _resolve_expand_fields(request, crud_config)
     if expand_fields:
         qs = _apply_select_related(qs, crud_config.model, expand_fields)
 
-    # Paginate
     items, page_meta = _paginate(request, qs, page_size=crud_config._resolve_paginate_by() or _DEFAULT_PAGE_SIZE)
-
     fields = crud_config._get_list_fields()
     results: list[dict] = [_serialize(obj, fields, crud_config.api_extra_fields, expand_fields) for obj in items]
 
-    response_data: dict = {**page_meta, "results": results}
-    # Merge aggregation data into response (counts, sum_*, avg_*, etc.)
-    response_data.update(agg_extra)
-
-    return JsonResponse(response_data)
+    # agg_extra (sum_*, avg_*, count_by, …) merges last, matching the prior .update() order.
+    return JsonResponse({**page_meta, "results": results, **agg_extra})
 
 
 def _api_create(request, crud_config):
@@ -905,6 +1010,7 @@ def _api_create(request, crud_config):
     if form.is_valid():
         obj = form.save()
         crud_config.on_form_valid(request, form, obj, is_create=True)
+        log_write(request.user, obj, ADDITION, "REST API")
         expand_fields = _resolve_expand_fields(request, crud_config)
         fields = crud_config._get_detail_fields() or crud_config.fields
         return JsonResponse(
@@ -947,6 +1053,7 @@ def _api_update(request, obj, crud_config):
     if form.is_valid():
         obj = form.save()
         crud_config.on_form_valid(request, form, obj, is_create=False)
+        log_write(request.user, obj, CHANGE, "REST API")
         expand_fields = _resolve_expand_fields(request, crud_config)
         fields = crud_config._get_detail_fields() or crud_config.fields
         return JsonResponse(_serialize(obj, fields, crud_config.api_extra_fields, expand_fields))
@@ -1017,10 +1124,9 @@ def _make_api_bulk_delete_view(crud_config):
         if perm_err:
             return perm_err
 
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return _error("Invalid JSON", 400)
+        body, err = _load_json_body(request)
+        if err:
+            return err
 
         ids = body.get("ids", [])
         if not ids or not isinstance(ids, list):
@@ -1045,6 +1151,7 @@ def _make_api_bulk_delete_view(crud_config):
                 errors[str(pk)] = "Permission denied"
                 continue
             try:
+                log_write(request.user, obj, DELETION, "REST API (bulk)")  # before delete
                 obj.delete()
                 deleted_ids.append(pk)
             except (ProtectedError, RestrictedError) as e:
@@ -1084,10 +1191,9 @@ def _make_api_bulk_update_view(crud_config):
         if perm_err:
             return perm_err
 
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return _error("Invalid JSON", 400)
+        body, err = _load_json_body(request)
+        if err:
+            return err
 
         ids = body.get("ids", [])
         fields_data = body.get("fields", {})
@@ -1142,6 +1248,7 @@ def _make_api_bulk_update_view(crud_config):
             if form.is_valid():
                 obj = form.save()
                 crud_config.on_form_valid(request, form, obj, is_create=False)
+                log_write(request.user, obj, CHANGE, "REST API (bulk)")
                 fields = crud_config._get_detail_fields() or crud_config.fields
                 updated.append(_serialize(obj, fields, crud_config.api_extra_fields, expand_fields))
             else:
@@ -1207,10 +1314,9 @@ def api_auth_token(request: HttpRequest) -> JsonResponse:
     if request.method != "POST":
         return _error("Method not allowed", 405)
 
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return _error("Invalid JSON", 400)
+    data, err = _load_json_body(request)
+    if err:
+        return err
 
     username = data.get("username", "").strip()
     password = data.get("password", "")
@@ -1305,10 +1411,9 @@ def api_auth_register(request: HttpRequest) -> JsonResponse:
     if not getattr(settings, "SMALLSTACK_API_REGISTER_ENABLED", False):
         return _error("Registration is disabled", 403)
 
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return _error("Invalid JSON", 400)
+    data, err = _load_json_body(request)
+    if err:
+        return err
 
     username = data.get("username", "").strip()
     password = data.get("password", "")
@@ -1400,10 +1505,9 @@ def api_auth_password(request: HttpRequest) -> JsonResponse:
     if err:
         return err
 
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return _error("Invalid JSON", 400)
+    data, err = _load_json_body(request)
+    if err:
+        return err
 
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
@@ -1447,10 +1551,9 @@ def api_auth_user_password(request: HttpRequest, user_id: int) -> JsonResponse:
     if perm_err:
         return perm_err
 
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return _error("Invalid JSON", 400)
+    data, err = _load_json_body(request)
+    if err:
+        return err
 
     new_password = data.get("new_password", "")
     if not new_password:
@@ -1603,10 +1706,9 @@ def api_auth_user_detail(request: HttpRequest, user_id: int) -> JsonResponse:
         return JsonResponse(_user_json(target, extended=True))
 
     # PATCH
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return _error("Invalid JSON", 400)
+    data, err = _load_json_body(request)
+    if err:
+        return err
 
     allowed_fields = {"email", "first_name", "last_name", "is_staff", "is_active"}
     unknown = set(data.keys()) - allowed_fields
@@ -1660,11 +1762,10 @@ def api_auth_token_refresh(request: HttpRequest) -> JsonResponse:
     # Parse optional expires_hours
     expires_hours = None
     if request.body:
-        try:
-            data = json.loads(request.body)
+        # Body is optional here — ignore a malformed/non-object body rather than 400.
+        data, _ = _load_json_body(request)
+        if data:
             expires_hours = data.get("expires_hours")
-        except (json.JSONDecodeError, ValueError):
-            pass
 
     expiry_hours = _resolve_token_expiry(expires_hours)
     expires_at = timezone.now() + timedelta(hours=expiry_hours)
@@ -1719,7 +1820,7 @@ def api_openapi_schema(request: HttpRequest) -> JsonResponse:
     from .openapi import build_openapi_spec
 
     server_url = request.build_absolute_uri("/")
-    spec = build_openapi_spec(_api_registry, server_url=server_url)
+    spec = build_openapi_spec(_api_registry, server_url=server_url, custom_paths=_custom_api_registry)
     return JsonResponse(spec)
 
 

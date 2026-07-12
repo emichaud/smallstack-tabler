@@ -54,6 +54,33 @@ class TestExplorerIndex:
         assert "explorer-card" in content
 
 
+class TestExplorerClassicIndexSorting:
+    """Regression guard: the classic list table kept django-tables2-style
+    column sorting after the tables2 removal (v0.12)."""
+
+    def test_default_orders_by_model_name(self, client, staff_user):
+        client.force_login(staff_user)
+        resp = client.get(reverse("explorer-example-classic"))
+        assert resp.status_code == 200
+        names = [m.verbose_name_plural.lower() for m in resp.context["models_az"]]
+        assert names == sorted(names)
+
+    def test_ordering_by_records_desc(self, client, staff_user):
+        client.force_login(staff_user)
+        resp = client.get(reverse("explorer-example-classic"), {"ordering": "-records"})
+        counts = [m.count for m in resp.context["models_az"]]
+        assert counts == sorted(counts, reverse=True)
+        records_header = next(h for h in resp.context["list_headers"] if h["key"] == "records")
+        assert records_header["direction"] == "desc"
+
+    def test_invalid_ordering_falls_back_to_default(self, client, staff_user):
+        client.force_login(staff_user)
+        resp = client.get(reverse("explorer-example-classic"), {"ordering": "bogus"})
+        assert resp.status_code == 200
+        names = [m.verbose_name_plural.lower() for m in resp.context["models_az"]]
+        assert names == sorted(names)
+
+
 class TestExplorerModelList:
     """Tests for the model list view."""
 
@@ -495,14 +522,11 @@ class TestExplorerContextHelpers:
         assert ctx is None
 
     def test_model_info_attribute_access(self):
-        """ModelInfo supports both attribute and dict-style access."""
+        """ModelInfo exposes registered metadata via attribute access."""
         from .registry import explorer
 
         info = explorer.get_models()[0]
-        # Attribute access
         assert info.app_label is not None
-        # Dict-style access (for django-tables2 compat)
-        assert info["app_label"] == info.app_label
 
     def test_model_card_info_has_count_and_url(self, db):
         """with_counts() returns a ModelCardInfo with live data."""
@@ -917,17 +941,65 @@ class TestRelatedTabs:
         assert isinstance(list_fields, list)
 
     def test_registry_populated_by_get_urls(self, db):
-        """get_urls() registers the model in CRUDView._registry."""
+        """get_urls() registers the model in CRUDView._registry.
+
+        CRUDView._registry is class-level state. Other tests in the
+        process may have already registered a class for this model —
+        clear the entry first so we can assert what the production
+        code path does.
+        """
         from apps.heartbeat.models import MaintenanceWindow
         from apps.smallstack.crud import CRUDView
+
+        CRUDView._registry.pop(MaintenanceWindow, None)
 
         class MWCrud(CRUDView):
             model = MaintenanceWindow
             fields = ["title"]
             url_base = "test/mw"
 
+        # __init_subclass__ already populated the registry via setdefault
+        # when MWCrud was defined; get_urls() is the legacy second write.
         MWCrud.get_urls()
         assert CRUDView._registry[MaintenanceWindow] is MWCrud
+
+    def test_registry_is_first_wins(self, db):
+        """First-defined CRUDView wins; later classes don't displace it.
+
+        Regression test for the v0.11.7 audit finding: apps.explorer
+        synthesises Explorer<Model>CRUDView subclasses at AppConfig.ready()
+        time, which used to silently displace the user's CRUDView in
+        _registry, breaking mcp_doctor's orphan detector and any related-
+        tabs URL resolution that walks the registry at runtime.
+        """
+        from apps.heartbeat.models import MaintenanceWindow
+        from apps.smallstack.crud import CRUDView
+
+        CRUDView._registry.pop(MaintenanceWindow, None)
+
+        class UserMWCrud(CRUDView):
+            model = MaintenanceWindow
+            fields = ["title"]
+            url_base = "test/user-mw"
+
+        assert CRUDView._registry[MaintenanceWindow] is UserMWCrud
+
+        # Simulate what apps.explorer does at app.ready() time:
+        # synthesise a second CRUDView for the same model.
+        ExplorerMWCrud = type(
+            "ExplorerMaintenanceWindowCRUDView",
+            (CRUDView,),
+            {
+                "model": MaintenanceWindow,
+                "fields": ["title"],
+                "url_base": "test/explorer-mw",
+                "enable_mcp": False,  # Explorer's clones don't carry user flags
+            },
+        )
+        # Both __init_subclass__ and get_urls must respect first-wins.
+        ExplorerMWCrud.get_urls()
+        assert CRUDView._registry[MaintenanceWindow] is UserMWCrud
+        assert CRUDView._registry[MaintenanceWindow] is not ExplorerMWCrud
 
     def test_explorer_related_tabs_passthrough(self, db):
         """Explorer passes through explorer_related_tabs* attributes."""

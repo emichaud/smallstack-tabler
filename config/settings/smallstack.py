@@ -8,9 +8,23 @@ Infrastructure settings (INSTALLED_APPS, MIDDLEWARE, DATABASES, etc.)
 remain in base.py.
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from decouple import config
+
+try:
+    # Single source of truth: the installed distribution's version (pyproject.toml).
+    _PACKAGE_VERSION = _pkg_version("django-smallstack")
+except PackageNotFoundError:
+    # Running from source without an installed distribution — keep in sync with pyproject.toml.
+    _PACKAGE_VERSION = "0.12.4"
+
+# The version SmallStack advertises across its surfaces (OpenAPI info.version,
+# MCP initialize). Derived from the package so it never drifts; override via env
+# if you version your API contract independently of the package.
+SMALLSTACK_VERSION = config("SMALLSTACK_VERSION", default=_PACKAGE_VERSION)
 
 # Needed by BACKUP_DIR below. Same calculation as base.py — duplicated
 # here to avoid circular imports (this file is imported INTO base.py).
@@ -49,6 +63,15 @@ BRAND_SIGNUP_TERMS_NOTICE = config("BRAND_SIGNUP_TERMS_NOTICE", default=True, ca
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@example.com")
 EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
 
+# Accent colour used in HTML emails (the branded header band + buttons).
+# Emails can't use the live CSS palette, so this is a single re-brandable knob.
+# Default is the Django-palette emerald, not the old Django-admin teal.
+BRAND_EMAIL_ACCENT = config("BRAND_EMAIL_ACCENT", default="#10b981")
+
+# How long password-reset / set-password / invite links stay valid (seconds).
+# Set explicitly so the "expires in 24 hours" email copy is actually true.
+PASSWORD_RESET_TIMEOUT = config("PASSWORD_RESET_TIMEOUT", default=86400, cast=int)
+
 # ---------------------------------------------------------------------------
 # Feature Flags & UI
 # ---------------------------------------------------------------------------
@@ -59,13 +82,18 @@ SMALLSTACK_DOCS_ENABLED = config("SMALLSTACK_DOCS_ENABLED", default=True, cast=b
 # SmallStack Color Palette
 # System-wide default palette. Users can override in their profile.
 # Options: django, high-contrast, dark-blue, orange, purple
-SMALLSTACK_COLOR_PALETTE = config("SMALLSTACK_COLOR_PALETTE", default="django")
+SMALLSTACK_COLOR_PALETTE = config("SMALLSTACK_COLOR_PALETTE", default="purple")
 
 # Auth Feature Flags
 # Set to False to hide Login/Sign Up buttons from the topbar
 SMALLSTACK_LOGIN_ENABLED = config("SMALLSTACK_LOGIN_ENABLED", default=True, cast=bool)
 # Set to False to hide Sign Up and 404 the signup URL
 SMALLSTACK_SIGNUP_ENABLED = config("SMALLSTACK_SIGNUP_ENABLED", default=True, cast=bool)
+# Passwordless ("email me a code") login. When True the login page offers a
+# code-based sign-in: enter email -> 6-digit code emailed -> enter code -> in.
+SMALLSTACK_PASSWORDLESS_LOGIN = config("SMALLSTACK_PASSWORDLESS_LOGIN", default=False, cast=bool)
+# Validity window for a passwordless sign-in code, in seconds (default 10 min).
+SMALLSTACK_LOGIN_CODE_TTL = config("SMALLSTACK_LOGIN_CODE_TTL", default=600, cast=int)
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -120,6 +148,26 @@ BACKUP_DOWNLOAD_ENABLED = config("BACKUP_DOWNLOAD_ENABLED", default=True, cast=b
 # ---------------------------------------------------------------------------
 HEARTBEAT_RETENTION_DAYS = config("HEARTBEAT_RETENTION_DAYS", default=7, cast=int)
 HEARTBEAT_EXPECTED_INTERVAL = config("HEARTBEAT_EXPECTED_INTERVAL", default=60, cast=int)
+# A monitor younger than this shows a "warming up" pill instead of a not-yet-
+# representative uptime % on the status overview / public board.
+HEARTBEAT_WARMUP_MINUTES = config("HEARTBEAT_WARMUP_MINUTES", default=60, cast=int)
+
+# Master switch for the ANONYMOUS public status surface — the branded /status/
+# board, /status/json/, and the public scheduled-maintenance pages. Set False to
+# turn it off entirely (those routes return 404 and their links are hidden); the
+# staff status tooling under /smallstack/status/ (overview, dashboard, SLA,
+# per-monitor) is unaffected. Default on.
+SMALLSTACK_PUBLIC_STATUS_ENABLED = config("SMALLSTACK_PUBLIC_STATUS_ENABLED", default=True, cast=bool)
+
+# ---------------------------------------------------------------------------
+# REST API surface
+# ---------------------------------------------------------------------------
+# Master switch for the whole HTTP API: the OpenAPI schema, Swagger UI / ReDoc,
+# the API-auth + dashboard endpoints, and every per-CRUDView REST endpoint
+# (``enable_api = True`` becomes a no-op when this is off). Set False to ship with
+# no API published — the routes 404, the "API Health" nav + status monitor hide.
+# Default on.
+SMALLSTACK_API_ENABLED = config("SMALLSTACK_API_ENABLED", default=True, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Login Rate Limiting (django-axes)
@@ -129,15 +177,30 @@ AXES_COOLOFF_TIME = 0.25  # 15 minutes lockout
 AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]  # Lock per username+IP combination
 AXES_RESET_ON_SUCCESS = True  # Reset failure count after successful login
 
+# Resolve the client IP the same way everywhere (activity log + axes lockout).
+# The callable honors TRUST_PROXY_HEADERS: behind a trusted proxy it reads the
+# real client from X-Forwarded-For, otherwise it uses REMOTE_ADDR. Deployments
+# behind a proxy set TRUST_PROXY_HEADERS=true (production.py defaults it on for
+# the blessed kamal-proxy path). See apps/smallstack/client_ip.py.
+TRUST_PROXY_HEADERS = config("TRUST_PROXY_HEADERS", default=False, cast=bool)
+AXES_CLIENT_IP_CALLABLE = "apps.smallstack.client_ip.get_client_ip"
+
 # ---------------------------------------------------------------------------
 # MCP — Model Context Protocol server for AI clients
 # ---------------------------------------------------------------------------
 
+# Master switch for the whole MCP surface: the /mcp JSON-RPC endpoint, OAuth +
+# discovery routes, all tool registration (``enable_mcp = True`` becomes a no-op),
+# and the MCP nav + dashboard widget + status monitor. Set False to ship without
+# MCP — the endpoint 404s and nothing registers. Default on.
+SMALLSTACK_MCP_ENABLED = config("SMALLSTACK_MCP_ENABLED", default=True, cast=bool)
+
 # Server name advertised on `initialize` and the friendly GET banner.
 MCP_SERVER_NAME = config("MCP_SERVER_NAME", default=BRAND_NAME.lower().replace(" ", "-"))
 
-# Version string advertised on `initialize`.
-MCP_SERVER_VERSION = config("MCP_SERVER_VERSION", default="1.0.0")
+# Version string advertised on `initialize`. Defaults to the package version so
+# MCP clients see the real release, not a hardcoded number.
+MCP_SERVER_VERSION = config("MCP_SERVER_VERSION", default=SMALLSTACK_VERSION)
 
 # Base template the OAuth consent page extends. Derived projects with a
 # different theme override this in their own smallstack.py.
@@ -179,3 +242,15 @@ MCP_TOOL_MODULES: list[str] = []  # e.g. ["apps.mcp_tools.summary"]
 # circular imports — but then every app with enable_mcp=True must
 # explicitly `from . import views` in its AppConfig.ready().
 MCP_AUTODISCOVER = config("MCP_AUTODISCOVER", default=True, cast=bool)
+
+
+# ---------------------------------------------------------------------------
+# Runbook (apps.runbook) — versioned markdown documents
+# ---------------------------------------------------------------------------
+# The base template every runbook page extends. In SmallStack this is the
+# themed shell so runbook pages match the rest of the admin UI.
+RUNBOOK_BASE_TEMPLATE = config("RUNBOOK_BASE_TEMPLATE", default="smallstack/base.html")
+# Restrict the runbook UI to staff users (True) or allow any signed-in user.
+RUNBOOK_STAFF_REQUIRED = config("RUNBOOK_STAFF_REQUIRED", default=True, cast=bool)
+# Other RUNBOOK_* knobs (version/retention caps) default sensibly in
+# apps/runbook/conf.py — override here only if needed.

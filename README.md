@@ -1,105 +1,143 @@
 # Django SmallStack
 
-*A stable foundation for your next small Django app.*
+*Django that's batteries-included for the AI era.*
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue)
 ![Django 6.0](https://img.shields.io/badge/django-6.0-green)
 ![License MIT](https://img.shields.io/badge/license-MIT-brightgreen)
+![Version 0.12.4](https://img.shields.io/badge/version-0.12.4-blue)
+[![Quality A−](https://img.shields.io/badge/quality-A%E2%88%92-2ea44f)](docs/report-cards/v0.12.4.md)
+![Coverage 80%](https://img.shields.io/badge/coverage-80%25-9acd32)
+[![Security policy](https://img.shields.io/badge/security-policy-brightgreen)](SECURITY.md)
 
-> **Note:** SmallStack is pre-1.0 and changing rapidly. The API and conventions will stabilize at the 1.0.0 milestone.
+A small-footprint Django foundation for shipping **websites, API servers, MCP servers, and background-task systems** — with Explorer, CRUDView, and a model-to-API-to-MCP pipeline already wired up. SQLite-first, no external services required.
 
-SmallStack is a batteries-included Django starter for small teams, self-hosters, and container deployments. Clone it, customize it, ship it.
+> **A note on "background tasks" vs "schedulers"**: SmallStack ships a one-shot
+> background-task queue (django-tasks-db + a worker via `manage.py db_worker`).
+> **Coming soon:** a recurring `@scheduled(every="5m")` primitive (retries with
+> backoff, dead-letter handling). Until it lands, recurring jobs run as
+> management commands triggered by system cron.
 
-**SQLite is a first-class citizen.** SmallStack comes configured to run production-ready on SQLite — no database service fees, just simple reliable storage that backs up with your VPS. Need Postgres? The [docs](https://django-small-stack.space/) include setup instructions.
+📖 **Docs, guides, and examples → [www.smallstack.site](https://www.smallstack.site/)**
 
-**Build websites, API servers, or background task runners.** SmallStack includes built-in support for scheduled background tasks via Django 6's Tasks framework — no Redis or Celery required.
+> Pre-1.0 and changing rapidly. APIs and conventions will stabilize at 1.0.
 
-![Django SmallStack Homepage](apps/help/smallstack/images/smallstack-home.png)
+![Django SmallStack Homepage](apps/smallstack/docs/images/smallstack-home.png)
 
-## Theming
+## One model, three surfaces
 
-SmallStack extends Django's built-in admin theme — forms, widgets, tables, and all the standard elements — without any external CSS. It adds dark/light mode support with multiple color palettes, all driven by CSS custom properties.
+The headline pattern: a single `CRUDView` declaration produces an HTML admin page, REST endpoints, and MCP tools.
 
-**Bring your own theme.** SmallStack separates public pages from management pages. Use your own CSS framework for your app while SmallStack preserves its own theme for the included tools: Explorer, Activity, Backups, Status, Users, and Dashboard. Build your app your way, then log in to manage it with the built-in SmallStack tools when you need to.
+```python
+class TicketCRUDView(CRUDView):
+    model           = Ticket
+    actions         = [Action.LIST, Action.CREATE, Action.DETAIL, Action.UPDATE, Action.DELETE]
+    filter_fields   = ["status", "priority", "customer"]
+    url_base        = "tickets"
+    enable_api      = True     # → REST  <include-prefix>/api/tickets/
+    enable_mcp      = True     # → MCP   list_tickets, create_ticket, … (opt-in)
+    enable_explorer = True     # → HTML  /smallstack/explorer/support/ticket/
+```
 
-<p>
-  <img src="apps/help/smallstack/images/smallstack-docs.png" alt="Help System Dark Mode" width="49%">
-  <img src="apps/help/smallstack/images/smallstack-docs-light.png" alt="Help System Light Mode" width="49%">
-</p>
+Same form/queryset/permission logic, three surfaces. The REST URL is
+`<include-prefix> + SMALLSTACK_API_PREFIX (default "api/") + url_base + "/"`,
+where `<include-prefix>` is wherever your app's `urls.py` is mounted in
+`config/urls.py`. So a CRUDView in `apps/support/` included under
+`path("support/", include("apps.support.urls"))` emits the REST surface
+at `/support/api/tickets/`. CRUD MCP tools require explicit
+`enable_mcp = True` — the default install ships search-only MCP.
 
-## What's Included
+## Batteries included
 
-- **Authentication** — custom User model, login, signup, password reset
-- **User profiles** — photo, bio, timezone, display name
-- **Model Explorer** — auto-generated CRUD views for any registered model
-- **Activity tracking** — request logging with staff dashboard and auto-pruning
-- **Database backups** — on-demand + scheduled, with retention policies
-- **Background tasks** — database-backed task queue, no external services
-- **Help system** — markdown docs with search and table of contents
-- **htmx** — partial page updates with no build step, vendored locally
-- **Docker + Kamal** — production-ready container config with zero-downtime deploys
+Built-in apps that run themselves — no setup beyond `make setup`:
 
-## Quick Start
+- **Explorer** — universal model browser with auto-generated CRUD pages
+- **MCP server** — JSON-RPC + OAuth + PKCE at `/mcp`. Claude Desktop and Connectors UI work without setup
+- **API server** — Bearer-auth REST + OpenAPI 3.0.3 + Swagger UI + ReDoc, emitted from CRUDViews
+- **API admin** — `/smallstack/api/` health checks + threat panel (auth bursts, scanner UAs, path scanning)
+- **MCP admin** — `/smallstack/mcp/` health + tools + activity admin pages
+- **Activity** — request logging with auto-pruning, status breakdowns
+- **API Tokens** — self-service mint / reveal-once / revoke
+- **Backups** — SQLite snapshots, optional cron schedule
+- **Status** — uptime monitoring + public status page
+- **Help & Docs** — bundled reference + AI skill files
+- **Background tasks** — DB-backed task queue, no Redis / Celery
+- **Auth + Profile** — custom User model, photo, timezone, theme preference
 
-### Prerequisites
+## Quick start
 
-- Python 3.12+
-- [UV](https://github.com/astral-sh/uv) package manager
+**Prerequisites:** [uv](https://docs.astral.sh/uv/) and `make`. uv manages
+the Python version automatically (`>=3.12`) — no system Python required.
 
-### Setup
+```bash
+# Install uv if you don't have it:
+curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
+# Windows: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
 ```bash
 git clone https://github.com/emichaud/django-smallstack.git myapp
 cd myapp
-make setup    # install deps, migrate, create dev superuser (admin/admin)
-make run      # start dev server
+make setup    # uv sync + migrate + create dev superuser (admin/admin)
+make run      # dev server on port 8005
 ```
 
-Open http://localhost:8005 and log in with `admin` / `admin`.
+Open http://localhost:8005, log in with `admin` / `admin`.
 
-### Docker
+For Docker: `cp .env.example .env && docker compose up -d` (port 8010).
 
-```bash
-cp .env.example .env      # create env file (edit as needed)
-docker compose up -d       # build and start
-```
+## Modern dark theme
 
-Access at http://localhost:8010. Default port can be changed in `docker-compose.yml`.
+Five palettes × two themes (light/dark) — switchable from the user-menu dropdown. The modern-dark default uses near-black surfaces with vibrant Tailwind-style accents (Linear / Vercel / Anthropic console aesthetic).
 
-## Project Structure
+<p>
+  <img src="apps/smallstack/docs/images/smallstack-docs.png" alt="Help System Dark Mode" width="49%">
+  <img src="apps/smallstack/docs/images/smallstack-docs-light.png" alt="Help System Light Mode" width="49%">
+</p>
 
-```
-django-smallstack/
-├── apps/                      # Django applications
-│   ├── accounts/              # Custom user model & auth
-│   ├── smallstack/            # Theme, CRUD library, admin tools
-│   ├── profile/               # User profile management
-│   ├── help/                  # Documentation system
-│   ├── activity/              # Request tracking & dashboard
-│   ├── explorer/              # Auto-generated model CRUD
-│   └── tasks/                 # Background tasks
-├── config/
-│   └── settings/              # Split settings (base, dev, prod, test)
-├── templates/                 # HTML templates
-├── static/                    # CSS, JS, brand assets
-├── Dockerfile
-├── docker-compose.yml
-└── pyproject.toml
-```
+## Vibe coding with AI
+
+SmallStack is tuned for clone-and-build-with-an-AI workflows. When you start a session with Claude Code / Cursor / similar:
+
+- **`CLAUDE.md`** in the repo root orients the AI to the codebase and lists the read-first skills per task type
+- **`docs/skills/modern-dark-theme.md`** is the prescriptive "before building a page, read this" guide — following it produces pages that work correctly across all five palettes on the first try (the most common AI-built-page failure mode is hard-coded colors)
+- **`docs/skills/cli-tools.md`** is the task → tool decision tree — keeps the AI from hand-rolling backup scripts when `make backup` exists
+- **`docs/skills/README.md`** indexes the full skill set (40+ files covering apps, theming, MCP, API, deployment, etc.)
 
 ## Development
 
 ```bash
-make test         # run pytest with coverage
-make lint         # ruff check
-make lint-fix     # ruff check --fix
+make test          # pytest with coverage
+make lint          # ruff check
+make lint-fix      # ruff check --fix
+make api-test      # API smoke test against running server
+make mcp-test      # MCP smoke test
 ```
 
-Once running, visit `/help/` for full documentation including getting started, theming, deployment, and more.
+Visit `/help/` once running for full docs (getting started, theming, deployment, MCP setup, API patterns, and more).
 
-## Learn More
+## Quality & audits
 
-**[django-small-stack.space](https://django-small-stack.space/)**
+Every release ships with a **quality report card** — a graded scorecard (security, code quality,
+testing & coverage, docs, architecture, operability, accessibility) with the changes, findings, and
+evidence behind it. See **[docs/report-cards/](docs/report-cards/)** — latest:
+**[v0.12.4 — A−](docs/report-cards/v0.12.4.md)**.
+
+What makes it trustworthy rather than self-congratulatory:
+
+- **Independent** — cards are produced by a separate integration test harness
+  ([smallstack-testing-agent](https://github.com/emichaud/smallstack-testing-agent)), not by grading
+  ourselves. It clones a fresh copy and exercises it end-to-end.
+- **Reproducible** — the rubric, data commands, and honesty rules are public
+  ([docs/skills/report-card.md](docs/skills/report-card.md)); anyone can re-run them.
+- **Honest** — grades are evidence-backed (tests, `pip-audit`, doctors) and un-inflated; an open
+  security BLOCKER caps the whole card at F. The trajectory across releases is the point.
+
+## Learn more
+
+Full documentation, demos, examples, and the latest news live at **[www.smallstack.site](https://www.smallstack.site/)**.
+
+That's the canonical reference for setup guides, palette details, the CRUDView pipeline, MCP setup, and downstream-project patterns. The bundled `/help/` docs in your local clone are a subset; the site has the long-form material.
 
 ## License
 

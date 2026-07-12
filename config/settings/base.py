@@ -5,10 +5,28 @@ Base Django settings for smallstack project.
 import secrets
 from pathlib import Path
 
-from decouple import config
+import decouple
+from decouple import Config, RepositoryEmpty, RepositoryEnv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Scope python-decouple to *this project's* .env BEFORE anything else
+# imports from it. The default ``from decouple import config`` walks UP
+# the filesystem looking for an .env file, which silently picks up
+# parent-directory .env files in nested-project workspaces (a
+# sandbox/.env shadowing the project's own defaults was the round-2
+# audit's environmental finding). Binding to BASE_DIR / ".env" keeps
+# each project's secrets local. Environment variables still take
+# precedence — that's the decouple contract.
+#
+# We monkey-patch ``decouple.config`` so every subsequent
+# ``from decouple import config`` (in smallstack.py, development.py,
+# production.py, etc.) picks up the scoped version automatically — no
+# need to change four call sites.
+_PROJECT_ENV = BASE_DIR / ".env"
+config = Config(RepositoryEnv(str(_PROJECT_ENV)) if _PROJECT_ENV.exists() else RepositoryEmpty())
+decouple.config = config
 
 # SmallStack app-level settings (branding, feature flags, sidebar, etc.)
 # Edit config/settings/smallstack.py to customize your instance.
@@ -38,6 +56,8 @@ INSTALLED_APPS = [
     "apps.mcp",  # Model Context Protocol server for AI clients
     "apps.tokenmgr",  # User-facing UI for API token management
     "apps.api",  # API admin: /smallstack/api/ health + activity + threat panel
+    "apps.search",  # Search: FTS5/PG-FTS + per-CRUDView opt-in + MCP search tools
+    "apps.runbook",  # Runbook: versioned markdown documents (label: smallstack_runbook)
     # Django built-in apps
     "django.contrib.admin",
     "django.contrib.auth",
@@ -49,7 +69,6 @@ INSTALLED_APPS = [
     "apps.explorer",
     # Third-party apps
     "django_extensions",
-    "django_tables2",
     "django_tasks_db",
     "django_filters",
     "corsheaders",
@@ -71,6 +90,9 @@ TASKS = {
 }
 
 MIDDLEWARE = [
+    # First: answer /health/ before Host validation so proxy/LB health checks
+    # (unpredictable container-IP Host) succeed without ALLOWED_HOSTS=*.
+    "apps.smallstack.middleware.HealthCheckMiddleware",
     "apps.smallstack.middleware.RequestIDMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -103,6 +125,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.smallstack.context_processors.branding",
+                "apps.runbook.context_processors.runbook_settings",
             ],
         },
     },
@@ -115,7 +138,11 @@ AUTH_USER_MODEL = "accounts.User"
 
 # Authentication backends (axes must be first for rate limiting)
 AUTHENTICATION_BACKENDS = [
+    # Axes must stay first so brute-force protection wraps every attempt.
     "axes.backends.AxesStandaloneBackend",
+    # Allow signing in with username OR email. Remove this line to require
+    # username-only login.
+    "apps.accounts.backends.EmailOrUsernameBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 
@@ -197,6 +224,10 @@ CONTENT_SECURITY_POLICY = {
         "connect-src": ["'self'"],
         "frame-ancestors": ["'none'"],
         "form-action": ["'self'"],
+        # Strict directives that cost nothing here (no inline-script trade-off):
+        # block <base> tag hijacking and <object>/<embed> plugin injection.
+        "base-uri": ["'self'"],
+        "object-src": ["'none'"],
     }
 }
 

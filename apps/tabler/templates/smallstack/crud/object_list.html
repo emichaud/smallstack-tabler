@@ -13,37 +13,6 @@
 
 {% block extra_css %}
 {% include "smallstack/crud/_table_styles.html" %}
-{% if use_tables2 %}
-<style>
-    /* django-tables2 sort indicators */
-    .crud-table thead th a { color: var(--tblr-secondary); text-decoration: none; }
-    .crud-table thead th a:hover { color: var(--tblr-primary); }
-    .crud-table thead th.asc a::after { content: " \25B2"; font-size: 0.65rem; }
-    .crud-table thead th.desc a::after { content: " \25BC"; font-size: 0.65rem; }
-    /* django-tables2 pagination */
-    .table-container .pagination {
-        display: flex; justify-content: center; gap: 0.25rem;
-        list-style: none; padding: 1rem 0 0; margin: 0;
-    }
-    .table-container .pagination li {
-        list-style: none;
-    }
-    .table-container .pagination li a {
-        display: inline-block; padding: 0.3rem 0.75rem;
-        border-radius: var(--tblr-border-radius); color: var(--tblr-secondary);
-        text-decoration: none; font-size: 0.85rem;
-    }
-    .table-container .pagination li a:hover {
-        color: var(--tblr-primary);
-        background: rgba(var(--tblr-primary-rgb), 0.10);
-        text-decoration: none;
-    }
-    .table-container .pagination li.active a {
-        background: var(--tblr-primary); color: #fff;
-        text-decoration: none;
-    }
-</style>
-{% endif %}
 {% endblock %}
 
 {% block page_header %}
@@ -97,9 +66,6 @@
             <div id="crud-display-area">
                 {% include display_template %}
             </div>
-        {% elif use_tables2 %}
-            {% load django_tables2 %}
-            {% render_table table %}
         {% elif object_list %}
             {% crud_table %}
         {% else %}
@@ -111,7 +77,7 @@
             </p>
         {% endif %}
 
-        {% if not use_tables2 and not display_template and is_paginated %}
+        {% if not display_template and is_paginated %}
         {% render_paginator page_obj "#crud-content" %}
         {% endif %}
     </div>

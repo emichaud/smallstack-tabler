@@ -1124,24 +1124,32 @@ ul.pagination li.active span {
     letter-spacing: 0.02em;
 }
 
+/* Tinted-badge recipe: mix the semantic color into --card-bg (the surface
+   the badge sits on — tables/cards), never --body-bg. See the modern-dark
+   theme skill. Emit these via the {% status_badge %} tag in theme_tags. */
 .badge-success {
-    background: color-mix(in srgb, var(--success-fg, #22863a) 15%, var(--body-bg));
+    background: color-mix(in srgb, var(--success-fg, #22863a) 15%, var(--card-bg));
     color: var(--success-fg, #22863a);
 }
 
 .badge-warning {
-    background: color-mix(in srgb, var(--warning-fg, #b08800) 15%, var(--body-bg));
+    background: color-mix(in srgb, var(--warning-fg, #b08800) 18%, var(--card-bg));
     color: var(--warning-fg, #b08800);
 }
 
 .badge-error {
-    background: color-mix(in srgb, var(--error-fg, #dc3545) 15%, var(--body-bg));
+    background: color-mix(in srgb, var(--error-fg, #dc3545) 15%, var(--card-bg));
     color: var(--error-fg, #dc3545);
 }
 
 .badge-info {
-    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    background: color-mix(in srgb, var(--primary) 15%, var(--card-bg));
     color: var(--primary);
+}
+
+.badge-neutral {
+    background: color-mix(in srgb, var(--body-fg) 8%, var(--card-bg));
+    color: var(--body-quiet-color);
 }
 
 
@@ -1193,28 +1201,69 @@ ul.pagination li.active span {
     margin-bottom: 1.5rem;
 }
 
+/* Editorial spec-card silhouette at metric scale: hairline + accent stripe,
+   left-aligned, big number on top, mono uppercase label below. */
 .stat-card {
     flex: 1;
-    min-width: 120px;
-    padding: 1rem;
-    text-align: center;
-    border: 1px solid color-mix(in srgb, var(--primary) 15%, var(--body-bg));
-    border-radius: var(--radius-md, 8px);
-    background: color-mix(in srgb, var(--primary) 4%, var(--body-bg));
+    min-width: 140px;
+    padding: 0.9rem 1.1rem 1rem 1rem;
+    text-align: left;
+    background: var(--card-bg);
+    border: 1px solid color-mix(in srgb, var(--body-fg) 9%, transparent);
+    border-left: 3px solid var(--primary);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
 
 .stat-card-value {
-    font-size: 1.5rem;
+    font-size: 1.85rem;
     font-weight: 700;
+    line-height: 1.05;
     color: var(--primary);
+    font-feature-settings: "tnum", "lnum";
+    letter-spacing: -0.015em;
+}
+
+/* Trailing unit (e.g. "ms") after a stat value — subordinate to the number. */
+.stat-card-unit {
+    font-size: 0.55em;
+    color: var(--body-quiet-color);
+    margin-left: 2px;
 }
 
 .stat-card-label {
-    font-size: 0.75rem;
+    font-family: var(--font-monospace);
+    font-size: 0.68rem;
     color: var(--body-quiet-color);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
-    margin-top: 0.25rem;
+    letter-spacing: 0.18em;
+    margin-top: 0;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+/* Semantic accent modifiers — drive BOTH the left stripe and the value
+   color from STATE, replacing scattered inline border-left-color / color
+   overrides across the admin apps. Use --muted for a zero / neutral metric. */
+.stat-card--success { border-left-color: var(--success-fg); }
+.stat-card--success .stat-card-value { color: var(--success-fg); }
+.stat-card--warning { border-left-color: var(--warning-fg); }
+.stat-card--warning .stat-card-value { color: var(--warning-fg); }
+.stat-card--danger { border-left-color: var(--error-fg); }
+.stat-card--danger .stat-card-value { color: var(--error-fg); }
+.stat-card--muted { border-left-color: color-mix(in srgb, var(--body-fg) 20%, transparent); }
+.stat-card--muted .stat-card-value { color: var(--body-quiet-color); }
+
+/* Clickable variant: cursor + lift so interactive tiles read as interactive
+   and static ones don't. (Base .stat-card-clickable cursor lives in theme.css.) */
+.stat-card.stat-card-clickable { cursor: pointer; }
+.stat-card.stat-card-clickable:hover {
+    border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+    background: color-mix(in srgb, var(--primary) 4%, var(--card-bg));
+    transform: translateY(-1px);
 }
 
 
@@ -1300,6 +1349,36 @@ a.btn-outline:visited {
     text-decoration: none;
 }
 
+/* Tinted accent button — primary-coloured text on a soft primary-mix
+   background. Used in page-header CTAs where .btn-primary is too loud
+   and .btn-outline reads too quiet. Replaces a handful of hand-rolled
+   inline-styled <a>s across the admin. */
+.btn-tint,
+a.btn-tint:link,
+a.btn-tint:visited {
+    background: color-mix(in srgb, var(--primary) 20%, var(--body-bg));
+    color: var(--primary);
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    display: inline-block;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-tint:hover,
+.btn-tint:focus-visible {
+    background: color-mix(in srgb, var(--primary) 35%, var(--body-bg));
+    color: var(--primary);
+    text-decoration: none;
+    outline: none;
+}
+
 .btn-danger,
 a.btn-danger:link,
 a.btn-danger:visited {
@@ -1366,12 +1445,20 @@ a.btn-secondary:visited {
     background: var(--card-bg, var(--body-bg));
     min-width: 160px;
     cursor: pointer;
+    text-decoration: none;
+    color: inherit;
     transition: border-color 0.15s, background 0.15s;
+    display: inline-block;
 }
 
-.action-card:hover {
+/* :hover for mouse, :focus-visible for keyboard. Together they give the
+   same affordance to both interaction modes — was missing on the inline-
+   onmouseover pattern this class replaced. */
+.action-card:hover,
+.action-card:focus-visible {
     border-color: var(--primary);
     background: color-mix(in srgb, var(--primary) 8%, var(--card-bg, var(--body-bg)));
+    outline: none;
 }
 
 .action-card-body {
@@ -1404,9 +1491,11 @@ a.btn-secondary:visited {
     border-color: color-mix(in srgb, var(--success-fg) 40%, transparent);
 }
 
-.action-card-success:hover {
+.action-card-success:hover,
+.action-card-success:focus-visible {
     border-color: var(--success-fg);
     background: color-mix(in srgb, var(--success-fg) 6%, var(--card-bg, var(--body-bg)));
+    outline: none;
 }
 
 .action-card-success .action-card-icon { fill: var(--success-fg); }
@@ -1416,13 +1505,120 @@ a.btn-secondary:visited {
     border-color: color-mix(in srgb, var(--delete-button-bg, #dc3545) 40%, transparent);
 }
 
-.action-card-danger:hover {
+.action-card-danger:hover,
+.action-card-danger:focus-visible {
     border-color: var(--delete-button-bg, #dc3545);
     background: color-mix(in srgb, var(--delete-button-bg, #dc3545) 6%, var(--card-bg, var(--body-bg)));
+    outline: none;
 }
 
 .action-card-danger .action-card-icon { fill: var(--delete-button-bg, #dc3545); }
 .action-card-danger .action-card-title { color: var(--delete-button-bg, #dc3545); }
+
+/* --------------------------------------------------------------------------
+   Empty state — used wherever a list/grid/widget surface has nothing to
+   show yet. Reaches parity with the search-page no-results state across
+   the dashboard, list views, and MCP/API tools tables.
+   Renders via smallstack/includes/empty_state.html.
+   -------------------------------------------------------------------------- */
+
+.empty-state {
+    /* When no_card=False the parent template wraps in .card; we just add
+       the inner padding + presentation. */
+    text-align: center;
+}
+
+.empty-state-body {
+    padding: 2.5rem 1.5rem;
+    max-width: 540px;
+    margin: 0 auto;
+}
+
+.empty-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 1rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--primary) 12%, var(--card-bg, var(--body-bg)));
+    color: var(--primary);
+}
+
+.empty-state-icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+.empty-state-title {
+    font-family: var(--font-monospace);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--body-fg);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state-message {
+    color: var(--body-quiet-color);
+    font-size: 0.92rem;
+    line-height: 1.55;
+    margin: 0 0 1.25rem;
+}
+
+.empty-state-message code {
+    font-family: var(--font-monospace);
+    background: color-mix(in srgb, var(--body-fg) 7%, var(--card-bg, var(--body-bg)));
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--body-fg);
+}
+
+.empty-state-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.empty-state-cta {
+    display: inline-block;
+    padding: 0.55rem 1.1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    background: color-mix(in srgb, var(--primary) 16%, var(--card-bg, var(--body-bg)));
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.empty-state-cta:hover,
+.empty-state-cta:focus-visible {
+    background: var(--primary);
+    color: var(--button-fg, #fff);
+    border-color: var(--primary);
+    outline: none;
+}
+
+.empty-state-secondary {
+    font-size: 0.85rem;
+    color: var(--body-quiet-color);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--body-quiet-color) 25%, transparent);
+}
+
+.empty-state-secondary:hover,
+.empty-state-secondary:focus-visible {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    outline: none;
+}
 
 /* Non-clickable status variant */
 .action-card-static {
@@ -2467,6 +2663,8 @@ a.btn-secondary:visited {
     gap: 1rem;
 }
 
+/* Editorial spec-card silhouette: hairline border + 3px accent stripe.
+   Drops the heavy filled-tinted background of the old admin-card look. */
 a.dashboard-widget,
 a.dashboard-widget:link,
 a.dashboard-widget:visited,
@@ -2474,61 +2672,118 @@ a.dashboard-widget:hover,
 a.dashboard-widget:active {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    background: color-mix(in srgb, var(--primary) 6%, var(--body-bg));
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm, 6px);
-    padding: 1.25rem;
+    gap: 0.55rem;
+    background: var(--card-bg);
+    border: 1px solid color-mix(in srgb, var(--body-fg) 9%, transparent);
+    border-left: 3px solid var(--primary);
+    border-radius: 5px;
+    padding: 0.95rem 1.1rem 1rem 1.05rem;
     text-decoration: none !important;
     color: var(--body-fg) !important;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 0.18s, background 0.18s, transform 0.18s;
 }
 
 a.dashboard-widget:hover {
-    border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 12%, var(--body-bg));
+    border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+    border-left-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 4%, var(--card-bg));
+    transform: translateY(-1px);
 }
 
 .dashboard-widget .widget-header {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.55rem;
 }
 
+/* Icon now renders as a clean glyph in --primary — no tinted box chrome. */
 .dashboard-widget .widget-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    width: 22px;
+    height: 22px;
+    border-radius: 0;
+    background: transparent;
     color: var(--primary);
     flex-shrink: 0;
 }
+.dashboard-widget .widget-icon svg {
+    width: 20px;
+    height: 20px;
+}
 
 .dashboard-widget .widget-title {
-    font-size: 0.85rem;
-    font-weight: 600;
+    font-family: var(--font-monospace);
+    font-size: 0.68rem;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.18em;
     color: var(--body-quiet-color);
 }
 
 .dashboard-widget .widget-headline {
-    font-size: 1.25rem;
+    font-size: 1.4rem;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-feature-settings: "tnum", "lnum";
 }
 
 .dashboard-widget .widget-detail {
-    font-size: 0.85rem;
+    font-family: var(--font-monospace);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
     color: var(--body-quiet-color);
+    line-height: 1.45;
 }
 
 .dashboard-widget.widget-status-operational .widget-headline { color: var(--success-fg); }
-.dashboard-widget.widget-status-degraded .widget-headline { color: var(--warning-fg); }
-.dashboard-widget.widget-status-down .widget-headline { color: var(--error-fg); }
+.dashboard-widget.widget-status-degraded    .widget-headline { color: var(--warning-fg); }
+.dashboard-widget.widget-status-down        .widget-headline { color: var(--error-fg); }
+
+a.dashboard-widget.widget-status-operational { border-left-color: var(--success-fg); }
+a.dashboard-widget.widget-status-degraded    { border-left-color: var(--warning-fg); }
+a.dashboard-widget.widget-status-down        { border-left-color: var(--error-fg); }
 
 .dashboard-widget-span-2 { grid-column: span 2; }
 .dashboard-widget-span-3 { grid-column: span 3; }
+
+/* --------------------------------------------------------------------------
+   Small interactive utilities — replace inline onmouseover handlers
+   sprinkled through templates. Both expose :focus-visible parallels for
+   keyboard accessibility, which the inline-JS versions skipped.
+   -------------------------------------------------------------------------- */
+
+/* A subdued icon link that lights up to primary on hover/focus.
+   Used for the download / detail icons in tables (backup history,
+   backup files, etc.). */
+.icon-link {
+    color: var(--body-quiet-color);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.icon-link:hover,
+.icon-link:focus-visible {
+    color: var(--primary);
+    outline: none;
+}
+
+/* A text link that underlines on hover/focus. Useful when the default
+   theme's plain colour-only hover isn't strong enough — record-id links
+   in dense tables, breadcrumb middles, etc. */
+.link-underline-hover,
+.link-underline-hover:link,
+.link-underline-hover:visited {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+.link-underline-hover:hover,
+.link-underline-hover:focus-visible {
+    text-decoration: underline;
+    outline: none;
+}

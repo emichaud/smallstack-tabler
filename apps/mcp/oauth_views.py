@@ -118,6 +118,40 @@ def register(request: HttpRequest) -> JsonResponse:
 # ---------------------------------------------------------------------------
 
 
+def _is_safe_redirect_uri(redirect_uri: str) -> bool:
+    """Guard against authorization-code interception via a poisoned
+    ``redirect_uri`` (open redirect).
+
+    Per RFC 8252: allow ``https`` for any host; allow ``http`` only for
+    loopback (native/desktop clients); reject every other scheme
+    (``javascript:``, ``data:``, ``file:``, custom) and non-loopback ``http``.
+    DCR is stateless, so we can't exact-match a registered URI — this check,
+    plus showing the destination host on the consent page, is the defense.
+    (Audit H1.)
+    """
+    try:
+        parsed = urlparse(redirect_uri)
+    except ValueError:
+        return False
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme == "http":
+        return (parsed.hostname or "").lower() in ("127.0.0.1", "::1", "localhost")
+    return False
+
+
+def _invalid_redirect_response() -> JsonResponse:
+    return JsonResponse(
+        {
+            "error": "invalid_request",
+            "error_description": "redirect_uri must be https, or http on a loopback host",
+        },
+        status=400,
+    )
+
+
 def _add_csp_for_redirect(resp: HttpResponse, redirect_uri: str) -> HttpResponse:
     """Allow the post-Authorize form to navigate to `redirect_uri` origin."""
     parsed = urlparse(redirect_uri)
@@ -176,10 +210,15 @@ class AuthorizeView(View):
                 {"error": "invalid_request", "error_description": "S256 required"},
                 status=400,
             )
+        if not _is_safe_redirect_uri(redirect_uri):
+            return _invalid_redirect_response()
 
         ctx = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
+            # Shown prominently on the consent page so the user can see where
+            # the authorization code will be sent and detect a poisoned URI.
+            "redirect_host": urlparse(redirect_uri).netloc,
             "code_challenge": code_challenge,
             "code_challenge_method": code_challenge_method,
             "state": state,
@@ -204,6 +243,11 @@ class AuthorizeView(View):
         scope = post.get("scope", "read")
         decision = post.get("decision", "deny")
 
+        # Never 302 to an unvalidated redirect_uri — not even the deny path.
+        # (Audit H1.)
+        if not _is_safe_redirect_uri(redirect_uri):
+            return _invalid_redirect_response()
+
         if decision != "allow":
             qs = urlencode({"error": "access_denied", "state": state})
             sep = "&" if "?" in redirect_uri else "?"
@@ -213,14 +257,18 @@ class AuthorizeView(View):
             )
             return redirect(f"{redirect_uri}{sep}{qs}")
 
-        # Mint APIToken (access_level depends on requested scope)
+        # Mint APIToken. Cap access_level by the user's role — mirror
+        # tokenmgr's clean_access_level so OAuth can't hand a non-staff user a
+        # staff-tier token just because they asked for write scope. Non-staff
+        # users get read-only (consistent with the self-service token UI). (Audit M1.)
         prefix = getattr(settings, "MCP_TOKEN_NAME_PREFIX", "MCP")
-        access_level = "staff" if "write" in scope.split() else "readonly"
+        wants_write = "write" in scope.split()
+        access_level = "staff" if (wants_write and request.user.is_staff) else "readonly"
         token, raw_key = APIToken.create_token(
             user=request.user,
             name=f"{prefix} — {client_id}",
             description=f"Auto-minted via OAuth (scope={scope})",
-            token_type="manual",
+            token_type="oauth",  # distinguish from human-minted; round-2 §4.7
             access_level=access_level,
         )
 
@@ -280,6 +328,16 @@ def token(request: HttpRequest) -> JsonResponse:
         logger.warning("OAUTH TOKEN reject reason=unknown_code client_id=%s", client_id)
         return JsonResponse({"error": "invalid_grant", "error_description": "Unknown code"}, status=400)
 
+    # If the client sends redirect_uri at /token (RFC 6749 §4.1.3), it must
+    # match the one bound to the code at /authorize. Defense in depth against
+    # code interception. Omitted is tolerated for client compatibility. (Audit H1.)
+    req_redirect = request.POST.get("redirect_uri", "")
+    if req_redirect and req_redirect != row.redirect_uri:
+        logger.warning("OAUTH TOKEN reject reason=redirect_uri_mismatch client_id=%s", client_id)
+        return JsonResponse(
+            {"error": "invalid_grant", "error_description": "redirect_uri mismatch"}, status=400
+        )
+
     if row.used_at is not None:
         logger.warning("OAUTH TOKEN reject reason=code_reused client_id=%s", client_id)
         return JsonResponse(
@@ -301,15 +359,23 @@ def token(request: HttpRequest) -> JsonResponse:
         )
 
     raw_key = row.raw_key
+
+    # One-shot: atomically claim the code. A single conditional UPDATE
+    # (WHERE used_at IS NULL) is the source of truth, so two concurrent
+    # redemptions can't both pass the check-then-act window above — exactly one
+    # wins and the loser gets invalid_grant (RFC 6749 §4.1.2). (Audit M2.)
+    claimed = OAuthAuthorizationCode.objects.filter(
+        pk=row.pk, used_at__isnull=True
+    ).update(used_at=timezone.now(), raw_key="")
+    if not claimed:
+        logger.warning("OAUTH TOKEN reject reason=code_reused_race client_id=%s", client_id)
+        return JsonResponse(
+            {"error": "invalid_grant", "error_description": "Code already used"}, status=400
+        )
     if not raw_key:
         return JsonResponse(
             {"error": "invalid_grant", "error_description": "Key already revealed"}, status=400
         )
-
-    # One-shot: mark used, wipe the raw key.
-    row.used_at = timezone.now()
-    row.raw_key = ""
-    row.save(update_fields=["used_at", "raw_key"])
 
     logger.info(
         "OAUTH TOKEN issued user_pk=%s token_pk=%s scope=%s",

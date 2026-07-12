@@ -5,6 +5,8 @@ description: Zero-downtime VPS deployment for small teams
 
 # Kamal Deployment
 
+> **Building this?** Read the agent-facing skill first: [`docs/skills/kamal-deployment.md`](../../../docs/skills/kamal-deployment.md). It's prescriptive (what to do); this page is the reference (why + worked examples).
+
 Kamal is a deployment tool that makes it easy to deploy containerized applications to VPS servers with zero-downtime updates. Created by **David Heinemeier Hansson (DHH)**, the founder of Ruby on Rails, Kamal works with any Docker container—including Django applications.
 
 For more information, visit the official documentation at **[kamal-deploy.org](https://kamal-deploy.org)**.
@@ -187,8 +189,9 @@ cp .kamal/secrets.example .kamal/secrets
 Then edit `.kamal/secrets`:
 
 ```bash
-# Include your domain, www, VPS IP, and * for health checks
-ALLOWED_HOSTS=myapp.com,www.myapp.com,123.45.67.89,localhost,127.0.0.1,*
+# Include your domain, www, VPS IP, localhost. Do NOT add "*" — health checks
+# are handled by HealthCheckMiddleware before Host validation, so it's not needed.
+ALLOWED_HOSTS=myapp.com,www.myapp.com,123.45.67.89,localhost,127.0.0.1
 
 # HTTPS origins (required for CSRF protection)
 CSRF_TRUSTED_ORIGINS=https://myapp.com,https://www.myapp.com
@@ -259,7 +262,6 @@ volumes:
 env:
   clear:
     DJANGO_SETTINGS_MODULE: config.settings.production
-    DJANGO_DEBUG: "False"
   secret:
     - SECRET_KEY
     - ALLOWED_HOSTS
@@ -290,8 +292,8 @@ Environment secrets (gitignored):
 
 ```bash
 SECRET_KEY=your-secret-key-here
-# Important: Include * at the end for kamal-proxy health checks
-ALLOWED_HOSTS=myapp.com,www.myapp.com,123.45.67.89,localhost,127.0.0.1,*
+# Do NOT add "*" — kamal-proxy health checks are handled before Host validation.
+ALLOWED_HOSTS=myapp.com,www.myapp.com,123.45.67.89,localhost,127.0.0.1
 CSRF_TRUSTED_ORIGINS=https://myapp.com,https://www.myapp.com
 ```
 

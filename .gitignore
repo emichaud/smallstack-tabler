@@ -21,6 +21,10 @@ wheels/
 # Django
 *.sqlite3
 db.sqlite3
+# SQLite WAL-mode sidecar files (created when journal_mode=WAL)
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
 staticfiles/
 media/
 backups/
@@ -51,3 +55,6 @@ htmlcov/
 # uv.lock is tracked for reproducible Docker builds
 _tabler_source/
 localhost*.png
+
+# Persisted dev SECRET_KEY (config/settings/development.py)
+.secret_key

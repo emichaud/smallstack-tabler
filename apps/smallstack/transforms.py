@@ -30,9 +30,11 @@ import json
 import re
 from typing import Any
 
+import markdown
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
+from markdown.treeprocessors import Treeprocessor
 
 # ---------------------------------------------------------------------------
 # Base class
@@ -135,13 +137,68 @@ def _render_json_preview(text: str) -> SafeString | str:
     return mark_safe(html)
 
 
-def _render_markdown_preview(text: str) -> SafeString:
-    """Render markdown to HTML, without TOC permalinks."""
-    import markdown as md_lib
+# URL schemes allowed in rendered-markdown links/images. Anything else
+# (``javascript:``, ``data:``, ``vbscript:`` …) is a stored-XSS vector.
+_ALLOWED_URL_SCHEMES = {"http", "https", "mailto", "ftp", "tel"}
+_URL_SCHEME_RE = re.compile(r"^([a-z][a-z0-9+.\-]*):", re.IGNORECASE)
 
-    renderer = md_lib.Markdown(
-        extensions=["fenced_code", "tables", "attr_list", "md_in_html"],
-    )
+
+def _is_safe_url(url: str) -> bool:
+    """Whether ``url`` is safe to keep as an ``href``/``src``.
+
+    False only when it carries a scheme outside the allowlist. Whitespace and NULs
+    are stripped before the scheme check because browsers ignore them inside a URL
+    (``java\\tscript:`` still fires). Relative URLs and fragments (no scheme) are safe.
+    """
+    if not url:
+        return True
+    cleaned = re.sub(r"[\s\x00]+", "", url)
+    match = _URL_SCHEME_RE.match(cleaned)
+    return True if not match else match.group(1).lower() in _ALLOWED_URL_SCHEMES
+
+
+class _SafeUrlTreeprocessor(Treeprocessor):
+    """Blank ``href``/``src`` values that use a disallowed URL scheme."""
+
+    def run(self, root):
+        for el in root.iter():
+            if el.tag == "a" and "href" in el.attrib and not _is_safe_url(el.attrib["href"]):
+                el.set("href", "#")
+            elif el.tag == "img" and "src" in el.attrib and not _is_safe_url(el.attrib["src"]):
+                el.set("src", "")
+        return root
+
+
+def harden_markdown_renderer(renderer: "markdown.Markdown") -> "markdown.Markdown":
+    """Neutralize the two stored-XSS vectors on a ``markdown.Markdown`` instance,
+    in place, before ``.convert()``. Use on **any** renderer that processes
+    untrusted (user- or AI-authored) content:
+
+    1. **Raw HTML** — deregister the ``html_block`` preprocessor + ``html`` inline
+       pattern, so raw ``<script>`` / ``<img onerror>`` render as escaped *text*.
+       (Python-Markdown removed ``safe_mode``; this is the version-independent
+       equivalent, and unlike pre-escaping it keeps fenced code single-escaped.)
+    2. **Dangerous URL schemes** — a tree processor blanks ``href``/``src`` values
+       using ``javascript:`` / ``data:`` / ``vbscript:`` etc.
+
+    Extensions are the caller's responsibility: do NOT enable ``md_in_html`` (raw
+    HTML) or ``attr_list`` (attribute/event-handler injection) for untrusted input.
+    """
+    renderer.preprocessors.deregister("html_block", strict=False)
+    renderer.inlinePatterns.deregister("html", strict=False)
+    renderer.treeprocessors.register(_SafeUrlTreeprocessor(renderer), "safe_urls", 5)
+    return renderer
+
+
+def _render_markdown_preview(text: str) -> SafeString:
+    """Render untrusted markdown to safe HTML for the field-preview modal.
+
+    Extensions are limited to ``fenced_code`` + ``tables`` (structural, output-only);
+    :func:`harden_markdown_renderer` strips raw HTML and dangerous URL schemes.
+    Rich untrusted markdown beyond this belongs behind a dedicated sanitizer (nh3).
+    """
+    renderer = markdown.Markdown(extensions=["fenced_code", "tables"])
+    harden_markdown_renderer(renderer)
     return mark_safe(renderer.convert(text))
 
 

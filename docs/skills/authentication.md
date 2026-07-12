@@ -324,10 +324,16 @@ class EmailOrUsernameBackend(ModelBackend):
 # config/settings/base.py
 
 AUTHENTICATION_BACKENDS = [
+    # Keep the axes backend FIRST — it ships enabled and provides brute-force
+    # lockout. Dropping it disables that protection (and can break axes).
+    "axes.backends.AxesStandaloneBackend",
     "apps.accounts.backends.EmailOrUsernameBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 ```
+
+> Also update the login template label from "Username" to "Username or email"
+> (`apps/accounts/templates/registration/login.html`) so the field invites either.
 
 ## Password Reset
 
@@ -357,10 +363,11 @@ Custom management command for development:
 uv run python manage.py create_dev_superuser
 ```
 
-Uses credentials from `.env`:
+Uses credentials from `.env` (defaults to `admin/admin` to match the
+README quick-start; override per-project if you want a different value):
 ```bash
 DEV_SUPERUSER_USERNAME=admin
-DEV_SUPERUSER_PASSWORD=change-me-for-dev
+DEV_SUPERUSER_PASSWORD=admin
 DEV_SUPERUSER_EMAIL=admin@example.com
 ```
 

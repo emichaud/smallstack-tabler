@@ -1714,6 +1714,17 @@ class TestCRUDDeleteIntegration:
         response = client.delete(url, **auth_header)
         assert response.status_code == 404
 
+    def test_delete_is_audit_logged(self, client, staff_user, heartbeats, auth_header):
+        """Audit L9: a programmatic REST delete records a LogEntry."""
+        from django.contrib.admin.models import DELETION, LogEntry
+
+        obj = heartbeats[0]
+        url = reverse("explorer-monitoring-heartbeat-api-detail", kwargs={"pk": obj.pk})
+        client.delete(url, **auth_header)
+        entry = LogEntry.objects.filter(action_flag=DELETION).latest("id")
+        assert entry.object_id == str(obj.pk)
+        assert "REST API" in entry.change_message
+
     def test_delete_requires_auth(self, client, heartbeats):
         """DELETE without auth returns 401."""
         obj = heartbeats[0]
@@ -1835,13 +1846,18 @@ class TestOrderingIntegration:
         ok_times = [r["response_time_ms"] for r in results if r["status"] == "ok"]
         assert ok_times == sorted(ok_times)
 
-    def test_ordering_invalid_field_ignored(self, client, staff_user, heartbeats, auth_header):
-        """?ordering=nonexistent falls back to default ordering."""
+    def test_ordering_invalid_field_returns_400(self, client, staff_user, heartbeats, auth_header):
+        """?ordering=nonexistent is rejected with HTTP 400 (changed in v0.11.8).
+
+        Previously the API silently fell back to default ordering for unknown
+        ordering fields; the round-2 audit (§4.5) flagged this as a
+        data-integrity surprise. The behaviour is covered in detail by
+        TestFilterAndOrderingValidation — this test exists as a regression
+        guard at the integration layer.
+        """
         url = reverse(HEARTBEAT_API_LIST)
         response = client.get(url, {"ordering": "nonexistent"}, **auth_header)
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["results"]) > 0
+        assert response.status_code == 400
 
     def test_ordering_preserved_in_next_url(self, client, staff_user, heartbeats, auth_header):
         """Pagination next URL carries ?ordering= param."""
@@ -2226,6 +2242,24 @@ class TestBulkDeleteAPI:
         )
         assert resp.status_code == 400
 
+    def test_bulk_delete_readonly_oauth_token_blocked(self, client, staff_user, db):
+        """Audit H2/H3: a read-only OAuth token (token_type='oauth') must be
+        blocked from writes exactly like a manual read-only token. Regression
+        for the bug where _check_api_permissions only enforced read-only on
+        token_type='manual', letting OAuth read-scope tokens write via REST."""
+        token, raw_key = APIToken.create_token(
+            staff_user, name="RO OAuth", token_type="oauth", access_level="readonly"
+        )
+        url = reverse(HEARTBEAT_BULK_DELETE)
+        resp = client.post(
+            url,
+            json.dumps({"ids": [1]}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {raw_key}",
+        )
+        assert resp.status_code == 403
+        assert "read-only" in resp.content.decode().lower()
+
 
 # ---------------------------------------------------------------------------
 # Bulk CRUD endpoint tests (HTML layer)
@@ -2271,3 +2305,162 @@ class TestBulkCRUDEndpoint:
         )
         # StaffRequiredMixin redirects to login
         assert resp.status_code == 302
+
+
+# ---------------------------------------------------------------------------
+# Round-2 audit §4.6: distinguish expired / revoked / invalid tokens
+# ---------------------------------------------------------------------------
+
+
+class TestTokenErrorMessages:
+    """Bearer auth used to return a generic ``Invalid token`` 401 for every
+    failure mode — wrong key, revoked key, expired key. v0.11.9 distinguishes
+    them so CI logs + human debuggers see the failure cause immediately."""
+
+    @pytest.fixture
+    def auth_user(self, db):
+        return User.objects.create_user(
+            username="tokerr", email="t@example.com", password="testpass"
+        )
+
+    def test_wrong_key_still_says_invalid(self, client, db):
+        """A genuinely wrong key (never matched a row) still gets 'Invalid token'."""
+        response = client.get(
+            "/api/auth/me/",
+            HTTP_AUTHORIZATION="Bearer abc_xx_not_a_real_key_at_all_definitely",
+        )
+        assert response.status_code == 401
+        msg = response.json()["errors"]["__all__"][0]
+        assert msg == "Invalid token"
+
+    def test_expired_token_says_expired_with_timestamp(self, client, auth_user):
+        """An expired token (real prefix + hash, but past expires_at)
+        gets ``Token expired at <iso8601>`` so the developer sees the deadline."""
+        from django.utils import timezone
+
+        from apps.smallstack.models import APIToken
+
+        token, raw = APIToken.create_token(
+            user=auth_user,
+            name="will-expire",
+            access_level="auth",
+        )
+        # Push expiry into the past — token is otherwise valid.
+        token.expires_at = timezone.now() - timezone.timedelta(hours=1)
+        token.save(update_fields=["expires_at"])
+
+        response = client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {raw}")
+        assert response.status_code == 401
+        msg = response.json()["errors"]["__all__"][0]
+        assert msg.startswith("Token expired at "), msg
+        # ISO-8601 timestamp follows the prefix.
+        assert "T" in msg
+        # Don't say "Invalid token" any more — that's the v0.11.8 regression.
+        assert "Invalid token" != msg
+
+    def test_revoked_token_says_revoked(self, client, auth_user):
+        """A revoked (is_active=False) token gets ``Token revoked``."""
+        from apps.smallstack.models import APIToken
+
+        token, raw = APIToken.create_token(
+            user=auth_user,
+            name="will-be-revoked",
+            access_level="auth",
+        )
+        token.revoke()  # sets is_active=False + revoked_at
+
+        response = client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {raw}")
+        assert response.status_code == 401
+        msg = response.json()["errors"]["__all__"][0]
+        assert msg == "Token revoked"
+
+
+# ---------------------------------------------------------------------------
+# Validation: invalid filter values and ordering fields return HTTP 400
+# (v0.11.8 — round-2 audit §4.5 fix)
+# ---------------------------------------------------------------------------
+
+
+class TestFilterAndOrderingValidation:
+    """The API used to silently no-op on unknown filters/ordering, returning
+    unfiltered results for typo'd parameters. Now it returns HTTP 400 so the
+    caller sees the mistake instead of acting on bad data."""
+
+    def _err_msg(self, response):
+        """Helper: extract the error message from the canonical
+        ``{"errors": {"__all__": [msg]}}`` shape used by _error()."""
+        return response.json()["errors"]["__all__"][0]
+
+    def test_unknown_ordering_field_returns_400(self, client, staff_user, heartbeats, auth_header):
+        """?ordering=nonexistent_field is rejected with 400, not silently dropped."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.get(url, {"ordering": "nonexistent_field"}, **auth_header)
+        assert response.status_code == 400
+        msg = self._err_msg(response)
+        assert "nonexistent_field" in msg
+        assert "Allowed" in msg
+
+    def test_unknown_ordering_field_mixed_with_valid_returns_400(self, client, staff_user, heartbeats, auth_header):
+        """Even one bad field in a comma list trips the gate."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.get(url, {"ordering": "timestamp,bogus"}, **auth_header)
+        assert response.status_code == 400
+        assert "bogus" in self._err_msg(response)
+
+    def test_valid_ordering_still_works(self, client, staff_user, heartbeats, auth_header):
+        """Regression guard: a real ordering field still produces an ordered list."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.get(url, {"ordering": "-timestamp"}, **auth_header)
+        assert response.status_code == 200
+        results = response.json()["results"]
+        timestamps = [r["timestamp"] for r in results]
+        assert timestamps == sorted(timestamps, reverse=True)
+
+    def test_invalid_filter_choice_returns_400(self, client, staff_user, heartbeats, auth_header):
+        """?status=garbage on a choice field (status has choices 'ok'/'fail')
+        is rejected with 400 instead of returning all rows unfiltered."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.get(url, {"status": "garbage"}, **auth_header)
+        assert response.status_code == 400
+        assert "status" in self._err_msg(response).lower()
+
+    def test_valid_filter_choice_still_works(self, client, staff_user, heartbeats, auth_header):
+        """Regression guard: ?status=ok filters correctly to only ok rows."""
+        url = reverse(HEARTBEAT_API_LIST)
+        response = client.get(url, {"status": "ok"}, **auth_header)
+        assert response.status_code == 200
+        for row in response.json()["results"]:
+            assert row["status"] == "ok"
+
+
+@pytest.mark.django_db
+class TestOrderingRobustness:
+    """A computed/non-DB column in an ordering set must degrade to no-sort, not 500.
+
+    Guards the case a downstream project hits when a display-only column (e.g.
+    ``price_display``) is mistakenly listed in ``ordering_fields`` and someone
+    hand-crafts ``?ordering=price_display``.
+    """
+
+    def test_field_is_orderable_resolution(self):
+        from apps.smallstack.crud import _field_is_orderable
+
+        qs = Heartbeat.objects.all()
+        assert _field_is_orderable(qs, "status") is True  # real field
+        assert _field_is_orderable(qs, "pk") is True  # pk alias
+        assert _field_is_orderable(qs, "price_display") is False  # computed / not a DB field
+
+    def test_computed_field_in_ordering_does_not_500(self):
+        from apps.smallstack.crud import _apply_ordering_fields
+
+        qs = Heartbeat.objects.all()
+        # "allowed" (misconfigured) but not actually orderable → dropped, no FieldError on eval.
+        result = _apply_ordering_fields(qs, "price_display", {"price_display"})
+        list(result)  # would raise FieldError before the fix
+        assert "price_display" not in str(result.query)  # the bad field was not applied
+
+    def test_real_field_still_sorts(self):
+        from apps.smallstack.crud import _apply_ordering_fields
+
+        result = _apply_ordering_fields(Heartbeat.objects.all(), "-timestamp", {"timestamp"})
+        assert "ORDER BY" in str(result.query)

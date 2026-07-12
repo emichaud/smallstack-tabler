@@ -1,40 +1,7 @@
 {% extends "tabler/base.html" %}
-{% load static theme_tags crud_tags django_tables2 %}
+{% load static theme_tags crud_tags %}
 
 {% block title %}User Manager{% endblock %}
-
-{% block extra_css %}
-<style>
-    /* django-tables2 sort indicators */
-    .table thead th.orderable a { color: var(--tblr-body-color); text-decoration: none; }
-    .table thead th.orderable a:hover { color: var(--tblr-primary); }
-    .table thead th.orderable.asc a::after { content: " \25B2"; font-size: 0.65rem; color: var(--tblr-primary); }
-    .table thead th.orderable.desc a::after { content: " \25BC"; font-size: 0.65rem; color: var(--tblr-primary); }
-    /* django-tables2 pagination */
-    ul.pagination {
-        display: flex; justify-content: center; gap: 0.25rem;
-        list-style: none !important; padding: 1rem 0 0 !important; margin: 0 !important;
-    }
-    ul.pagination li { list-style: none !important; }
-    ul.pagination li a,
-    ul.pagination li span {
-        display: inline-block; padding: 0.3rem 0.75rem;
-        border-radius: 4px; color: var(--tblr-muted, #656d77);
-        text-decoration: none; font-size: 0.85rem;
-    }
-    ul.pagination li a:hover {
-        color: var(--tblr-primary, #f59f00);
-        background: rgba(var(--tblr-primary-rgb), 0.1);
-    }
-    ul.pagination li.active a,
-    ul.pagination li.active span {
-        background: var(--tblr-primary, #f59f00); color: #1a1c23;
-    }
-    /* Clickable stat cards */
-    .stat-card-clickable { cursor: pointer; transition: border-color 0.15s; }
-    .stat-card-clickable:hover { border-color: var(--tblr-primary, #f59f00); }
-</style>
-{% endblock %}
 
 {% block breadcrumbs %}
 {% breadcrumb "Home" "website:home" %}
@@ -117,30 +84,16 @@
 </div>
 {% endif %}
 
-<div class="card">
+<div class="card" id="crud-content">
     <div class="card-header">
         <h3 class="card-title">Users</h3>
-        <div class="card-actions">
-            <form method="get" class="d-flex gap-2 align-items-center">
-                <div class="input-icon">
-                    <span class="input-icon-addon">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    </span>
-                    <input type="text" name="q" value="{{ search_query|default:'' }}"
-                           class="form-control" placeholder="Search users..."
-                           hx-get="" hx-trigger="keyup changed delay:300ms, search"
-                           hx-target="#search-results" hx-push-url="true" hx-include="this"
-                           autocomplete="off">
-                </div>
-                {% if search_query %}
-                <a href="?" class="btn btn-ghost-secondary btn-sm"
-                   hx-get="?" hx-target="#search-results" hx-push-url="true">Clear</a>
-                {% endif %}
-            </form>
-        </div>
     </div>
-    <div id="search-results">
-        {% include "usermanager/_user_table.html" %}
+    <div class="card-body">
+        {# Framework toolbar: ?q= search reuses the model's search_fields #}
+        {% include "smallstack/crud/includes/list_toolbar.html" %}
+        <div id="crud-list-content">
+            {% include "smallstack/crud/object_list_content.html" %}
+        </div>
     </div>
 </div>
 

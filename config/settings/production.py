@@ -81,6 +81,15 @@ SECURE_SSL_REDIRECT = config("SECURE_SSL_REDIRECT", default=False, cast=bool)
 SESSION_COOKIE_SECURE = config("SESSION_COOKIE_SECURE", default=True, cast=bool)
 CSRF_COOKIE_SECURE = config("CSRF_COOKIE_SECURE", default=True, cast=bool)
 
+# Trust the proxy's X-Forwarded-For for client IP resolution (activity log +
+# axes login lockout). Behind a reverse proxy REMOTE_ADDR is the proxy, so
+# every request shares one address and axes' IP-based lockout is neutered;
+# reading the real client from the header restores it. Defaults on here for the
+# blessed kamal-proxy deployment. Set TRUST_PROXY_HEADERS=false if you deploy
+# WITHOUT a trusted proxy in front, so client IPs come from the non-spoofable
+# REMOTE_ADDR. See apps/smallstack/client_ip.py.
+TRUST_PROXY_HEADERS = config("TRUST_PROXY_HEADERS", default=True, cast=bool)
+
 # Backups — store on the mounted data volume so they survive deploys
 BACKUP_DIR = config("BACKUP_DIR", default="/app/data/backups")
 

@@ -15,7 +15,7 @@
         <div class="row g-2 align-items-center">
             <div class="col">
                 <h2 class="page-title">Activity</h2>
-                <div class="text-secondary mt-1">{{ total_requests|stringformat:"," }} tracked requests, {{ max_rows|stringformat:"," }} max</div>
+                <div class="text-secondary mt-1">{{ total_requests }} tracked requests, {{ max_rows }} max</div>
             </div>
         </div>
     </div>
@@ -23,71 +23,14 @@
 {% endblock %}
 
 {% block content %}
-<!-- ── Top-level stats ──────────────────────────────────────────── -->
-<div class="row row-deck row-cards mb-3">
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm cursor-pointer"
-             hx-get="{% url 'activity:stat_detail' 'requests' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Recent Requests')">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 text-amber">{{ total_requests }}</div>
-                <div class="text-secondary small">Requests</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 text-amber">{{ avg_response_time }}<span class="fs-5">ms</span></div>
-                <div class="text-secondary small">Avg Response</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm cursor-pointer"
-             hx-get="{% url 'activity:stat_detail' '4xx' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('4xx Client Errors')">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 {% if count_4xx %}text-warning{% else %}text-amber{% endif %}">{{ count_4xx }}</div>
-                <div class="text-secondary small">4xx Errors</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm cursor-pointer"
-             hx-get="{% url 'activity:stat_detail' '5xx' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('5xx Server Errors')">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 {% if count_5xx %}text-red{% else %}text-amber{% endif %}">{{ count_5xx }}</div>
-                <div class="text-secondary small">5xx Errors</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm cursor-pointer"
-             hx-get="{% url 'activity:stat_detail' 'users' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('All Users')">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 text-amber">{{ user_count }}</div>
-                <div class="text-secondary small">Users</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-2">
-        <div class="card card-sm cursor-pointer"
-             hx-get="{% url 'activity:stat_detail' 'new_signups' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('New Users (30 Days)')">
-            <div class="card-body text-center">
-                <div class="h1 mb-0 text-amber">{{ recent_signup_count }}</div>
-                <div class="text-secondary small">New (30d)</div>
-            </div>
-        </div>
-    </div>
+<!-- ── Top-level stats ({% templatetag openblock %} stat_card {% templatetag closeblock %} standard) ── -->
+<div class="stat-cards" style="margin-bottom: 1rem;">
+    {% stat_card value=total_requests label="Requests" title="Recent Requests" detail_url="activity:stat_detail" detail_arg="requests" %}
+    {% stat_card value=avg_response_time unit="ms" label="Avg Response" %}
+    {% stat_card value=count_4xx label="4xx Errors" title="4xx Client Errors" detail_url="activity:stat_detail" detail_arg="4xx" state=count_4xx|yesno:"warning," %}
+    {% stat_card value=count_5xx label="5xx Errors" title="5xx Server Errors" detail_url="activity:stat_detail" detail_arg="5xx" state=count_5xx|yesno:"danger," %}
+    {% stat_card value=user_count label="Users" title="All Users" detail_url="activity:stat_detail" detail_arg="users" %}
+    {% stat_card value=recent_signup_count label="New (30d)" title="New Users (30 Days)" detail_url="activity:stat_detail" detail_arg="new_signups" %}
 </div>
 
 <!-- ── Two-column: Requests summary + Users summary ─────────────── -->

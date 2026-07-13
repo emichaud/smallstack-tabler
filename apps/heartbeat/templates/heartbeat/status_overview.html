@@ -8,6 +8,13 @@
     <div class="page-header-content">
         <h1>Status</h1>
         <p class="page-subtitle">{{ service_count }} service{{ service_count|pluralize }} &middot; {{ monitor_count }} monitor{{ monitor_count|pluralize }} tracked</p>
+        {% if not is_public_view %}
+        <nav style="margin-top: 0.5rem; font-size: 0.8rem;">
+            <a href="{% url 'website:home' %}" style="color: var(--body-quiet-color); text-decoration: none;">Home</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
+            <span style="color: var(--body-fg);">Status</span>
+        </nav>
+        {% endif %}
     </div>
     {% if not is_public_view %}
     <div class="page-header-actions" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">

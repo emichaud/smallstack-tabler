@@ -34,53 +34,13 @@
 {% endblock %}
 
 {% block content %}
-<!-- Dashboard stat cards -->
+<!-- Dashboard stat cards ({% templatetag openblock %} stat_card {% templatetag closeblock %} standard) -->
 {% if dashboard_stats %}
-<div class="row row-cards mb-3">
-    <div class="col-sm-6 col-lg-3">
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'manage/users-stat-detail' 'recent' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Recent Users (30 Days)')">
-            <div class="card-body text-center py-3">
-                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.recent }}</div>
-                <div class="text-secondary small">Recent (30d)</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'manage/users-stat-detail' 'total' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('All Active Users')">
-            <div class="card-body text-center py-3">
-                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.total }}</div>
-                <div class="text-secondary small">Total Users</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'manage/users-stat-detail' 'staff' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Staff Users')">
-            <div class="card-body text-center py-3">
-                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.staff }}</div>
-                <div class="text-secondary small">Staff</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card stat-card-clickable"
-             hx-get="{% url 'manage/users-stat-detail' 'timezones' %}"
-             hx-target="#stat-modal-body"
-             onclick="openStatModal('Unique Timezones')">
-            <div class="card-body text-center py-3">
-                <div class="h1 mb-0" style="color: var(--tblr-primary);">{{ dashboard_stats.unique_tz }}</div>
-                <div class="text-secondary small">Timezones</div>
-            </div>
-        </div>
-    </div>
+<div class="stat-cards" style="margin-bottom: 1rem;">
+    {% stat_card value=dashboard_stats.recent label="Recent · 30d" title="Recent Users (30 Days)" detail_url="manage/users-stat-detail" detail_arg="recent" %}
+    {% stat_card value=dashboard_stats.total label="Total Users" title="All Active Users" detail_url="manage/users-stat-detail" detail_arg="total" %}
+    {% stat_card value=dashboard_stats.staff label="Staff" title="Staff Users" detail_url="manage/users-stat-detail" detail_arg="staff" %}
+    {% stat_card value=dashboard_stats.unique_tz label="Timezones" title="Unique Timezones" detail_url="manage/users-stat-detail" detail_arg="timezones" %}
 </div>
 {% endif %}
 

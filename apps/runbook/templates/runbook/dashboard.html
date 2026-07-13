@@ -15,6 +15,8 @@
         <h1>Runbooks</h1>
         <p class="page-subtitle">{{ total_runbooks }} runbook{{ total_runbooks|pluralize }} &mdash; {{ total_docs }} document{{ total_docs|pluralize }} across {{ total_sections }} section{{ total_sections|pluralize }}</p>
         <nav style="margin-top: 0.5rem; font-size: 0.8rem;">
+            <a href="{% url 'website:home' %}" style="color: var(--body-quiet-color); text-decoration: none;">Home</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
             <span style="color: var(--body-fg);">Runbooks</span>
         </nav>
     </div>

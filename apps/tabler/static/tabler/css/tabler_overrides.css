@@ -1794,6 +1794,12 @@ a.btn-tint:visited {
 .btn-cancel,
 a.btn-cancel:link,
 a.btn-cancel:visited {
+    /* Reset the default <button> chrome — on a <button> (e.g. the runbook
+       modal Cancel) it would otherwise keep the browser's gray box + border,
+       which reads as low-contrast disabled text in dark mode. */
+    background: none;
+    border: none;
+    cursor: pointer;
     padding: 0.6rem 1.5rem;
     color: var(--tblr-muted);
     text-decoration: none;

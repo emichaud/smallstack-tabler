@@ -45,10 +45,10 @@ class RunbookConfig(AppConfig):
             '"/></svg>'
         )
         nav.register(
-            section="main",
+            section="admin",
             label="Runbook",
             url_name="runbook:dashboard",
             icon_svg=icon,
             auth_required=True,
-            order=5,
+            order=35,
         )

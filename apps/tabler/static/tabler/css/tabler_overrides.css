@@ -1109,24 +1109,30 @@ body:not(.theme-dark)[data-bs-theme-base] {
     --tblr-border-radius-xxl: 4rem;
 }
 
-/* ── SmallStack-style page header (used by mcp/admin, tokenmgr, etc.) ─
-   Upstream apps use a "bleed" header that breaks out of the page-body
-   container with a tinted background. We render it inside Tabler's
-   .container-xl so it looks intentional instead of forced edge-to-edge. */
+/* ── SmallStack "bleed" page header → normalized to Tabler-native ───────
+   Upstream apps (mcp/api/tokenmgr/search/runbook, …) render a self-contained
+   .page-header-bleed block: a tinted/bordered band with the breadcrumb below
+   the title. That read as an inconsistent "block header" next to the pages
+   with a native Tabler override (Backups/Explorer/Activity/Users), which use
+   a plain header — breadcrumb on top, title + subtitle left, actions right,
+   NO block. Strip the block and reorder so every bleed page matches the
+   native header. (These pages empty the {% block breadcrumbs %}, so the
+   breadcrumb lives in a <nav> inside .page-header-content — reorder it up.) */
 .page-header-bleed {
-    /* Neutral, subtle surface lift — matches the clean Tabler page-header on
-       the pages that have a native override (dashboard/explorer/users/
-       activity). The old primary-tinted band read as a jarring coloured
-       banner (e.g. purple on a blue accent) unlike the rest of the app. */
-    background: color-mix(in srgb, var(--tblr-body-color) 3%, var(--tblr-body-bg));
-    border: 1px solid var(--tblr-border-color);
-    border-radius: var(--tblr-border-radius);
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 1.5rem;
+    background: none;
+    border: none;
+    border-radius: 0;
+    /* The bleed lives in the full-width {% block page_header %}, but the page
+       content sits in a .container-xl. Replicate the container so the header
+       aligns with (rather than overhangs) the content below it. */
+    width: 100%;
+    margin: 0 auto 1.25rem;
+    padding: 1.25rem calc(var(--tblr-gutter-x, 1.5rem) * 0.5) 0;
 }
-
-body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
-    background: color-mix(in srgb, var(--tblr-body-color) 4%, var(--tblr-body-bg));
+@media (min-width: 1200px) {
+    .page-header-bleed {
+        max-width: 1320px;
+    }
 }
 
 .page-header-with-actions {
@@ -1137,11 +1143,23 @@ body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
     flex-wrap: wrap;
 }
 
+.page-header-bleed .page-header-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+/* breadcrumb nav → above the title (Tabler renders it first), small + muted */
+.page-header-bleed .page-header-content > nav {
+    order: -1;
+    margin: 0 0 0.35rem 0 !important;
+}
+
 .page-header-content h1 {
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: 1.4rem;
+    font-weight: 700;
     color: var(--tblr-body-color);
     margin: 0;
+    line-height: 1.2;
 }
 
 .page-header-actions {

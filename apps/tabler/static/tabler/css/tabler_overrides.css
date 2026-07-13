@@ -1114,14 +1114,19 @@ body:not(.theme-dark)[data-bs-theme-base] {
    container with a tinted background. We render it inside Tabler's
    .container-xl so it looks intentional instead of forced edge-to-edge. */
 .page-header-bleed {
-    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-body-bg));
+    /* Neutral, subtle surface lift — matches the clean Tabler page-header on
+       the pages that have a native override (dashboard/explorer/users/
+       activity). The old primary-tinted band read as a jarring coloured
+       banner (e.g. purple on a blue accent) unlike the rest of the app. */
+    background: color-mix(in srgb, var(--tblr-body-color) 3%, var(--tblr-body-bg));
+    border: 1px solid var(--tblr-border-color);
     border-radius: var(--tblr-border-radius);
     padding: 1.25rem 1.5rem;
     margin-bottom: 1.5rem;
 }
 
 body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
-    background: color-mix(in srgb, var(--tblr-primary) 12%, var(--tblr-card-bg));
+    background: color-mix(in srgb, var(--tblr-body-color) 4%, var(--tblr-body-bg));
 }
 
 .page-header-with-actions {
@@ -1150,6 +1155,74 @@ body.theme-dark .page-header-bleed, [data-bs-theme="dark"] .page-header-bleed {
     margin: 0.25rem 0 0;
     font-size: 0.9rem;
 }
+
+/* ── SmallStack action-card (page-header call-to-action buttons) ────────
+   The compact "Mint Token" / "Run Self-Test" cards in upstream page-header
+   actions. Ported from components.css — WITHOUT this .action-card-icon has
+   no size, so the SVG rendered at its natural (huge) size and the card was
+   bare blue text. */
+.action-cards {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+.action-card,
+a.action-card:link,
+a.action-card:visited {
+    display: inline-block;
+    min-width: 160px;
+    border: 2px solid color-mix(in srgb, var(--tblr-primary) 30%, transparent);
+    border-radius: var(--radius-md, 8px);
+    background: var(--tblr-card-bg);
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.action-card:hover,
+.action-card:focus-visible {
+    border-color: var(--tblr-primary);
+    background: color-mix(in srgb, var(--tblr-primary) 8%, var(--tblr-card-bg));
+    outline: none;
+}
+.action-card-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+}
+.action-card-icon {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    fill: var(--tblr-primary);
+}
+.action-card-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--tblr-primary);
+}
+.action-card-subtitle {
+    color: var(--tblr-muted);
+    font-size: 0.75rem;
+}
+.action-card-success { border-color: color-mix(in srgb, var(--success-fg) 40%, transparent); }
+.action-card-success:hover,
+.action-card-success:focus-visible {
+    border-color: var(--success-fg);
+    background: color-mix(in srgb, var(--success-fg) 6%, var(--tblr-card-bg));
+}
+.action-card-success .action-card-icon { fill: var(--success-fg); }
+.action-card-success .action-card-title { color: var(--success-fg); }
+.action-card-danger { border-color: color-mix(in srgb, var(--delete-button-bg, #dc3545) 40%, transparent); }
+.action-card-danger:hover,
+.action-card-danger:focus-visible {
+    border-color: var(--delete-button-bg, #dc3545);
+    background: color-mix(in srgb, var(--delete-button-bg, #dc3545) 6%, var(--tblr-card-bg));
+}
+.action-card-danger .action-card-icon { fill: var(--delete-button-bg, #dc3545); }
+.action-card-danger .action-card-title { color: var(--delete-button-bg, #dc3545); }
 
 /* ── SmallStack CRUD form classes (used by tokenmgr, etc.) ───────────
    These are simpler than upstream's full crud-form rules — they cover

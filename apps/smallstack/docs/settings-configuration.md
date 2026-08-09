@@ -82,8 +82,8 @@ DATABASES = {
     }
 }
 
-# Print emails to console
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Print emails to console (Django 6.1: override MAILERS, not EMAIL_BACKEND)
+MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend", "OPTIONS": {}}}
 ```
 
 **When to add settings here:**
@@ -290,6 +290,30 @@ if config("DEBUG_TOOLBAR", default=False, cast=bool):
 
 See the [Debug Toolbar](/help/smallstack/debug-toolbar/) page for full usage guide.
 
+### Webhook Settings
+
+The webhooks surface (`apps/webhooks`) is configured with these env-backed settings in
+`config/settings/smallstack.py`. See [`docs/skills/webhooks.md`](../../../docs/skills/webhooks.md)
+for the full feature.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `SMALLSTACK_WEBHOOKS_ENABLED` | `True` | Master switch — off ⇒ nothing registers, no fan-out, `/webhooks/in/<slug>/` 404s |
+| `SMALLSTACK_WEBHOOKS_OUTBOUND` | `True` | Outbound event source (the global save/delete observer) |
+| `SMALLSTACK_WEBHOOKS_INBOUND` | `True` | Inbound receiver endpoints + handler autodiscovery |
+| `SMALLSTACK_WEBHOOK_MAX_ATTEMPTS` | `5` | Delivery attempts before a delivery is marked `dead` |
+| `SMALLSTACK_WEBHOOK_TIMEOUT` | `10` | Per-request HTTP timeout (seconds) for an outbound POST |
+| `SMALLSTACK_WEBHOOK_BACKOFF` | `60,300,1800,7200,21600` | Retry backoff schedule (seconds, comma-separated; index = attempt−1) |
+| `SMALLSTACK_WEBHOOK_MAX_BACKOFF` | `21600` | **Ceiling (seconds) for any single retry wait — clamps a hostile `Retry-After` header on a 429/503 so a rate-limiter can't push a delivery weeks out** |
+| `SMALLSTACK_WEBHOOK_ORIGIN` | `""` | **This deployment's webhook origin, stamped as `X-SmallStack-Origin` and used to build the envelope's absolute `resource.url` + drive S2S loop-guard dedupe. Blank ⇒ derived from `SITE_URL` then the hostname. Set it (or `SITE_URL`) for pairing / `resource.url` to work — `webhook_doctor` WARNs when it's unresolved.** |
+| `SMALLSTACK_WEBHOOK_AUTO_DISABLE_AFTER` | `20` | Consecutive failures before an endpoint auto-disables (`0` ⇒ never) |
+| `SMALLSTACK_WEBHOOK_ALLOWLIST` | `""` | SSRF allowlist — outbound host must match one of these suffixes (empty ⇒ any public host) |
+| `SMALLSTACK_WEBHOOK_ALLOW_PRIVATE` | `False` | Allow loopback/private target IPs (dev/testing only) |
+| `SMALLSTACK_WEBHOOK_FAILURE_EMAILS` | `""` | Recipients emailed when a delivery exhausts its retries (comma-separated) |
+
+`SMALLSTACK_WEBHOOK_MAX_BACKOFF` and `SMALLSTACK_WEBHOOK_ORIGIN` were added with the webhooks
+foundation reshape; the rest are backward-compatible defaults.
+
 ---
 
 ## Selecting the Active Settings
@@ -432,22 +456,37 @@ DATABASES = {
 
 ### Email Configuration
 
-**Development (Console):**
-```python
-# development.py
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+SmallStack uses Django 6.1's **`MAILERS`** setting (the flat `EMAIL_BACKEND` /
+`EMAIL_HOST` / … *settings* were deprecated in 6.1, removed in 7.0). You still
+configure it with the **same `EMAIL_*` environment variables** — the base
+settings feed them into `MAILERS` via `config/settings/_email.py:build_mailers()`
+(console backend in dev, SMTP in production):
+
+```bash
+# .env — the interface you actually use (unchanged)
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=your-email@example.com
+EMAIL_HOST_PASSWORD=your-password
 ```
 
-**Production (SMTP):**
+The resulting setting looks like:
+
 ```python
-# production.py
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = config("EMAIL_HOST")
-EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
-EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
-EMAIL_HOST_USER = config("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
+MAILERS = {
+    "default": {
+        "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "OPTIONS": {"host": "smtp.example.com", "port": 587, "use_tls": True, ...},
+    },
+}
 ```
+
+> ⚠️ **Do not add `EMAIL_BACKEND` (or other `EMAIL_*`) as a Django *setting*.**
+> Django 6.1 raises `ImproperlyConfigured` if a deprecated `EMAIL_*` setting is
+> defined alongside `MAILERS`. Override `MAILERS` directly, or use the env vars
+> above. (`DEFAULT_FROM_EMAIL` / `SERVER_EMAIL` are unaffected.)
 
 ### Static Files
 

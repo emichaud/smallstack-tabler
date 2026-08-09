@@ -9,6 +9,382 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-08-09
+
+Two upstream bug fixes surfaced by a downstream deploy.
+
+### Fixed
+- **Docker builds install from the frozen `uv.lock`.** The `Dockerfile` copied
+  `uv.lock` but installed with `uv pip install -e .`, which re-resolves the
+  `pyproject.toml` ranges (`django>=6.1`, …) against the index at build time and
+  ignores the lock — so images could silently drift onto newer, untested
+  dependency releases (a routine deploy pulling a future Django and breaking on
+  an incompatible transitive dep, with nothing changed in the repo). Now exports
+  the frozen lock and installs that exact set, then the project with `--no-deps`.
+  Builds are reproducible (prod == local == CI) and fail loudly if `uv.lock`
+  drifts from `pyproject.toml`. Verified via an image build.
+- **`mcp_doctor` no longer false-positives on `enable_mcp = True` in strings.**
+  The unregistered-opt-in scan was a naive substring match that fired on the
+  marker inside docstrings/seed content (the runbook seed command embeds a
+  teaching example), turning `mcp_doctor` and the dashboard MCP card yellow over
+  a non-issue. It now uses AST detection — the marker counts only as a real
+  `ClassDef`-body assignment. `mcp_doctor` goes 6✓/1⚠ → 7✓/0⚠.
+
+## [0.14.0] - 2026-08-08
+
+Django 6.1 + the email `MAILERS` migration. Minor bump because the email change
+is **breaking for downstream projects that set `EMAIL_BACKEND`** in their own
+settings (see UPGRADING). Also the first published release to carry the
+accessibility foundation and the RSS/Atom feeds surface from v0.13.13.
+
+### Changed
+- **Django 6.0 → 6.1** (latest stable). `manage.py check` clean and the full
+  suite passes; every third-party dependency (axes, csp, filter, htmx,
+  tasks-db, cors-headers, debug-toolbar, extensions, whitenoise, mcp) is
+  compatible unchanged.
+- **Email migrated to Django 6.1's `MAILERS`.** The framework now ships a
+  `MAILERS` dict (assembled from the same `EMAIL_*` **environment variables**
+  via `config/settings/_email.py`) instead of the deprecated flat `EMAIL_*`
+  *settings*, and drops the deprecated `fail_silently` argument across all mail
+  calls. This clears every `RemovedInDjango70Warning`. `DEFAULT_FROM_EMAIL` /
+  `SERVER_EMAIL` and `send_mail` / `EmailMultiAlternatives` / `mail_admins` are
+  unchanged. **Breaking:** Django 6.1 raises `ImproperlyConfigured` if a
+  deprecated `EMAIL_*` setting coexists with `MAILERS` — downstream projects
+  that define `EMAIL_BACKEND` must migrate (UPGRADING.md).
+
+### Fixed
+- Accessibility WCAG 2.1 AA follow-ups across the theme, CRUD tables, and the
+  feeds surfaces (sortable headers became real `<button>`s with `aria-sort`,
+  focus and labelling polish).
+- Feeds: enforce the `SMALLSTACK_FEEDS_ENABLED` master switch on the request
+  surface, Django-6 enclosure handling, and consume-side auth headers.
+- Test suite: silenced pre-existing naive-datetime and unclosed-file
+  `ResourceWarning` noise (no behavior change).
+
+## [0.13.13] - 2026-08-08
+
+Two new surfaces — first-party RSS/Atom feeds and an accessibility foundation —
+both built as reusable, documented primitives with the "fix once in the
+framework, every project benefits" model.
+
+### Added
+- **RSS/Atom feeds (`apps.feeds`)** — a symmetric publish + consume surface,
+  mirroring the webhooks philosophy. **Publish**: ``enable_rss = True`` on a
+  CRUDView exposes it at ``/feed/<slug>.rss`` (+ ``.atom``), deriving items from
+  the existing ``search_display``/``search_subtitle``/timestamp/detail-route
+  declarations; curated feeds subclass ``Feed`` + ``register_feed``. Access is
+  gated by ``SearchAccess`` (anonymous/authenticated/staff; token via Bearer or
+  ``?token=``). The ``rss_item_extra(obj)`` seam attaches enclosures/iTunes tags
+  so media/podcast feeds are a downstream add-on, not core. **Consume**:
+  ``register_feed_source(name, url, model=, map=, dedupe=)`` + a dependency-free
+  RSS 2.0/Atom parser + a collector that runs as ``manage.py collect_feeds`` and
+  a ``@scheduled`` poll job (idempotent, deduped), landing in a bundled
+  ``CollectedItem`` model or your own. The public status page publishes an
+  incidents-plus-maintenance feed at ``/feed/status.rss`` as the reference.
+  Skill: ``docs/skills/rss.md``.
+- **Accessibility primitives** — reusable building blocks: ``.sr-only``,
+  ``.skip-link``, a global ``:focus-visible`` ring, and
+  ``window.SmallStack.trapFocus(el)`` (used by the stat modal + omnibar). Skill:
+  ``docs/skills/accessibility.md`` (primitives, rules, pre-"done" checklist),
+  wired into the read-first guides so agents build accessibly by default.
+
+### Fixed
+- **Accessibility (WCAG 2.1 AA) gaps across the theme** — keyboard focus rings
+  on form inputs (previously ``outline: none`` with no ``:focus-visible``
+  replacement, a 2.4.7 blocker); a skip-to-content link; form errors announced
+  via ``role="alert"``; ``<th scope>`` + ``aria-sort`` on CRUD tables; modal
+  ``role="dialog"``/``aria-modal``/labelled close + focus trap; and
+  ``aria-hidden`` on the decorative SVGs in the shared topbar/sidebar/user-menu.
+
+## [0.13.12] - 2026-08-08
+
+Postgres out-of-the-box hardening for search, upstreamed from a downstream
+post-mortem (search worked in dev SQLite, then broke and crawled on prod
+Postgres). SQLite masks each of these, so the fix is making the Postgres path
+good by default. All backward-compatible; verified on SQLite and a real
+Postgres 16.
+
+### Added
+- **`reindex_instances(model, objects=None)`** (`apps.search`) — reindex rows
+  written by `bulk_create` / `bulk_update` / `QuerySet.update()`, which fire no
+  signals and were otherwise left **silently un-indexed** (the most common
+  importer/data-migration footgun).
+- **Search diagnostics** — `manage.py search_diagnose [query]` and a staff page
+  at `/smallstack/search/diagnostics/` share one core: per-table health (est.
+  rows, GIN present, un-indexed backlog), app-level timing, and a live
+  `EXPLAIN` verdict (Seq Scan vs GIN Bitmap Index Scan, size-aware so it doesn't
+  cry wolf on small tables). Answers "is search fast, and if not, where's the
+  time" when you can't reach `psql`.
+- **`analyze_search_index` management command** — refreshes Postgres planner
+  stats for every searchable table (cheap, fast, safe on every deploy; wired
+  into the container entrypoint). No-op on SQLite.
+- **Help full-text search on Postgres** — both the article index (omnibar /
+  `search_help`) and the passage-level RAG index behind the `search_help_docs`
+  MCP tool now build a `tsvector`+GIN index on Postgres instead of falling back
+  to a Python scan (which returned **empty** for the RAG tool on prod).
+- **`digits_search()`** (`apps.search`) — recipe/helper for indexing opaque
+  identifiers (phone numbers, SKUs) that the `english` FTS tokenizer won't
+  match on partial/formatted input.
+
+### Changed
+- **Postgres `rebuild_search_index` is now set-based** — one
+  `UPDATE … setweight(to_tsvector(…)) || …` for views whose `search_fields` are
+  all local columns (seconds instead of O(rows) per-row UPDATEs); per-row
+  fallback retained for property/`__`-related fields. Runs `ANALYZE` afterward.
+- **GIN indexes are created `CONCURRENTLY`** on Postgres (autocommit-guarded) so
+  provisioning never locks a live table; provisioning failures are surfaced
+  rather than only logged.
+- **Search-hub row counts use the planner's `reltuples` estimate** on Postgres
+  instead of `COUNT(*)` per model (instant catalog lookup vs full scan).
+
+### Fixed
+- **Help docs were re-parsed from disk on every request.** `build_search_index()`
+  is now memoized (`@lru_cache`); on Postgres, where help search fell back to a
+  scan, this took the hot path from ~4.5 s to ~15 ms (~300×).
+- **Search results are clickable without `get_absolute_url`.** Hits fall back to
+  the registering CRUDView's `{url_base}-detail` route.
+- **Changing `search_fields` no longer breaks SQLite search.** FTS5 bakes one
+  column per field at create time; the table is now detected as drifted and
+  recreated (previously `rebuild_search_index` failed with "table … has no
+  column named …").
+- **`api_view` no longer force-parses multipart/form bodies as JSON.** File
+  uploads to custom API endpoints returned 400 "Invalid JSON" because the
+  decorator read `request.body` and demanded JSON for every write method.
+  Multipart and form-encoded content types now skip JSON parsing
+  (`request.json` is `None`; use `request.POST`/`request.FILES` as usual).
+- **Bare-button hover styling no longer outranks custom button classes.** The
+  base `button` / `input[type=submit|button]` rules put only the wrapper inside
+  `:where()`, so `button:hover` still carried (0,1,1) specificity — enough to
+  beat a downstream single-class button (0,1,0) on hover and slide the
+  `--primary-hover` background under its custom text color (low-contrast
+  accent-on-accent hovers). The entire selector now sits inside `:where()`
+  (true zero specificity, all states), matching the rule's stated intent.
+  Downstream apps that added defensive per-state `background` declarations can
+  keep or drop them; they are now redundant.
+
+## [0.13.11] - 2026-07-29
+
+### Added
+- **Datasets — bucketed grouping + drilldown** (R8, the final datasets-feedback
+  item). `series()` now accepts a **dict** dimension for bucketed grouping:
+  numeric bands (`{lo, hi}`, half-open), categorical (`{value}` / `{values}`),
+  an honest `{other: true}` complement, and **auto** top-N value buckets keyed
+  `v:<value>` (+ `other`) derived from the unnarrowed scope so keys stay stable
+  under filters. Count-only (`[{key, label, value, lo, hi}]`). A `rows(dimension=,
+  bucket=)` **drilldown** re-applies the same bucket condition, so the rows behind
+  a bucket reconcile with its count by construction. Exposed over REST (JSON
+  `buckets` / `auto` params, `bucket=` drilldown) and MCP (`buckets` array, `auto`,
+  `bucket`). The bucket grammar (`apps/datasets/buckets.py`) is lifted verbatim
+  from the downstream reporter so call_stats can swap to it.
+
+## [0.13.10] - 2026-07-29
+
+### Added
+- **Datasets hardening** (from downstream feedback):
+  - `@dataset(filterable=…)` replaces `filters=` for the *declaration* of which
+    columns may be filtered; the old `filters=` decorator kwarg is a deprecated
+    alias (warns). Runtime `rows()/series()/scalar()(filters=…)` is unchanged.
+  - Public **`ds.queryset(request, filters)`** seam so a higher layer (a BI/report
+    layer) can compose on a dataset's filtered queryset without touching internals.
+  - **Pagination**: `rows(limit, offset)` (+ `limit=None` for the whole set) and
+    `ds.count()`; the REST rows route returns an envelope `{count, total, offset,
+    results}` and CSV exports the whole filtered set.
+  - **Declared ratio measures**: `@dataset(measures=[(name, num, denom, fmt)])`
+    computes `sum(num)/sum(denom)` in-DB per group (`×100` for percent), returning
+    `None` for an empty denominator — never the average of per-row ratios. Surfaced
+    in `schema()` (`computed: true`) and the MCP tool.
+  - **Explicit date ranges**: `<col>__gte` / `<col>__lt` half-open bounds on any
+    date/datetime column, everywhere filters are accepted (explicit wins over a
+    preset); `schema()` advertises `"range": true`.
+- Datasets app **label namespaced** to `smallstack_datasets` (avoids an
+  `INSTALLED_APPS` clash with a downstream app named `datasets`).
+- Docs: naming guidance + the flat-filter invariant documented in `datasets.md`.
+
+## [0.13.9] - 2026-07-29
+
+### Added
+- **Datasets (`apps/datasets/`)** — the `@dataset` primitive: register a filtered
+  queryset as a named, typed source of rows/columns for dashboard/report/chart
+  UIs. `schema()` introspects it into dimensions/measures + filter widgets;
+  `rows()` returns tabular data (FK columns are a bare pk by default, `id`+`name`
+  on expand), `series()` aggregates a measure over a dimension (resolving FK
+  dimension labels to name), and a **scalar** mode returns a single aggregate
+  (count / sum) when no dimension is given. Opt-in REST + MCP: a `query_dataset`
+  tool (series + scalar, honoring filters) and JSON endpoints (anonymous → 401).
+  Unknown dimension/measure raise a clear `ValueError`. See `docs/skills/datasets.md`.
+- **Help RAG** — a lexical passage index over the bundled help docs plus a
+  `search_help_docs` MCP tool, so AI clients can retrieve relevant doc passages.
+
+## [0.13.8] - 2026-07-26
+
+### Added
+- **Webhooks (`apps/webhooks/`)** — outbound event delivery and inbound receivers,
+  built on the CRUDView pipeline. A model opts into **outbound** with
+  `enable_webhooks = True` (like `enable_search`); a global `post_save`/`post_delete`
+  observer fans every change — across HTML, REST, MCP, `sc`, and raw ORM — out to
+  matching `WebhookEndpoint`s as an HMAC-SHA256-signed POST, delivered through the
+  `django.tasks` queue with exponential backoff, **`Retry-After`** support,
+  auto-disable, a dead-letter state, and **bulk replay**. **Inbound**: a
+  `WebhookReceiver` + a `@webhook_handler` verify the signature (constant-time) and
+  dispatch. Ships an SSRF guard, staff-only secret reveal/rotate, a
+  `/smallstack/webhooks/` dashboard, a status monitor, `webhook_doctor`, `sc webhook`
+  ops, and MCP tools.
+- **Webhook extension seams** — four named-registry hooks (`@webhook_transform`,
+  `@webhook_auth`, `@webhook_verifier`, `@webhook_challenge`), autodiscovered from an
+  app's `webhook_*.py` and each defaulting to the built-in behavior, so a specific
+  integration (Slack payloads, Stripe/GitHub/SNS signatures, SAS/OIDC auth, Event Grid
+  validation) is a small plug-in rather than a core change. A complete **Azure Event
+  Grid** reference adapter (`apps/webhooks/contrib/eventgrid.py`) is built purely on
+  the seams with zero core edits.
+- **SmallStack↔SmallStack pairing** — `sc webhook pair` stands up a loop-safe two-way
+  link in one command (paired endpoint + receiver with per-direction secrets, a
+  `suppress_webhooks()` loop guard, and an `X-SmallStack-Origin` header so write-backs
+  can't run away). A stable `X-SmallStack-Event-Id` lets consumers dedupe across
+  retries and operator replay.
+
+## [0.13.7] - 2026-07-25
+
+### Fixed
+- **CRUD list "N Records" count** — the record count lives in the toolbar, outside
+  the `#crud-list-content` htmx swap target, so a search/filter left it showing the
+  stale pre-filter total. The list-content response now emits an out-of-band copy
+  of the count span (`hx-swap-oob`) so it refreshes alongside the list — no extra
+  request, no JS. Guarded by `request.htmx` so a full-page load (which includes the
+  partial in-page) doesn't render a duplicate. The `tokenmgr` app, which overrides
+  the generic list-content partial, gets the same out-of-band refresh.
+
+## [0.13.6] - 2026-07-21
+
+### Added
+- **Scheduler (`apps/scheduler/`)** — recurring background jobs over `django.tasks`
+  (no Celery/Redis). Ships the `@scheduled` decorator (cron / interval / once,
+  with calendar-aware intervals and anchors), DB-backed `ScheduledJob` schedules
+  with idempotent code-sync, and a `run_due_jobs` tick with an **atomic claim**
+  so concurrent triggers can't double-fire. Overlap guard (with a stale-run
+  timeout so a dead worker can't wedge a schedule), catch-up policy, and run
+  history linked to the task engine's `DBTaskResult`.
+- **Scheduler surfaces** — themed `/smallstack/scheduler/` dashboard (stat cards,
+  24h run timeline, upcoming + recent runs, per-job Run-now), a `ScheduledJob`
+  CRUDView with REST (`enable_api`) + MCP (`list_schedules` … `delete_schedule`)
+  + search, a dashboard widget, a `/status/` core monitor, and Explorer browsing.
+- **Scheduler control UI** — the jobs list gains a table⇄calendar toggle (upcoming
+  runs by next fire) plus a read-only **run-history** view with its own
+  table⇄calendar coloured by outcome. Code-owned jobs render as a **read-only
+  control page**: the definition is locked to code; operators override only the
+  schedule + enable/pause + Run-now. UI schedule overrides survive code-sync
+  (`schedule_overridden`), with a "reset to code default".
+- **Triggers** — `POST /smallstack/scheduler/tick/` (localhost-only, runs inside
+  gunicorn), `manage.py run_due_tasks`, `manage.py scheduler_beat`; plus
+  `manage.py prune_job_runs` history retention. Cron lines added to
+  `scripts/smallstack-cron`.
+- **Focus mode** on Help & Docs and Runbook now also collapses the SmallStack side
+  menu for an immersive read (non-persistent; restored on Expand). `theme.js`
+  exposes `window.smallstackSidebar` (get/set state with a persist opt-out).
+- Settings: `SMALLSTACK_SCHEDULER_ENABLED`, `_STALE_RUN_SECONDS`,
+  `_OVERDUE_GRACE_SECONDS`, `_FAILURE_EMAILS`. New dependency: `croniter`.
+- Docs: `docs/skills/scheduler.md`; `@scheduled` flipped from "coming soon" to
+  shipped in `CLAUDE.md`, `README.md`, `background-tasks.md`, `skills/README.md`.
+
+### Changed
+- **Runbook markdown** now renders with the same recipe as Help & Docs (roomier
+  18px/1.8 prose, heading rules, neutral non-accent-tinted code inset into the
+  card) — fixes the long-standing readability gap between the two surfaces.
+- **Orange palette** retuned to a warm-ground "quiet luxury" look (vivid accent,
+  warm-biased surfaces); the elegance levers are documented in `modify-palettes.md`.
+- User-menu **"Admin"** now opens the SmallStack dashboard (`/smallstack/`) rather
+  than raw Django admin (still reachable from the sidebar "Admin Panel").
+
+### Fixed
+- Scheduler hardening: timezone dev/prod parity (Linux/Docker), recompute + monitor
+  sample-floor tuning, and agent-hostile input hardening.
+
+## [0.13.5] - 2026-07-19
+
+### Fixed
+- **SQLiteFTSBackend.rebuild() deadlock** — Fixed "database is locked" error on models with >500 rows. 
+  Root cause: iterator(chunk_size=500) kept read cursor open during writes. Solution: materialize pk list, 
+  batch with explicit transactions. Approximately 50x faster; tested with 25,713+ rows.
+- **SearchBuilder.transform_hit() call convention** — Fixed silent failure where custom variants returned 
+  empty extra payload. Root cause: instance method called unbound on class (TypeError swallowed). 
+  Solution: instantiate view before calling, matching pattern elsewhere. Enhanced error logging to 
+  document contract.
+- **PostgresFTSBackend.rebuild()** — Applied same deadlock fix as SQLite (consistent batching pattern).
+
+### Documentation
+- Added fixes/DOWNSTREAM-ISSUES.md documenting both bugs, root causes, and fixes.
+- Clarified that filter_searchable_queryset and get_ranking_weights are dead code in v0.13.4; 
+  use search_weight and post-filtering instead.
+
+### Backward Compatible
+- No API changes
+- All fixes are transparent to downstream apps
+- Required for any model with >500 rows + enable_search, or custom SearchBuilder.transform_hit()
+
+
+## [0.13.4] - 2026-07-18
+
+### Added
+- **SearchBuilder — programmable search customization** (Phases 1-2, ~3,500 LOC): Optional SearchBuilder protocol 
+  enables models to define custom search variants (admin, public, api, mcp, etc.) with computed fields, custom 
+  display logic, cross-model orchestration, and automatic MCP tool generation per variant. Native dict serialization 
+  (no DRF dependency). Full type hints and comprehensive testing.
+- **Native search serialization** — 4 pure-Python dict functions (`serialize_search_hit`, `serialize_search_results`, 
+  `serialize_search_config`, `serialize_all_search_configs`) for JSON-safe output. Supports variant-specific extra fields 
+  with transparent flattening.
+- **Search introspection API** — `SearchAPI` class with 5 methods (get_config, list_variants, search, search_and_filter, 
+  get_output_schema) for high-level orchestration; `SearchOrchestrator` for multi-stage workflows and cross-model search.
+- **Search variant caching** — In-memory config cache with 1-hour TTL and cache invalidation on view registration.
+- **Per-variant MCP tools** — Auto-generated MCP tools for each search variant (search_model, search_model_summary, 
+  search_model_admin, etc.) for agent orchestration.
+
+### Fixed
+- **F1 (BLOCKER)** — Instance method call on class; fixed by instantiating view_cls before calling get_search_variants().
+- **F2 (MAJOR)** — Removed djangorestframework dependency; replaced with 4 native dict serialization functions.
+- **F4 (MAJOR)** — Guarded 3 unguarded date_joined references in search examples; added missing email field to admin variant.
+- **F5 (MAJOR)** — Fixed 252 ruff lint errors (226 W293 whitespace, 16 F401 unused imports, 9 I001 unsorted, 1 E501 line length).
+- **F6 (MAJOR)** — Replaced broken DRF serializer tests with real native serializer tests; removed false pytest.skip guards.
+- **F7 (OBSERVATION)** — Documented extra field flattening behavior and collision risk in serialize_search_hit() docstring.
+
+### Technical Details
+- All new code is fully typed (Python 3.10+ syntax: dict[str, Any], QuerySet, return types)
+- 119 integration tests covering all variants, orchestration, caching, and admin integration
+- Comprehensive documentation: RUNBOOK.md, TUTORIAL.md, ORCHESTRATION-GUIDE.md, and 2 AI skills
+- Backward compatible: all SearchBuilder methods optional; existing search works unchanged
+- No breaking changes to SearchBackend protocol or query() signature
+
+
+## [0.13.3] - 2026-07-16
+
+### Fixed
+- **Runbook dark-mode CSS** — enhanced styling now correctly scoped to app theme (`html[data-theme="dark"]`) 
+  instead of OS setting (`@media prefers-color-scheme`), ensuring enhancements apply on default dark mode 
+  regardless of OS theme setting.
+- **Seeder idempotency** — `seed_platform_runbook` command now properly assigns section before guard check, 
+  preventing `IntegrityError` crashes on re-run; added comprehensive idempotency test.
+
+## [0.13.2] - 2026-07-12
+
+### Added
+- **`sc` — a framework CLI** (`manage.py sc` / the `sc` console script): a fifth thin skin over the
+  CRUDView registry, the same operations as web/REST/MCP. Resource verbs — `ls` (registered models +
+  rows, with `-q`/`--filter`/`--order`/`--limit`), `get`, `describe`, `search`, and writes `new`/`set`/
+  `rm` through the model's `form_class` validation + `log_write` audit (staff-gated like the MCP tools).
+  Operational verbs — `doctor`/`backup`/`token`/`status`/`index` (thin fronts over the framework's
+  management commands) plus `sc commands` discovery. `--json` on every read. Explorer-synthesized views
+  mean it reaches every admin-registered model, not just hand-written CRUDViews. See
+  `docs/skills/sc-cli.md`.
+
+### Fixed
+- **Bundled JS client** (`clients/js` v0.3.1): SSR-safe `localStorage` access — the client guards
+  `localStorage` so it's safe to import in a server-side-rendering context.
+
+## [0.13.1] - 2026-07-12
+
+### Added
+- **Bundled API clients** under `clients/`: a TypeScript/JavaScript SDK (`clients/js`, with built
+  `dist/`) and a single-file Python client (`clients/python/smallstack_client.py`) for talking to the
+  REST API from external apps. See `clients/README.md`.
+
 ## [0.13.0] - 2026-07-12
 
 ### Added
@@ -150,7 +526,19 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/emichaud/django-smallstack/compare/v0.14.0...v0.14.1
+[0.14.0]: https://github.com/emichaud/django-smallstack/compare/v0.13.13...v0.14.0
+[0.13.13]: https://github.com/emichaud/django-smallstack/compare/v0.13.12...v0.13.13
+[0.13.12]: https://github.com/emichaud/django-smallstack/compare/v0.13.11...v0.13.12
+[0.13.8]: https://github.com/emichaud/django-smallstack/compare/v0.13.7...v0.13.8
+[0.13.7]: https://github.com/emichaud/django-smallstack/compare/v0.13.6...v0.13.7
+[0.13.6]: https://github.com/emichaud/django-smallstack/compare/v0.13.5...v0.13.6
+[0.13.5]: https://github.com/emichaud/django-smallstack/compare/v0.13.4...v0.13.5
+[0.13.4]: https://github.com/emichaud/django-smallstack/compare/v0.13.3...v0.13.4
+[0.13.3]: https://github.com/emichaud/django-smallstack/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/emichaud/django-smallstack/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/emichaud/django-smallstack/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/emichaud/django-smallstack/compare/v0.12.4...v0.13.0
 [0.12.4]: https://github.com/emichaud/django-smallstack/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/emichaud/django-smallstack/compare/v0.12.2...v0.12.3

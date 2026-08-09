@@ -29,7 +29,7 @@ from django.contrib import messages
 from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError
 from django.db.models import ProtectedError, QuerySet, RestrictedError
-from django.http import Http404, HttpRequest, HttpResponse, QueryDict
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect as _redirect
 from django.urls import path, reverse
 from django.views.generic import (
@@ -863,21 +863,15 @@ class _CRUDBulkActionView:
                         continue
 
                     # Build PATCH-style form: merge existing values with new fields
-                    from django.forms.models import model_to_dict
-
-                    existing = model_to_dict(obj, fields=cfg.fields or [])
-                    merged = QueryDict(mutable=True)
-                    for key, value in existing.items():
-                        if value is None:
-                            merged[key] = ""
-                        elif isinstance(value, list):
-                            merged.setlist(key, [str(v) for v in value])
-                        else:
-                            merged[key] = str(value)
-                    for key, value in fields_data.items():
-                        merged[key] = str(value) if value is not None else ""
+                    from .form_bridge import merge_form_payload
 
                     form_class = cfg.form_class or cfg._make_form_class()
+                    merged = merge_form_payload(
+                        form_class,
+                        fields_data,
+                        instance=obj,
+                        instance_fields=cfg.fields or [],
+                    )
                     form = form_class(merged, instance=obj)
                     if form.is_valid():
                         obj = form.save()
@@ -1206,6 +1200,21 @@ class CRUDView:
     # Bulk operations
     bulk_actions = []  # Opt-in: [BulkAction.DELETE, BulkAction.UPDATE]
 
+    # RSS/Atom feeds (apps.feeds). Opt-in: publish this model as a feed at
+    # /feed/<slug>.rss (+ .atom). Item fields fall back to the search
+    # declarations, so a single flag usually suffices.
+    enable_rss = False
+    rss_slug = None            # feed slug; defaults to url_base (slashes → dashes)
+    rss_title_field = None     # <item> title; defaults to search_display, else str(obj)
+    rss_description_field = None  # <item> description; defaults to search_subtitle
+    rss_date_field = None      # <pubDate> source; defaults to a detected timestamp field
+    rss_author_field = None    # optional <author>, e.g. "owner__username"
+    rss_ordering = None        # defaults to ["-<date_field>"] (else ["-pk"])
+    rss_access = None          # SearchAccess level; defaults to search_access
+    rss_limit = 50             # max items in the feed
+    rss_feed_title = None      # channel <title>; defaults to the model's plural name
+    rss_feed_description = None  # channel <description>
+
     # API
     enable_api = False  # Opt-in: generate JSON API endpoints alongside HTML views
     api_extra_fields = []  # Extra read-only fields appended to API responses (e.g. ["created_at", "updated_at"])
@@ -1255,6 +1264,18 @@ class CRUDView:
     # name pair like ("ticket", "tickets") → list_tickets + get_ticket.
     mcp_singular: str | None = None
     mcp_plural: str | None = None
+
+    # Webhook exposure — opt-in OUTBOUND eventing. When enable_webhooks=True, a
+    # create/update/delete of this model (via ANY surface — HTML/REST/MCP/sc/raw
+    # ORM) is observed by apps.webhooks.signals and fanned out to matching
+    # WebhookEndpoints as a signed HTTP POST. This is the inverse of enable_api /
+    # enable_mcp: instead of a client calling in, the app calls out on change.
+    # The payload reuses the same serialize() the REST API emits.
+    enable_webhooks = False
+    # Which lifecycle events emit. None => all three. Members are the strings
+    # "created" / "updated" / "deleted" (kept as bare strings to avoid importing
+    # webhook enums into the framework core).
+    webhook_events: list[str] | None = None
 
     # Related object tabs (reverse FK relations on detail page)
     related_tabs = None  # None=auto-discover, list=explicit accessor names, False=disabled
@@ -1525,6 +1546,16 @@ class CRUDView:
         """Return True if the user can delete this object. Override for row-level perms."""
         return True
 
+    def rss_item_extra(self, obj: Any) -> dict[str, Any]:
+        """Extra ``<item>`` fields for the RSS/Atom feed (when ``enable_rss``).
+
+        Returns a dict merged into Django ``feedgenerator.add_item`` kwargs, so
+        override it to attach an ``enclosure`` (podcasts/media), ``categories``,
+        or a computed ``author_name``. Default: nothing extra. This is the seam
+        that lets a downstream build media feeds without changing the core.
+        """
+        return {}
+
     @classmethod
     def row_actions(cls, obj, request, default_actions):
         """Per-row hook to filter the actions rendered for ``obj`` in the
@@ -1626,6 +1657,20 @@ class CRUDView:
         """Auto-generate a ModelForm with proper widgets and styling."""
         _model = cls.model
         _fields = cls.fields
+
+        # Drop non-editable model fields (auto_now / auto_now_add / AutoField pk)
+        # from the generated form. Listing one in `fields` — natural for a
+        # read-only ingest/audit column — otherwise makes the ModelForm metaclass
+        # raise FieldError, which surfaces as a 500 on /api/schema for a view that
+        # may not even expose create/update. Such fields stay available for
+        # display and `api_extra_fields`; they simply can't be form inputs.
+        if isinstance(_fields, (list, tuple)):
+            _non_editable = {
+                f.name
+                for f in _model._meta.get_fields()
+                if hasattr(f, "editable") and not f.editable
+            }
+            _fields = [f for f in _fields if f not in _non_editable]
 
         class AutoCRUDForm(forms.ModelForm):
             class Meta:

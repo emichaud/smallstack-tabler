@@ -14,11 +14,14 @@ upgrade path here; deferred to v0.12.0 unless someone hits scale.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.db.models import Q
 
 from .base import IndexedView, SearchHit
+
+logger = logging.getLogger("smallstack.search")
 
 
 class FallbackBackend:
@@ -40,7 +43,13 @@ class FallbackBackend:
         # admin can still show "N indexable rows".
         return view.model.objects.count()
 
-    def query(self, view: IndexedView, query: str, limit: int = 10) -> list[SearchHit]:
+    def query(
+        self,
+        view: IndexedView,
+        query: str,
+        limit: int = 10,
+        variant: str = "default",
+    ) -> list[SearchHit]:
         q = query.strip()
         if not q:
             return []
@@ -54,30 +63,96 @@ class FallbackBackend:
             filt |= Q(**{f"{field_name}__icontains": q})
 
         qs = view.model.objects.filter(filt).distinct()[:limit]
-        return [_make_hit(view, obj, rank=1.0) for obj in qs]
+        return [_make_hit(view, obj, rank=1.0, variant=variant) for obj in qs]
 
 
-def _make_hit(view: IndexedView, obj: Any, rank: float = 1.0, snippet: str = "") -> SearchHit:
-    """Convert a Django object to a SearchHit. Shared by all backends."""
-    display = _resolve_field(obj, view.display_field) or str(obj)
-    subtitle = _resolve_field(obj, view.subtitle_field) or ""
+def _make_hit(
+    view: IndexedView,
+    obj: Any,
+    rank: float = 1.0,
+    snippet: str = "",
+    variant: str = "default",
+) -> SearchHit:
+    """Convert a Django object to a SearchHit. Shared by all backends.
+
+    Args:
+        view: The IndexedView
+        obj: The model instance
+        rank: Relevance score
+        snippet: Text snippet around match
+        variant: Output variant name
+    """
+    # Call transform_hit if view implements SearchBuilder
+    extra: dict[str, Any] = {}
+    display_val = None
+    subtitle_val = None
+
+    if view.has_search_builder and hasattr(view.view_cls, 'transform_hit'):
+        try:
+            transformed = view.view_cls().transform_hit(obj, variant)
+            if isinstance(transformed, dict):
+                # Extract display/subtitle from transformed dict
+                display_val = transformed.pop("display", None)
+                subtitle_val = transformed.pop("subtitle", None)
+                extra = transformed  # Rest goes to extra
+        except Exception:
+            logger.exception(
+                "transform_hit failed for %s; transform_hit must be an instance method or @staticmethod",
+                view.model_label,
+            )
+
+    # Fallback to default field resolution
+    if display_val is None:
+        display_val = _resolve_field(obj, view.display_field) or str(obj)
+    if subtitle_val is None:
+        subtitle_val = _resolve_field(obj, view.subtitle_field) or ""
 
     url: str | None = None
     try:
         url = obj.get_absolute_url()
     except Exception:
         pass
+    # Many models don't define get_absolute_url, but the registering
+    # CRUDView already knows the detail destination. Fall back to it so
+    # search results are clickable out of the box for any searchable
+    # CRUDView, no model boilerplate required.
+    if not url:
+        url = _detail_url_for(view, obj)
 
     return SearchHit(
         model_label=view.model_label,
         model_verbose=view.model_verbose,
         object_id=obj.pk,
-        display=str(display)[:200],
-        subtitle=str(subtitle)[:200],
+        display=str(display_val)[:200],
+        subtitle=str(subtitle_val)[:200],
         snippet=snippet,
         url=url,
         rank=rank,
+        extra=extra,
     )
+
+
+def _detail_url_for(view: IndexedView, obj: Any) -> str | None:
+    """Best-effort detail URL from the registering CRUDView.
+
+    Mirrors the ``{url_base}-detail`` route convention used across the
+    CRUD layer (``apps.smallstack.displays._resolve_detail_url``). Returns
+    None if the view exposes no ``url_base`` or has no DETAIL route — a
+    DETAIL-less CRUDView simply yields an unclickable hit, as before.
+    """
+    from django.urls import NoReverseMatch, reverse
+
+    url_base = getattr(view.view_cls, "url_base", None)
+    if not url_base:
+        return None
+    namespace = getattr(view.view_cls, "namespace", None)
+    name = f"{url_base}-detail"
+    if namespace:
+        name = f"{namespace}:{name}"
+    try:
+        return reverse(name, kwargs={"pk": obj.pk})
+    except NoReverseMatch:
+        return None
 
 
 def _resolve_field(obj: Any, field_path: str | None) -> Any:

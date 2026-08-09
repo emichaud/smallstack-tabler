@@ -60,8 +60,14 @@ urlpatterns = [
     path("api/", include("apps.api.admin_urls")),
     # Search — global keyword search page + omnibar JSON endpoint
     path("search/", include("apps.search.urls")),
+    # Datasets — filtered querysets as typed rows/columns (opt-in REST)
+    path("datasets/", include("apps.datasets.urls")),
     # Runbook — versioned markdown documents (namespace "runbook")
     path("runbook/", include("apps.runbook.urls")),
+    # Scheduler — recurring background jobs (bare names, "scheduler/" prefix)
+    path("", include("apps.scheduler.urls")),
+    # Webhooks — outbound endpoints + inbound receivers (bare names, "webhooks/" prefix)
+    path("", include("apps.webhooks.urls")),
     # Token manager (self-service + staff) — list, mint, reveal, revoke
     path("", include("apps.tokenmgr.urls")),
 ]

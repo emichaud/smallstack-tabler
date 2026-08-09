@@ -233,8 +233,15 @@ def api_view(methods=None, require_auth=True, require_staff=False, require_auth_
                 if require_staff and not request.user.is_staff:
                     return _error("Staff access required", 403)
 
-            # Parse JSON body for write methods
-            if request.method not in ("GET", "HEAD") and request.body:
+            # Parse JSON body for write methods. Multipart and form-encoded
+            # bodies are Django's domain (request.POST / request.FILES) —
+            # force-parsing them as JSON turned every file-upload endpoint
+            # into a 400 "Invalid JSON".
+            content_type = (request.content_type or "").lower()
+            body_is_form = content_type.startswith(
+                ("multipart/form-data", "application/x-www-form-urlencoded")
+            )
+            if request.method not in ("GET", "HEAD") and not body_is_form and request.body:
                 request.json, err = _load_json_body(request, require_object=False)
                 if err:
                     return err
@@ -355,23 +362,6 @@ def _load_json_body(request, *, require_object: bool = True):
     return data, None
 
 
-def _parse_json_body(request):
-    """Parse JSON body into a QueryDict for ModelForm compatibility."""
-    data, err = _load_json_body(request)
-    if err:
-        return None, err
-
-    q = QueryDict(mutable=True)
-    for key, value in data.items():
-        if isinstance(value, list):
-            q.setlist(key, [str(v) for v in value])
-        elif value is None:
-            q[key] = ""
-        else:
-            q[key] = str(value)
-    return q, None
-
-
 # ---------------------------------------------------------------------------
 # Pagination helpers
 # ---------------------------------------------------------------------------
@@ -489,6 +479,36 @@ def _apply_select_related(qs, model, expand_fields: set[str]):
     if fk_names:
         qs = qs.select_related(*fk_names)
     return qs
+
+
+def _resolve_only_fields(model, list_fields, extra_fields) -> list[str] | None:
+    """Return the concrete column names to pass to ``.only()``, or ``None``.
+
+    The list serializer reads ``list_fields`` + ``api_extra_fields`` off each
+    row, so restricting the SELECT to just those columns cuts column transfer
+    and instance hydration on wide tables.
+
+    Returns ``None`` (meaning: don't restrict, load every column) the moment any
+    requested name is *not* a concrete local DB field — a property, annotation,
+    reverse relation, or m2m. Such a name might compute its value from columns
+    outside the restricted set, and ``.only()`` would then turn each access into
+    a deferred per-row query (an N+1) — the opposite of the intended win. The
+    optimization only kicks in when it is provably safe; otherwise the endpoint
+    behaves exactly as before. The pk is always loaded by Django regardless.
+    """
+    names = list(list_fields) + list(extra_fields or [])
+    if not names:
+        return None
+    only: list[str] = []
+    for name in names:
+        try:
+            field = model._meta.get_field(name)
+        except Exception:
+            return None  # property / annotation / unknown — bail to full load
+        if not getattr(field, "concrete", False) or getattr(field, "many_to_many", False):
+            return None  # reverse relation or m2m — bail to full load
+        only.append(name)
+    return only
 
 
 # ---------------------------------------------------------------------------
@@ -733,6 +753,10 @@ def _field_to_schema(name: str, form_field: forms.Field, model: type) -> dict:
         info["type"] = "url"
         if form_field.max_length is not None:
             info["max_length"] = form_field.max_length
+    elif isinstance(form_field, forms.JSONField):
+        # Must precede CharField: forms.JSONField subclasses it (Textarea widget)
+        # and would otherwise report "text".
+        info["type"] = "json"
     elif isinstance(form_field, forms.CharField):
         # Check widget for textarea
         if isinstance(widget, forms.Textarea):
@@ -991,8 +1015,17 @@ def _api_list(request, crud_config):
     if expand_fields:
         qs = _apply_select_related(qs, crud_config.model, expand_fields)
 
-    items, page_meta = _paginate(request, qs, page_size=crud_config._resolve_paginate_by() or _DEFAULT_PAGE_SIZE)
     fields = crud_config._get_list_fields()
+
+    # Load only the columns the serializer reads. Safe no-op when any field is
+    # non-concrete (see _resolve_only_fields). Runs after export/aggregation so
+    # those still see the full queryset; count() ignores the column set. An
+    # expanded FK stays fully loaded via the select_related() join above.
+    only_fields = _resolve_only_fields(crud_config.model, fields, crud_config.api_extra_fields)
+    if only_fields is not None:
+        qs = qs.only(*only_fields)
+
+    items, page_meta = _paginate(request, qs, page_size=crud_config._resolve_paginate_by() or _DEFAULT_PAGE_SIZE)
     results: list[dict] = [_serialize(obj, fields, crud_config.api_extra_fields, expand_fields) for obj in items]
 
     # agg_extra (sum_*, avg_*, count_by, …) merges last, matching the prior .update() order.
@@ -1001,12 +1034,16 @@ def _api_list(request, crud_config):
 
 def _api_create(request, crud_config):
     """Handle POST on list endpoint: create a new object."""
-    data, err = _parse_json_body(request)
+    from .form_bridge import merge_form_payload
+
+    raw, err = _load_json_body(request)
     if err:
         return err
 
     form_class = crud_config.form_class or crud_config._make_form_class()
-    form = form_class(data)
+    # Native JSON values pass straight through (JSONField arrays/objects stay
+    # native); omitted fields fall back to model defaults, mirroring .create().
+    form = form_class(merge_form_payload(form_class, raw, fill_defaults=True))
     if form.is_valid():
         obj = form.save()
         crud_config.on_form_valid(request, form, obj, is_create=True)
@@ -1022,32 +1059,26 @@ def _api_create(request, crud_config):
 
 def _api_update(request, obj, crud_config):
     """Handle PUT/PATCH on detail endpoint."""
-    data, err = _parse_json_body(request)
+    from .form_bridge import merge_form_payload
+
+    raw, err = _load_json_body(request)
     if err:
         return err
 
     form_class = crud_config.form_class or crud_config._make_form_class()
 
     if request.method == "PATCH":
-        # Merge existing object data with incoming partial data
-        from django.forms.models import model_to_dict
-
-        existing = model_to_dict(obj, fields=crud_config.fields or crud_config._get_detail_fields())
-        merged = QueryDict(mutable=True)
-        for key, value in existing.items():
-            if value is None:
-                merged[key] = ""
-            elif isinstance(value, list):
-                merged.setlist(key, [str(v) for v in value])
-            else:
-                merged[key] = str(value)
-        # Override with incoming data
-        for key in data:
-            if data.getlist(key):
-                merged.setlist(key, data.getlist(key))
-            else:
-                merged[key] = data[key]
-        data = merged
+        # Partial update: unspecified fields keep their current values (native
+        # Python values — a populated JSONField round-trips instead of failing
+        # "Enter a valid JSON." on its str() repr).
+        data = merge_form_payload(
+            form_class,
+            raw,
+            instance=obj,
+            instance_fields=crud_config.fields or crud_config._get_detail_fields(),
+        )
+    else:
+        data = merge_form_payload(form_class, raw)
 
     form = form_class(data, instance=obj)
     if form.is_valid():

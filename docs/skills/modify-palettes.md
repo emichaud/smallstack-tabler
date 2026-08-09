@@ -19,6 +19,13 @@
 
 ## Add a new palette in 4 steps
 
+Four wiring points, in this order. They're independent, and **each failure mode is silent and different** — so do all four, don't stop early:
+
+1. **`palettes.yaml`** — or the swatch never appears in the picker
+2. **`palettes.css`** — or the swatch appears but selecting it does nothing visible
+3. **`COLOR_PALETTE_CHOICES` + migration** — or the profile-edit dropdown omits it (and `makemigrations --check` fails in CI)
+4. **`VALID_PALETTES`** — or the live swap silently rejects the save
+
 ### Step 1 — append to the registry (`palettes.yaml`)
 
 ```yaml
@@ -135,19 +142,34 @@ This guards the AJAX endpoint that fires when a user clicks a swatch in the user
 
 ## Test it
 
-1. `uv run python manage.py runserver`
+1. `uv run python manage.py runserver` — **if a server is already running, restart it** and hard-refresh the browser. The autoreloader watches `.py` files but not `palettes.yaml`, and browsers cache `palettes.css`. (Also make sure you're running the branch that has your changes — a palette that "won't show up" is usually a stale server or the wrong branch, not a code bug.)
 2. Open the user menu (avatar dropdown) — your new swatch should appear in the palette grid
 3. Click it — the page should re-skin instantly
 4. Navigate to `/smallstack/`, `/smallstack/activity/`, `/smallstack/help/`, `/smallstack/backups/`
 5. Verify: cards are not warm-gray brown; accent shows on numbers / buttons / sidebar-active; hero band reads correctly
 
-If a hero band goes muddy, the palette's accent at low lightness is producing a problematic hue. Add it to the `--accent-band-bg` override block in `palettes.css`:
+If a band or the hero gradient goes muddy, the palette's accent at low lightness is producing a problematic hue (brown/olive/gray). `palettes.css` already has **two grouped override rules** for this — add your palette's selector to **both** (missing the second is the easy mistake: the band cleans up but the `.hero-section` gradient stays brown):
 
 ```css
-html[data-palette="emerald-bright"][data-theme="dark"] {
+/* 1. the band VARIABLE — page-header-bleed, toc-header, etc. */
+html[data-palette="orange"][data-theme="dark"],
+html[data-palette="emerald-bright"][data-theme="dark"],          /* ← add here */
+html[data-palette="django"][data-theme="dark"],
+html[data-palette="high-contrast"][data-theme="dark"] {
     --accent-band-bg: var(--card-bg);
 }
+
+/* 2. .hero-section uses a saturated GRADIENT, not the variable, so it
+      has its own sibling override rule just below the first */
+html[data-palette="orange"][data-theme="dark"] .hero-section,
+html[data-palette="emerald-bright"][data-theme="dark"] .hero-section,   /* ← and here */
+html[data-palette="django"][data-theme="dark"] .hero-section,
+html[data-palette="high-contrast"][data-theme="dark"] .hero-section {
+    background: var(--card-bg) !important;
+}
 ```
+
+Warm and desaturated accents (orange, **gold**, django-emerald, contrast-white) all need both; blue and purple don't.
 
 ## Tune an existing palette
 
@@ -163,15 +185,28 @@ If you're not adding a new palette but changing an existing one:
 - Blue × dark = navy ✓
 - Purple × dark = plum ✓
 - **Orange × dark = brown ✗**
+- **Gold × dark = muddy tan ✗** (shipped: the `gold` palette — the reference case for this fix)
 - **Emerald × dark = olive ✗**
 - **White × dark = noisy medium gray ✗**
 
-For affected palettes, override `--accent-band-bg` to `var(--card-bg)` so hero bands stay clean.
+For affected palettes, add the selector to **both** override rules (the `--accent-band-bg` group *and* the `.hero-section` group — see "Test it" above) so bands and hero gradients stay clean.
 
-### Gotcha 2: bright accents pull neutral surfaces warm
-Neutral cards next to bright accents drift warm via complementary-contrast. Mitigate with cool channel bias on surfaces:
-- Blue/purple/orange palettes: card-bg = `#161b22` (+12 B vs R)
-- Django (emerald — complement is red): card-bg = `#131722` (+15 B vs R, stronger correction)
+Also, warm/light accents like gold need **dark** `--button-fg` / `--sidebar-active-fg` (near-black, not white) or button and active-nav text is unreadable on the accent.
+
+### Gotcha 2: accent/surface temperature is a deliberate lever
+By default, surfaces are **cool-biased** near-black (B>G>R) so bright accents don't drag neutral cards warm via complementary-contrast:
+- Blue / purple palettes: card-bg `#161b22` (+12 B vs R)
+- Django (emerald — complement is red): card-bg `#131722` (+15 B vs R, stronger correction)
+
+**But temperature is a design choice, not a rule.** A warm accent can pair with a **warm** ground for a cohesive, candlelit feel — the **`orange` dark palette does this on purpose** (body `#0b0a08`, card-bg `#1a1611`, borders `#332b20`, warm-stone muted text `#a8a29e` — all R>G>B). **Don't "fix" orange's warm surfaces back to the cool family values; the inversion is intentional.**
+
+### Making a palette read "elegant" (the levers)
+Three independent knobs, from tuning the gold + orange palettes:
+1. **Dark text on a light accent.** When `--primary` is light (gold `#d3b559`), set `--button-fg` / `--sidebar-active-fg` to near-black, not white — reads considered *and* fixes a real contrast bug (white on a light accent often fails WCAG AA; e.g. white on `#f97316` is ~2.7:1). Vibrant `#f97316` + near-black text is the "Hermès" look.
+2. **Desaturate — carefully.** Low chroma reads refined/luxury, but over-muting a *warm* accent goes washed-out ("peachy"). To keep vibrancy, **deepen** (lower lightness) rather than desaturate.
+3. **Warm the ground** (Gotcha 2) for a warm accent.
+
+A muted complementary **secondary** (gold's smoky-blue, orange's teal) adds a considered two-tone harmony instead of one loud hue.
 
 ### Gotcha 3: data-palette must always be set
 The blocking script in `base.html` and `setPalette()` in `theme.js` must set `data-palette` on every page load, even when the value is the default ("django"). If they skip it for the default, the default palette's CSS overrides never apply and the page falls back to base `[data-theme="dark"]` (legacy warm-gray). This is fixed in the current codebase — don't reintroduce the skip.

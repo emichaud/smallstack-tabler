@@ -18,8 +18,17 @@ try:
     # Single source of truth: the installed distribution's version (pyproject.toml).
     _PACKAGE_VERSION = _pkg_version("django-smallstack")
 except PackageNotFoundError:
-    # Running from source without an installed distribution — keep in sync with pyproject.toml.
-    _PACKAGE_VERSION = "0.12.4"
+    # Running from source without an installed distribution — read the version
+    # straight from pyproject.toml so it can never drift from the real one. (A
+    # hardcoded string here silently goes stale every release; see the version
+    # locations in docs/skills/release-process.md.)
+    import tomllib
+
+    try:
+        _pyproject = Path(__file__).resolve().parent.parent.parent / "pyproject.toml"
+        _PACKAGE_VERSION = tomllib.loads(_pyproject.read_text())["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        _PACKAGE_VERSION = "0.0.0+unknown"
 
 # The version SmallStack advertises across its surfaces (OpenAPI info.version,
 # MCP initialize). Derived from the package so it never drifts; override via env
@@ -61,7 +70,13 @@ BRAND_SIGNUP_TERMS_NOTICE = config("BRAND_SIGNUP_TERMS_NOTICE", default=True, ca
 # Email Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@example.com")
-EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+
+# Django 6.1's MAILERS (replaces the deprecated EMAIL_* settings; removed in 7.0).
+# Base default is the console backend; production overrides to SMTP. Still
+# driven by the same EMAIL_* env vars — see config/settings/_email.py.
+from ._email import CONSOLE_BACKEND, build_mailers  # noqa: E402
+
+MAILERS = build_mailers(default_backend=CONSOLE_BACKEND)
 
 # Accent colour used in HTML emails (the branded header band + buttons).
 # Emails can't use the live CSS palette, so this is a single re-brandable knob.
@@ -169,6 +184,11 @@ SMALLSTACK_PUBLIC_STATUS_ENABLED = config("SMALLSTACK_PUBLIC_STATUS_ENABLED", de
 # Default on.
 SMALLSTACK_API_ENABLED = config("SMALLSTACK_API_ENABLED", default=True, cast=bool)
 
+# Master switch for the datasets surface: the /smallstack/datasets/ REST routes
+# and the dataset MCP tools (list_datasets + query_dataset_<key>). Per-dataset
+# ``enable_api`` / ``enable_mcp`` become no-ops when this is off. Default on.
+SMALLSTACK_DATASETS_ENABLED = config("SMALLSTACK_DATASETS_ENABLED", default=True, cast=bool)
+
 # ---------------------------------------------------------------------------
 # Login Rate Limiting (django-axes)
 # ---------------------------------------------------------------------------
@@ -254,3 +274,109 @@ RUNBOOK_BASE_TEMPLATE = config("RUNBOOK_BASE_TEMPLATE", default="smallstack/base
 RUNBOOK_STAFF_REQUIRED = config("RUNBOOK_STAFF_REQUIRED", default=True, cast=bool)
 # Other RUNBOOK_* knobs (version/retention caps) default sensibly in
 # apps/runbook/conf.py — override here only if needed.
+
+
+# ---------------------------------------------------------------------------
+# Scheduler (apps.scheduler) — DB-backed recurring jobs over django.tasks
+# ---------------------------------------------------------------------------
+# Master switch for the scheduler surface: @scheduled autodiscovery/sync, the
+# tick, and the nav item + dashboard widget + status monitor. Off ⇒ nothing
+# registers and the tick is a no-op. Harmless with zero jobs, so default on.
+SMALLSTACK_SCHEDULER_ENABLED = config("SMALLSTACK_SCHEDULER_ENABLED", default=True, cast=bool)
+
+# A previous run still marked unfinished after this many seconds is treated as
+# abandoned by the overlap guard, so a dead worker can never permanently wedge
+# an allow_overlap=False schedule. Default 24h.
+SMALLSTACK_SCHEDULER_STALE_RUN_SECONDS = config(
+    "SMALLSTACK_SCHEDULER_STALE_RUN_SECONDS", default=86_400, cast=int
+)
+
+# An enabled job overdue by more than this trips the scheduler status monitor
+# (a proxy for "the tick isn't firing"). Default 5 min.
+SMALLSTACK_SCHEDULER_OVERDUE_GRACE_SECONDS = config(
+    "SMALLSTACK_SCHEDULER_OVERDUE_GRACE_SECONDS", default=300, cast=int
+)
+
+# Minimum runs in the last hour before the status monitor's failure-rate check
+# applies — so a single failed run in a quiet hour (1/1) can't trip it DOWN.
+SMALLSTACK_SCHEDULER_FAILURE_MIN_SAMPLE = config(
+    "SMALLSTACK_SCHEDULER_FAILURE_MIN_SAMPLE", default=5, cast=int
+)
+
+# Recipients emailed when a scheduled run fails (via send_email_task). Empty ⇒
+# no failure emails. Comma-separated in env, e.g. "ops@x.com,oncall@x.com".
+SMALLSTACK_SCHEDULER_FAILURE_EMAILS = config(
+    "SMALLSTACK_SCHEDULER_FAILURE_EMAILS",
+    default="",
+    cast=lambda v: [a.strip() for a in v.split(",") if a.strip()],
+)
+
+# ---------------------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------------------
+# Master switch for the webhooks surface: the outbound change-signal receiver,
+# the delivery/retry tick, inbound receiver endpoints, and the nav item +
+# dashboard widget + status monitor. Off ⇒ nothing registers, no model change
+# fans out, and /webhooks/in/<slug>/ 404s. Harmless with zero endpoints, so on.
+SMALLSTACK_WEBHOOKS_ENABLED = config("SMALLSTACK_WEBHOOKS_ENABLED", default=True, cast=bool)
+
+# Feeds: publish CRUDViews as RSS/Atom (enable_rss) and consume external feeds
+# into a model (the collector). Off ⇒ /feed/ 404s and the collector no-ops.
+SMALLSTACK_FEEDS_ENABLED = config("SMALLSTACK_FEEDS_ENABLED", default=True, cast=bool)
+
+# Independent toggles for each direction (both gated by the master switch above).
+SMALLSTACK_WEBHOOKS_OUTBOUND = config("SMALLSTACK_WEBHOOKS_OUTBOUND", default=True, cast=bool)
+SMALLSTACK_WEBHOOKS_INBOUND = config("SMALLSTACK_WEBHOOKS_INBOUND", default=True, cast=bool)
+
+# Delivery attempt ceiling before a WebhookDelivery is marked "dead". Includes
+# the first attempt, so 5 ⇒ 1 initial + 4 retries.
+SMALLSTACK_WEBHOOK_MAX_ATTEMPTS = config("SMALLSTACK_WEBHOOK_MAX_ATTEMPTS", default=5, cast=int)
+
+# Per-request HTTP timeout (seconds) when POSTing an outbound webhook.
+SMALLSTACK_WEBHOOK_TIMEOUT = config("SMALLSTACK_WEBHOOK_TIMEOUT", default=10, cast=int)
+
+# Consecutive delivery failures before an endpoint auto-disables itself (a proxy
+# for "this URL is dead"). 0 ⇒ never auto-disable.
+SMALLSTACK_WEBHOOK_AUTO_DISABLE_AFTER = config(
+    "SMALLSTACK_WEBHOOK_AUTO_DISABLE_AFTER", default=20, cast=int
+)
+
+# Backoff schedule (seconds) applied per retry attempt. Index = (attempt - 1),
+# clamped to the last entry. Comma-separated in env.
+SMALLSTACK_WEBHOOK_BACKOFF = config(
+    "SMALLSTACK_WEBHOOK_BACKOFF",
+    default="60,300,1800,7200,21600",
+    cast=lambda v: [int(x) for x in v.split(",") if x.strip()],
+)
+
+# Ceiling (seconds) for any single retry wait — clamps a hostile/absurd Retry-After
+# header on a 429/503 so a rate-limiter can't push a delivery weeks out.
+SMALLSTACK_WEBHOOK_MAX_BACKOFF = config(
+    "SMALLSTACK_WEBHOOK_MAX_BACKOFF", default=21600, cast=int
+)
+
+# This deployment's webhook origin — stamped on every outbound delivery as
+# X-SmallStack-Origin so a paired SmallStack can drop self-originated events.
+# Blank ⇒ derived from SITE_URL / the hostname at send time.
+SMALLSTACK_WEBHOOK_ORIGIN = config("SMALLSTACK_WEBHOOK_ORIGIN", default="")
+
+# SSRF guard. When non-empty, an outbound target URL's host must match one of
+# these suffixes (e.g. "example.com,hooks.internal"). Empty ⇒ allow any public
+# host; loopback/private ranges are still rejected unless SMALLSTACK_WEBHOOK_
+# ALLOW_PRIVATE is on (dev/testing against a local receiver).
+SMALLSTACK_WEBHOOK_ALLOWLIST = config(
+    "SMALLSTACK_WEBHOOK_ALLOWLIST",
+    default="",
+    cast=lambda v: [a.strip().lower() for a in v.split(",") if a.strip()],
+)
+SMALLSTACK_WEBHOOK_ALLOW_PRIVATE = config(
+    "SMALLSTACK_WEBHOOK_ALLOW_PRIVATE", default=False, cast=bool
+)
+
+# Recipients emailed when a delivery exhausts its retries (via send_email_task).
+# Empty ⇒ no emails. Comma-separated in env.
+SMALLSTACK_WEBHOOK_FAILURE_EMAILS = config(
+    "SMALLSTACK_WEBHOOK_FAILURE_EMAILS",
+    default="",
+    cast=lambda v: [a.strip() for a in v.split(",") if a.strip()],
+)

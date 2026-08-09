@@ -1779,10 +1779,43 @@ a.paginator-btn:hover {
        template's <colgroup>); nowrap keeps "METHOD"/"STATUS" on one line. */
     white-space: nowrap;
 }
-/* Sortable-column discoverability: the built-in crud_table renders sortable
-   headers as <th hx-get> (HTMX list) or <th><a> (hand-rolled list) with a
-   sort arrow that's hidden until active. Highlight the header and reveal a
-   faint arrow on hover so it's clear the column can be clicked to sort. */
+/* Accessible sortable headers (v0.14 upstream): sortable_th renders a real
+   <button class="th-sort"> inside <th class="th-sortable"> with aria-sort.
+   Ported from components.css — the button reset keeps the header looking
+   like plain header text at the table's padding. */
+.crud-table thead th.th-sortable,
+.table-plain thead th.th-sortable {
+    padding: 0 !important;
+}
+.th-sort {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    margin: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: color 0.15s;
+}
+.th-sort:focus:not(:focus-visible) { outline: none; }
+/* Right-aligned numeric columns (sortable_th align="right") */
+.th-sortable-right .th-sort {
+    justify-content: flex-end;
+    text-align: right;
+}
+/* Sortable-column discoverability: highlight the header and reveal a faint
+   arrow on hover so it's clear the column can be clicked to sort. Covers the
+   new button structure plus legacy <th hx-get> / <th><a> sortable headers. */
 .crud-table thead th[hx-get],
 .table-plain thead th[hx-get],
 .crud-table thead th a[href],
@@ -1790,12 +1823,14 @@ a.paginator-btn:hover {
     cursor: pointer;
     transition: color 0.15s;
 }
+.th-sort:hover,
 .crud-table thead th[hx-get]:hover,
 .table-plain thead th[hx-get]:hover,
 .crud-table thead th a[href]:hover,
 .table-plain thead th a[href]:hover {
     color: var(--tblr-primary) !important;
 }
+.th-sort:hover > span[aria-hidden],
 .crud-table thead th[hx-get]:hover > span,
 .crud-table thead th a[href]:hover > span,
 .table-plain thead th[hx-get]:hover > span,

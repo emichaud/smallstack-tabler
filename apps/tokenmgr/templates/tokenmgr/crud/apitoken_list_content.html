@@ -61,7 +61,7 @@ Reads:
                 <button type="submit" style="
                   background: none; border: none; cursor: pointer;
                   padding: 0; font-size: 0.82rem;
-                  color: var(--delete-button-bg, red);
+                  color: var(--error-fg);
                 ">✕ Revoke</button>
               </form>
             {% else %}
@@ -106,4 +106,17 @@ Reads:
     <a href="{% url 'tokenmgr:token-create' %}" class="btn-primary btn-sm">Mint your first token</a>
   {% endif %}
 </div>
+{% endif %}
+
+{% comment %}
+Custom list_content (this app overrides the generic partial), so it needs its own
+out-of-band toolbar-count refresh — otherwise the "N Records" count freezes while
+htmx search/filter swaps this fragment. Guarded by request.htmx so the in-page
+render (apitoken_list.html includes this on full load) doesn't emit a duplicate.
+{% endcomment %}
+{% if show_toolbar and request.htmx %}
+<span class="list-toolbar-count" id="list-toolbar-count" hx-swap-oob="true">
+    <span class="list-toolbar-count-value">{{ toolbar_total_count }}</span>
+    <span class="list-toolbar-count-label">Record{{ toolbar_total_count|pluralize }}</span>
+</span>
 {% endif %}

@@ -1,8 +1,13 @@
-<th style="cursor: pointer; user-select: none; text-align: {{ align|default:'left' }}; padding: 10px 16px; color: var(--body-quiet-color); font-size: 0.85rem;"
-    hx-get="?{{ query_string }}"
-    hx-target="{{ hx_target }}"
-    {% if hx_include %}hx-include="{{ hx_include }}"{% endif %}
-    hx-push-url="true"
-    hx-swap="innerHTML">
-    {% if align == "right" %}<span style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span> {{ label }}{% else %}{{ label }} <span style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>{% endif %}
+<th scope="col" class="th-sortable{% if align == "right" %} th-sortable-right{% endif %}" aria-sort="{% if direction == 'desc' %}descending{% elif direction == 'asc' %}ascending{% else %}none{% endif %}">
+    <button type="button" class="th-sort"
+        hx-get="?{{ query_string }}"
+        hx-target="{{ hx_target }}"
+        {% if hx_include %}hx-include="{{ hx_include }}"{% endif %}
+        hx-push-url="true"
+        hx-swap="innerHTML"
+        aria-label="{{ label }}, {% if direction == 'desc' %}sorted descending{% elif direction == 'asc' %}sorted ascending{% else %}not sorted{% endif %} — sort by {{ label }}">
+        {% if align == "right" %}<span aria-hidden="true" style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>
+        <span>{{ label }}</span>{% else %}<span>{{ label }}</span>
+        <span aria-hidden="true" style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>{% endif %}
+    </button>
 </th>

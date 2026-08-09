@@ -6,7 +6,7 @@ This skill describes how to create and run background tasks in SmallStack using 
 
 SmallStack uses Django 6's native `django.tasks` framework with the `django-tasks-db` database backend. Tasks are stored in the database and processed by a separate worker process. No Redis or Celery required.
 
-> **Coming soon: recurring scheduling.** Today the queue is *one-shot* — you `.enqueue()` a task and a worker runs it once. A recurring `@scheduled(every="5m")` primitive (retries with backoff, dead-letter handling) is **coming soon**. Until it lands, run recurring jobs as management commands wired to system cron — e.g. `rebuild_search_index`, `heartbeat`, `prune_activity`.
+> **Recurring scheduling ships in `apps/scheduler/`.** The queue itself is *one-shot* — you `.enqueue()` a task and a worker runs it once. To run a task on a **repeating** cadence, decorate it with `@scheduled(...)` (or create a schedule in the `/smallstack/scheduler/` UI). The scheduler decides *when* to enqueue and hands the actual execution to this same task engine. See **`docs/skills/scheduler.md`** for the full guide. Failure retries currently lean on `django.tasks`' own retry semantics; per-schedule `max_retries` is reserved.
 
 ## File Locations
 
@@ -239,9 +239,18 @@ SmallStack ships with these tasks in `apps/tasks/tasks.py`:
 
 ### Important Constraints
 
-- **All arguments must be JSON-serializable** (no model instances — pass IDs instead)
+- **All arguments must be JSON-serializable** (no model instances — pass IDs instead).
+  This includes nested values like an email task's `context` dict — a `datetime`
+  or model instance in there breaks `.enqueue()` under the `DatabaseBackend`.
+  **The test `ImmediateBackend` does *not* serialize args**, so a green unit test
+  can still fail on the real queue — pass ISO strings / primitives, and test the
+  enqueue path against `DatabaseBackend` when serialization matters.
 - **Import models inside the function** to avoid circular imports
 - **Tasks run in a separate process** — they don't share request context
+- **HTML emails are auto-branded**: `send_html_email_task` merges brand context
+  (`brand_name` / `brand_accent` / `site_url`) so templates extending
+  `email/base_email.html` render their header even from a background task. Your
+  `context` overrides these if you pass them.
 
 ## Test Configuration
 

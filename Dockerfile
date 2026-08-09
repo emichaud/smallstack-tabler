@@ -17,6 +17,7 @@ ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.
 ENV SUPERCRONIC_SHA1SUM=71b0d58cc53f6bd72cf2f293e09e294b79c666d8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSLO "$SUPERCRONIC_URL" \
     && echo "$SUPERCRONIC_SHA1SUM  supercronic-linux-amd64" | sha1sum -c - \
@@ -29,8 +30,15 @@ RUN pip install uv
 # Copy project files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies
-RUN uv pip install -e .
+# Install the EXACT locked dependency set, then the project itself without
+# re-resolving. `uv pip install -e .` alone re-resolves the pyproject.toml
+# ranges (django>=6.1, …) against the index at build time and ignores uv.lock,
+# so images could silently drift onto newer, untested releases. Exporting the
+# frozen lock first makes prod == local == CI (reproducible builds), and
+# --frozen fails the build loudly if uv.lock is out of sync with pyproject.
+RUN uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install -r /tmp/requirements.txt \
+    && uv pip install -e . --no-deps
 
 # Copy the rest of the application
 COPY . .

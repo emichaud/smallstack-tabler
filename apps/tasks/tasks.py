@@ -78,7 +78,6 @@ def send_email_task(
         message=message,
         from_email=from_email or getattr(settings, "DEFAULT_FROM_EMAIL", None),
         recipient_list=recipient_list,
-        fail_silently=False,
     )
 
 
@@ -124,7 +123,15 @@ def send_html_email_task(
     else:
         recipient_list = list(recipient)
 
-    ctx = context or {}
+    # Merge brand context (brand_name / brand_accent / site_url) so templates
+    # that extend email/base_email.html always render their header + accent,
+    # even from a background task with no request. Caller's context wins.
+    try:
+        from apps.accounts.emails import email_brand_context
+
+        ctx = {**email_brand_context(), **(context or {})}
+    except Exception:  # noqa: BLE001 — brand context is a nicety, never a blocker
+        ctx = context or {}
     html_content = render_to_string(template, ctx)
 
     # Try to find a matching .txt template for plain-text fallback
@@ -143,7 +150,7 @@ def send_html_email_task(
         to=recipient_list,
     )
     email.attach_alternative(html_content, "text/html")
-    return email.send(fail_silently=False)
+    return email.send()
 
 
 @task(queue_name="email")
@@ -206,7 +213,7 @@ def send_welcome_email(user_id: int) -> int:
         to=[user.email],
     )
     email.attach_alternative(html_content, "text/html")
-    return email.send(fail_silently=False)
+    return email.send()
 
 
 @task(priority=5)

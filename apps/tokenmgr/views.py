@@ -48,9 +48,10 @@ REVEAL_SESSION_KEY = "_tokenmgr_reveal_key"
 class TokenCRUDView(CRUDView):
     model = APIToken
     actions = [Action.LIST, Action.DETAIL]
-    # mixins is empty — we authenticate by hand in get_list_queryset / the
-    # custom view classes so the LoginRequiredMixin can wrap everything
-    # without forcing staff like the upstream package did.
+    # mixins is left unset so it resolves to [LoginRequiredMixin] (secure by
+    # default, v0.15.0) — login is required but staff is not, since users manage
+    # their own tokens. Per-user scoping is still enforced by hand in
+    # get_list_queryset / the custom view classes.
     url_base = "tokens"
     namespace = "tokenmgr"
     list_fields = [

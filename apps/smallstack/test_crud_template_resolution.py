@@ -87,7 +87,10 @@ def test_no_template_tag_spans_multiple_lines():
 
     root = Path(__file__).resolve().parents[2]
     pattern = re.compile(r"\{%[^%]*?\n.*?%\}", re.S)
-    skip = ("staticfiles", "htmlcov", ".venv", "node_modules")
+    # `_tabler_source` is the vendored upstream tabler.io repo (gitignored design
+    # reference). Its .html files are Twig/Nunjucks, not Django templates, and are
+    # never in TEMPLATES["DIRS"] — their `{% %}` wrapping is valid in that engine.
+    skip = ("staticfiles", "htmlcov", ".venv", "node_modules", "_tabler_source")
 
     offenders = []
     for path in root.rglob("*.html"):

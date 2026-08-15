@@ -6,7 +6,8 @@ import json
 
 import pytest
 from django.core.management import call_command
-from django.test import override_settings
+
+from apps.smallstack.autodiscover import has_enable_classvar
 
 pytestmark = pytest.mark.django_db
 
@@ -107,19 +108,100 @@ def test_doctor_orphan_detection_ignores_explorer_enable_api():
     assert "heartbeat/admin.py" not in str(orphans.get("orphans", []))
 
 
-def test_doctor_check_only_exits_nonzero_on_fail():
+def test_doctor_orphan_detection_ignores_test_modules():
+    """A CRUDView declared in a test module is a fixture, not an orphan.
+
+    `apps/smallstack/test_bulk_ops.py` declares `enable_api = True` on a
+    throwaway view. The scanner excluded a `tests/` package but not the flat
+    `test_*.py` layout that app uses, so it was reported as an orphan on every
+    run — and the advertised fix (import it from `AppConfig.ready()`) would have
+    published a test view as a live API surface.
+    """
+    output = _run(["--no-self-test", "--json"])
+    parsed = json.loads(output)
+    orphans = next(r for r in parsed if r["name"] == "Orphan files")
+    listed = str(orphans.get("orphans", []))
+    assert "test_bulk_ops" not in listed
+    assert orphans["status"] == "PASS"
+
+
+def test_doctor_optin_scan_ignores_docstring_examples():
+    """A teaching example in a docstring is not an opt-in.
+
+    The old line-anchored regex matched `enable_api = True` anywhere a line held
+    only whitespace before it — i.e. exactly how a code example is indented
+    inside a docstring. This codebase documents its own flags that way, so the
+    regex was one idiomatic docstring away from a false orphan.
+    """
+    from apps.api.management.commands.api_doctor import Command
+
+    source = '''
+class Docs:
+    """Expose a model over REST:
+
+        class TicketView(CRUDView):
+            enable_api = True
+    """
+    pass
+'''
+    assert has_enable_classvar(source, "enable_api") is False
+    # …and the real thing still registers
+    assert has_enable_classvar("class V(CRUDView):\n    enable_api = True\n", "enable_api") is True
+    assert Command  # scan wiring exercised by the orphan tests below
+
+
+def test_doctor_scans_management_commands_without_flagging_the_seed_example():
+    """AST removed the need to skip `management/`, so it is scanned again.
+
+    The exclusion existed only to dodge the runbook seed command, which embeds
+    an `enable_api = True` example in its markdown content. Skipping the whole
+    directory also hid genuine opt-ins defined there — a gap `mcp_doctor` never
+    had. Both halves are asserted: the directory is in scope, and the seed
+    command is still not reported.
+    """
+    from pathlib import Path
+
+    from apps.api.management.commands.api_doctor import _is_scannable
+
+    seed = (
+        Path(__file__).resolve().parents[3]
+        / "apps/runbook/management/commands/seed_platform_runbook.py"
+    )
+
+    # Half 1 — management/ is genuinely in scope now (this fails if the
+    # directory exclusion is reinstated).
+    assert _is_scannable(seed) is True
+    assert _is_scannable(Path("apps/foo/management/commands/anything.py")) is True
+    # …while the exclusions that remain are the ones that can't hold a live opt-in.
+    assert _is_scannable(Path("apps/foo/migrations/0001_initial.py")) is False
+    assert _is_scannable(Path("apps/smallstack/test_bulk_ops.py")) is False
+
+    # Half 2 — and being in scope, the seed command is still not reported,
+    # because AST can tell its markdown example from a class attribute.
+    if seed.exists():
+        source = seed.read_text(encoding="utf-8")
+        assert "enable_api = True" in source  # the substring IS there…
+        assert has_enable_classvar(source, "enable_api") is False  # …but not as a class attr
+
+    from apps.api.management.commands.api_doctor import Command
+
+    scanned = [str(p) for p, _display in Command()._scan_for_enable_api_optins()]
+    assert not any("seed_platform_runbook" in p for p in scanned)
+
+
+def test_doctor_check_only_exits_zero_when_all_pass():
+    """--check-only does NOT exit when every check passes."""
+    _run(["--no-self-test", "--check-only"])  # no SystemExit raised
+
+
+def test_doctor_check_only_exits_nonzero_on_fail(monkeypatch):
     """--check-only must SystemExit(1) when any check FAILs."""
-    # All checks currently PASS, so this should NOT exit.
-    _run(["--no-self-test", "--check-only"])
+    from apps.api.management.commands.api_doctor import Command
 
+    def _inject_fail(self, report):
+        report.append({"name": "Injected", "status": "FAIL", "detail": "forced failure"})
 
-@override_settings(INSTALLED_APPS=[])
-def test_doctor_handles_missing_apps_gracefully():
-    """When apps.smallstack isn't installed the dependencies check must FAIL
-    but the rest of the command should not blow up."""
-    # We can't override INSTALLED_APPS at runtime safely — this is a smoke
-    # test only that the command code path doesn't raise on import.
-    # Real coverage: the explicit `from apps.smallstack.api import ...`
-    # inside each check is the failure surface, and pytest exercises it
-    # under the default settings (which have apps.smallstack installed).
-    assert True
+    monkeypatch.setattr(Command, "_check_dependencies", _inject_fail)
+    with pytest.raises(SystemExit) as exc:
+        _run(["--no-self-test", "--check-only"])
+    assert exc.value.code == 1

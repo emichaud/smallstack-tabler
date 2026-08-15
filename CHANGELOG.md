@@ -9,6 +9,250 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-08-15
+
+### Fixed
+- **Empty states rendered raw template source into the page.** Django's
+  tokenizer matches tags with `{%.*?%}` and **no `DOTALL`**, so a `{% %}` tag
+  split across lines is never parsed — it is emitted as literal text. Four
+  empty-state includes were wrapped for readability and shipped that way, so a
+  visitor saw:
+
+  ```
+  {% include "smallstack/includes/empty_state.html" with
+     no_card=True
+     title="No matches"
+     body="No "|add:object_verbose_name_plural|add:" matched your search…" %}
+  ```
+
+  This hit **every CRUDView on the default templates whenever its list was
+  empty** — a no-match search or a fresh install with nothing added yet — on
+  both the plain page load and the HTMX toolbar swap, plus the dashboard
+  "no widgets available" state and the MCP tools admin.
+
+  The pattern spread because `empty_state.html`'s own usage example was written
+  wrapped and every caller copied it; that example is now a single line carrying
+  an explicit warning. A whole-tree sweep test now fails the build on any
+  multi-line tag — the defect is invisible in review, since the template reads
+  perfectly well.
+- **A missing `object_verbose_name_plural` raised instead of degrading.** With
+  the tag parsing again, `body="No "|add:object_verbose_name_plural` makes that
+  variable a filter *argument*, and an unresolved filter argument raises
+  `VariableDoesNotExist` rather than rendering empty the way `{{ missing }}`
+  does. `_CRUDContextMixin` always supplies it, but this partial is also
+  included by hand-written list templates (`usermanager` does, and downstream
+  projects do) — it now resolves through `{% with %}` with a default noun.
+
+### Added
+- **The related-tab partial is overridable like every other CRUD surface.**
+  `_CRUDRelatedTabBase` hardcoded its template while every sibling — including
+  `_CRUDFieldPreviewBase` directly above it — resolves through
+  `_get_template_names(suffix)`, so it was the one CRUD surface a project could
+  not override per model or per app. It now offers the same instance → app →
+  default chain. The shipped partial lives at
+  `crud/includes/related_tab_content.html`, which doesn't fit the
+  `crud/object_{suffix}` default convention, so that path is appended as the
+  final fallback — the loader takes the first template that exists, so behavior
+  is unchanged when no override is present.
+
+## [0.16.1] - 2026-08-14
+
+### Fixed
+- **`CalendarDisplay` compared `DateTimeField`s against naive month boundaries.**
+  Filtering used plain `date` bounds, so under `USE_TZ` Django built a naive
+  midnight, emitted "received a naive datetime while time zone support is
+  active", then coerced it with the **default** timezone — while the bucketing
+  side used `localtime()`, the **current** one. Two halves of the same display
+  deciding "is this in the month?" through different clocks. Boundaries are now
+  coerced to the type each field expects (aware midnight for datetimes, the
+  plain date for `DateField`s), resolved independently for the start and end
+  fields.
+
+  **No events move.** Verified against rows straddling both month edges,
+  including exact midnights: old and new code select identically. The two
+  timezones coincide because nothing activates a per-request timezone (the
+  profile timezone is applied by a template filter), so the drift this prevents
+  is latent — it would only appear if timezone-activating middleware were added.
+  Removes 24 warnings from the test suite.
+- **`api_doctor` detected opt-ins by regex while `mcp_doctor` used AST.** The
+  line-anchored regex matched `enable_api = True` on any line with only
+  whitespace before it — i.e. exactly how a code example is indented inside a
+  docstring, which is how this codebase documents its own flags (8 in-scope
+  modules already mention `enable_api` in prose). Nothing was misreported: of
+  two regex/AST disagreements repo-wide, both sat outside the scan's scope. That
+  was the problem — the check was correct only because a directory exclusion
+  happened to cover the one offending file.
+
+  Both doctors now share `has_enable_classvar(source, marker)` in
+  `apps/smallstack/autodiscover.py`, so they agree on what an opt-in is. With
+  AST the `management/` exclusion is unnecessary, so `api_doctor` scans that
+  directory again — closing the opposite gap, where a genuine opt-in defined in
+  a management command was invisible to it but visible to `mcp_doctor`.
+
+## [0.16.0] - 2026-08-14
+
+### Changed
+- **`CalendarDisplay` caps events rendered per day (`max_per_day`, default 5).**
+  The calendar rendered one chip — plus a hover-tooltip subtree — for every
+  record in the visible month, so a high-volume site produced tens of thousands
+  of DOM nodes and a calendar that took seconds to paint, or never usefully did.
+  Cells now render at most 5 events followed by a **"+N more"** link that
+  expands that single day in full (`?day=YYYY-MM-DD`). Overflow events are
+  counted, not materialised.
+
+  The point isn't the constant factor — it's that rendered chips are now bounded
+  by `max_per_day × days_in_month` **regardless of record count**. Measured on
+  200 seeded records: 201 chips / 171 KB before, 26 chips / 73 KB after.
+
+  Capping is a *rendering* limit only: the header total and every "+N more"
+  badge still report exact counts. **This changes what existing calendars
+  display** — pass `max_per_day=None` to restore the previous behavior.
+
+### Fixed
+- **Related tabs 500'd when the related view had no DETAIL action.**
+  `_CRUDRelatedTabBase` hardcoded `crud_actions = [Action.DETAIL]`, so
+  `{% crud_table %}` reversed `<url_base>-detail` for a view that never
+  generates that route (`get_urls` only registers it when `actions` include
+  DETAIL). Because related tabs load lazily over HTMX, the NoReverseMatch
+  surfaced as a tab with a count badge and an empty body rather than a visible
+  error. The tab now forwards what the related view actually routes — DETAIL,
+  else UPDATE, else unlinked — matching `crud_table`'s documented fallback.
+  DELETE is never forwarded, and exactly one action is passed so a tab whose
+  target routes both doesn't grow an Edit column it never had.
+- **Related tabs rendered child rows through the parent's hooks.**
+  `crud_config` stayed the parent CRUDView's, and `{% crud_table %}` reads
+  `row_link_url()`, `row_actions()` and `column_widths` off it — so a parent
+  that redirects its row links silently pointed a child row at an unrelated
+  record that happened to share its pk. Fails silently, so worth re-checking any
+  related tab under a CRUDView that overrides those hooks.
+- **`api_doctor` / `mcp_doctor` reported test fixtures as unregistered opt-ins.**
+  Both excluded test code by directory (`tests/`), missing the flat `test_*.py`
+  convention `apps/smallstack` uses — so `smallstack/test_bulk_ops.py` was
+  flagged as an orphan on every run and on the `/smallstack/api/` and
+  `/smallstack/mcp/` pages. A CRUDView declared in a test is meant to stay out
+  of the registry; the advertised fix (importing it from `AppConfig.ready()`)
+  would have published a test view as a live REST endpoint and MCP tool. The
+  shared `is_test_module()` helper now lives in
+  `apps/smallstack/autodiscover.py` and covers both layouts.
+
+## [0.15.2] - 2026-08-12
+
+### Fixed
+- **Invisible "Copy" button on the token-reveal page (gold + high contrast).**
+  The button set a background but no `color`, so it inherited `--button-fg` —
+  the foreground meant to pair with a *solid* `--primary` fill. On the only two
+  palettes with a dark `--button-fg` (gold `#1a1a1a`, high-contrast `#000000`)
+  that painted dark text on a dark card and the label disappeared. It now uses
+  the existing `.btn-outline` class.
+- **Unreadable MCP consent page (`/mcp/oauth/authorize`) on dark themes.** The
+  template referenced `--border`, `--muted-fg` and `--code-bg`, none of which
+  were defined anywhere, so each always resolved to its hard-coded *light*
+  fallback: gray borders on dark cards, and `#f4f4f4` chips whose inherited text
+  was also light. That made the client id and the **redirect host** — the one
+  field a user must read before granting access — invisible. Its Allow button
+  also hard-coded `color: #fff` over `var(--primary)`, i.e. white-on-white on
+  the high-contrast palette.
+- **Links ignored the selected palette in light mode.** Every dark palette block
+  set `--link-fg`, but the gold / orange / purple / dark-blue *light* blocks set
+  only `--link-color`. SmallStack's own CSS reads `--link-color`, while Django
+  admin's `a:link, a:visited` rule reads `--link-fg` — so every plain anchor
+  stayed on admin's `#417893` teal. All light blocks now set both.
+- **The default `django` palette had no light block at all**, so light mode fell
+  through to Django admin's colors (`--primary: #79aec8`) instead of
+  SmallStack's. `admin/css/base.css` declares its variables under
+  `html[data-theme="light"], :root`; that first branch scores (0,1,1) and the
+  theme JS always writes an explicit `data-theme`, so it outranks theme.css's
+  plain `:root` (0,1,0) no matter which file loads last. Adds a django light
+  block built on emerald-700 `#047857` (5.5:1 on white — the dark palette's
+  `#10b981` is only 2.5:1 and unusable for accent text).
+
+### Added
+- **`--border`, `--muted-fg` and `--code-bg`** are now defined in `theme.css`.
+  They were referenced by templates but declared nowhere, which is what let the
+  bugs above degrade silently. Defined as derived aliases (`var(--card-border)`,
+  `var(--text-muted)`, and a `color-mix` recipe) so they track the active theme
+  and palette with no per-palette overrides. Prefer the specific token in new
+  code.
+- **`apps/smallstack/test_palette_css.py`** — parses `palettes.css` against
+  `UserProfile.COLOR_PALETTE_CHOICES` and fails if any palette is missing a
+  light or dark block, or omits `--link-fg` / `--link-color`.
+
+## [0.15.1] - 2026-08-09
+
+### Internal
+- **Test coverage backfill (codebase-review F4).** No behavior change — new
+  tests only. `postgres_fts.py` 0% → 83% (a Postgres-gated suite that runs under
+  `TEST_DB=postgres` and skips on SQLite); `api.py` 75% → 88% (the auth endpoints
+  — register / password change / admin reset — and the REST bulk-update
+  endpoint); `mcp/factory.py` 76% → 92% (the update/delete MCP tool handlers);
+  `crud.py` 78% → 84% (the HTML bulk-action + bulk-update-form views);
+  `audit.py` 57% → 80% (the `log_write` never-raises discipline).
+
+## [0.15.0] - 2026-08-09
+
+### Changed
+- **BREAKING — CRUDViews require login by default.** `CRUDView.mixins` now
+  defaults to `None`, which the framework resolves to `[LoginRequiredMixin]`;
+  previously the default was `[]` (anonymous). A CRUDView that *omitted* `mixins`
+  silently shipped public HTML **and** REST endpoints — now it requires login.
+  Opt into anonymous access with the new **`public = True`** flag (or an explicit
+  `mixins = []`); an explicit `mixins` list always wins. A public view that
+  exposes write actions with `enable_api=True` now emits a warning. All bundled
+  framework views set `mixins` explicitly and are unaffected. See
+  [`UPGRADING.md`](UPGRADING.md). (Codebase-review F6.)
+
+### Added
+- **`make typecheck`** — mypy + django-stubs, configured leniently and scoped to
+  the type-clean apps (starts at `apps/feeds`; widen app-by-app as each reaches
+  green). A local / pre-commit guard, no CI lane. (Codebase-review F3.)
+
+### Removed
+- **django-debug-toolbar** — removed from the project entirely (dependency, the
+  dev-settings toggle, the `__debug__/` URL, and the bundled help page). It was
+  off-by-default dev tooling; dropping it slims the dependency surface.
+
+## [0.14.3] - 2026-08-09
+
+Fixes from a full codebase review (two security fixes + a Django 6.1 deploy-check
+regression). All backward-compatible.
+
+### Fixed
+- **Security — stored XSS on public search snippets.** Dropped `|safe` on the
+  website search result snippet (`templates/website/search.html`); the value is
+  raw model text and the view is anonymous, so it's now auto-escaped.
+- **Security — PKCE code-challenge compared in constant time.** `verify_pkce`
+  (`apps/mcp/oauth.py`) now uses `hmac.compare_digest` instead of `==`.
+- **Fresh-clone `manage.py check --deploy` passes again.** Django 6.1's
+  `mail.E001` deploy check errored on dev's console email backend; it's now
+  silenced in development settings (dev isn't a deploy target — production/SMTP
+  is unaffected and still validated). Regression from the v0.14.2 / Django 6.1
+  MAILERS migration.
+
+### Removed
+- **Dead search abstraction layer** — `apps/search/{api,orchestration,cache,serializers}.py`
+  (813 lines with no runtime importers; runtime search goes through
+  `get_backend()` directly). Removing it also eliminates a latent
+  `SearchAPI.search()` access-gate bypass.
+
+### Internal
+- Test integrity + coverage: replaced hollow `api_doctor` tests with a real
+  fail-case assertion, restored the SearchBuilder-example + search-admin tests,
+  and added audit-logging failure-path tests (`audit.py` 57% → 80%). Documented
+  the help-renderer trust boundary.
+
+## [0.14.2] - 2026-08-09
+
+### Fixed
+- **Absolute URLs are `https://` behind kamal-proxy.** The base `production.py`
+  shipped without `SECURE_PROXY_SSL_HEADER`, so behind the TLS-terminating proxy
+  (which forwards over HTTP) `request.is_secure()` was False and Django built
+  `http://` absolute URLs — feed self-links, sitemaps, and the links in
+  password-reset / invite emails all went out as http. Now sets
+  `SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")`, **gated on the
+  existing `TRUST_PROXY_HEADERS` flag** (default-on in production). Safe by
+  default for non-proxy deployments: a directly-exposed instance
+  (`TRUST_PROXY_HEADERS=false`) never trusts a client-supplied `X-Forwarded-Proto`.
+
 ## [0.14.1] - 2026-08-09
 
 Two upstream bug fixes surfaced by a downstream deploy.
@@ -526,7 +770,15 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.15.1...HEAD
+[0.16.2]: https://github.com/emichaud/django-smallstack/compare/v0.16.1...v0.16.2
+[0.16.1]: https://github.com/emichaud/django-smallstack/compare/v0.16.0...v0.16.1
+[0.16.0]: https://github.com/emichaud/django-smallstack/compare/v0.15.2...v0.16.0
+[0.15.2]: https://github.com/emichaud/django-smallstack/compare/v0.15.1...v0.15.2
+[0.15.1]: https://github.com/emichaud/django-smallstack/compare/v0.15.0...v0.15.1
+[0.15.0]: https://github.com/emichaud/django-smallstack/compare/v0.14.3...v0.15.0
+[0.14.3]: https://github.com/emichaud/django-smallstack/compare/v0.14.2...v0.14.3
+[0.14.2]: https://github.com/emichaud/django-smallstack/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/emichaud/django-smallstack/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/emichaud/django-smallstack/compare/v0.13.13...v0.14.0
 [0.13.13]: https://github.com/emichaud/django-smallstack/compare/v0.13.12...v0.13.13

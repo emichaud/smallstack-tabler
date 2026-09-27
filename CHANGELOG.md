@@ -9,6 +9,48 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.21.4] - 2026-09-27
+
+### Fixed
+- **Heartbeat tests no longer hard-code the brand name or one theme's markup.**
+  A rebranded downstream (`BRAND_NAME=Planner`) or one overriding the
+  `detail_grid.html` display template inherited three false test failures. The
+  public-status assertions now read `settings.BRAND_NAME`, and the boolean-
+  rendering test asserts the actual regression invariant (False renders
+  differently from True) via a template-agnostic extractor instead of pinning
+  upstream's ✓/— glyphs. (Downstream report; verified non-vacuous — simulating
+  the original all-booleans-truthy bug still fails the rewritten test.)
+- **Daily uptime summaries prorate their expected-checks denominator.** Three
+  spans nobody agreed to monitor were read as downtime by the flat
+  `86400 // interval` denominator: the epoch's first partial day (~6% "down"
+  even with every check green), a monitor added mid-day (same shape — its epoch
+  is its first beat), and SLA-excluded maintenance (a 4h excluded window capped
+  an honest day at 83%, defeating `exclude_from_sla=True`). The summary writer
+  now computes `expected_intervals_for_day` (epoch row → day-in-progress →
+  excluded windows) **and** moves beats recorded inside excluded windows out of
+  `ok_count`/`fail_count` into `maintenance_count` — mirroring the raw span's
+  `_uptime_over_window` semantics; shrinking the denominator alone would have
+  left `max(recorded, expected)` resurrecting the excluded time. The 90-day
+  timeline's raw branch uses the same math, so a day's uptime no longer changes
+  when it crosses the retention boundary. Missing beats inside the monitored
+  span still count as downtime (deliberately: for a self-pinged monitor, "cron
+  didn't run" and "host was down" are the same event). A fully excluded day
+  writes `expected_count=0` and renders "No data". New
+  `manage.py heartbeat --reprorate` backfills existing summaries — expected
+  depends only on the date, the epoch row, and the maintenance windows, so
+  unlike `--repair-summaries` it fixes history (run repair first).
+- **One host setting now satisfies both email links and webhooks.** Emails built
+  outside a request (approval notifications, welcome mail) read `SITE_DOMAIN`,
+  while webhooks read `SITE_URL` — so a deployment that configured its host the
+  way `webhook_doctor` instructs still sent dead `localhost:8000` email links,
+  and the Approvals status monitor stayed DOWN telling it to set a *second*
+  variable. `site_base_url()` (in `apps/accounts/emails.py`) now resolves
+  `SITE_DOMAIN`+`USE_HTTPS` → a URL-shaped `SITE_URL`/`SMALLSTACK_SITE_URL`/
+  `BASE_URL` → the localhost default, and every consumer (branded emails, the
+  welcome task, the `ApprovalsFanoutMonitor` link check) shares it. The monitor
+  message now names both knobs, and `.env.example` finally documents
+  `SITE_DOMAIN`/`USE_HTTPS`/`SITE_URL` (it mentioned none of them).
+
 ## [0.21.3] - 2026-09-26
 
 ### Fixed
@@ -1571,7 +1613,8 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.21.3...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.21.4...HEAD
+[0.21.4]: https://github.com/emichaud/django-smallstack/compare/v0.21.3...v0.21.4
 [0.21.3]: https://github.com/emichaud/django-smallstack/compare/v0.21.2...v0.21.3
 [0.21.2]: https://github.com/emichaud/django-smallstack/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/emichaud/django-smallstack/compare/v0.21.0...v0.21.1

@@ -1,0 +1,27 @@
+{% comment %}
+Tabler port of the upstream breadcrumb trail.
+
+`{% render_breadcrumbs %}` renders THIS path, so overriding it here makes every
+upstream template that calls the tag — including ones a future merge adds —
+render Tabler chrome without needing a per-template override. It mirrors
+tabler/includes/breadcrumbs.html (which the tabler-native
+`{% render_tabler_breadcrumbs %}` uses); the .container-xl is what keeps the
+trail aligned with the page body instead of sitting flush to the viewport edge.
+{% endcomment %}
+{% if breadcrumbs %}
+<div class="container-xl pt-2">
+    <nav aria-label="Breadcrumb">
+        <ol class="breadcrumb" style="font-size: 0.8rem; margin-bottom: 0;">
+            {% for crumb in breadcrumbs %}
+            <li class="breadcrumb-item {% if forloop.last %}active{% endif %}"{% if forloop.last %} aria-current="page"{% endif %}>
+                {% if crumb.url and not forloop.last %}
+                <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+                {% else %}
+                {{ crumb.label }}
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ol>
+    </nav>
+</div>
+{% endif %}

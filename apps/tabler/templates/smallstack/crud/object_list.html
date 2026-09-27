@@ -69,12 +69,10 @@
         {% elif object_list %}
             {% crud_table %}
         {% else %}
-            <p class="text-secondary" style="padding: 2rem 0; text-align: center;">
-                No {{ object_verbose_name_plural }} found.
-                {% if create_view_url %}
-                <a href="{{ create_view_url }}" class="text-primary">Create one now?</a>
-                {% endif %}
-            </p>
+            {% comment %}One empty-state definition, shared with upstream. Its
+            var(--body-quiet-color) / var(--primary) resolve through the aliases
+            in tabler_overrides.css.{% endcomment %}
+            {% include "smallstack/crud/includes/empty_state.html" %}
         {% endif %}
 
         {% if not display_template and is_paginated %}

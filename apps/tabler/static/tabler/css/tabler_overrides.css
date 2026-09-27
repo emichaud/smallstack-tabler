@@ -2522,3 +2522,148 @@ a.btn-outline:not(.btn):visited {
     left: auto;
     right: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Notification bell (upstream apps/notifications) — Tabler navbar port.
+   Upstream renders .notif-bell / .notif-bell-badge in its own topbar; here the
+   markup lives in tabler/includes/navbar.html and only needs badge placement.
+   --------------------------------------------------------------------------- */
+.notif-bell {
+    display: flex;
+    align-items: center;
+}
+.notif-bell-badge {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.5rem;
+    min-width: 1rem;
+    padding: 0 0.25rem;
+    font-size: 0.625rem;
+    line-height: 1rem;
+    border-radius: 999px;
+    /* Explicit, not inherited: the count sits on a solid .bg-red, but the
+       parent nav-link is .text-reset, so the digit inherited the navbar's grey
+       and vanished against the red in light mode. White reads on bg-red in
+       both themes. */
+    color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Empty states (upstream smallstack/includes/empty_state.html) — Tabler port.
+
+   The shared empty-state component is used by the dashboard, the MCP tools
+   admin, search, the notifications inbox and the CRUD lists, but its styles
+   live in smallstack/css/components.css, which this downstream does not load.
+   Without them the markup renders as unpadded, unstyled text flush to the card
+   edge. Ported verbatim; every var below is aliased to its --tblr-* equivalent
+   above, so these follow the active accent and dark/light mode.
+   --------------------------------------------------------------------------- */
+.empty-state {
+    text-align: center;
+}
+.empty-state-body {
+    padding: 2.5rem 1.5rem;
+    max-width: 540px;
+    margin: 0 auto;
+}
+.empty-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 1rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--primary) 12%, var(--card-bg, var(--body-bg)));
+    color: var(--primary);
+}
+.empty-state-icon svg {
+    width: 28px;
+    height: 28px;
+}
+.empty-state-title {
+    font-family: var(--font-monospace);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--body-fg);
+    margin-bottom: 0.5rem;
+}
+.empty-state-message {
+    color: var(--body-quiet-color);
+    font-size: 0.92rem;
+    line-height: 1.55;
+    margin: 0 0 1.25rem;
+}
+.empty-state-message code {
+    font-family: var(--font-monospace);
+    background: color-mix(in srgb, var(--body-fg) 7%, var(--card-bg, var(--body-bg)));
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.85em;
+    color: var(--body-fg);
+}
+.empty-state-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.empty-state-cta {
+    display: inline-block;
+    padding: 0.55rem 1.1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    background: color-mix(in srgb, var(--primary) 16%, var(--card-bg, var(--body-bg)));
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    transition: background 0.15s, border-color 0.15s;
+}
+.empty-state-cta:hover,
+.empty-state-cta:focus-visible {
+    background: var(--primary);
+    color: var(--btn-primary-fg, #fff);
+    border-color: var(--primary);
+}
+.empty-state-cta:focus:not(:focus-visible) {
+    outline: none;
+}
+.empty-state-secondary {
+    font-size: 0.85rem;
+    color: var(--body-quiet-color);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--body-quiet-color) 25%, transparent);
+}
+.empty-state-secondary:hover,
+.empty-state-secondary:focus-visible {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+.empty-state-secondary:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   .sr-only — visually hidden, still announced by screen readers.
+
+   Upstream defines this in smallstack/css/theme.css, which this downstream does
+   not load, and Bootstrap/Tabler name their equivalent .visually-hidden. Without
+   it every upstream {% comment %}sr-only{% endcomment %} span renders as visible
+   body text: the notifications inbox printed a literal "Unread." before each
+   row, and the logs viewer and activity partial leak theirs the same way.
+   --------------------------------------------------------------------------- */
+.sr-only {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

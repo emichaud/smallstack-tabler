@@ -113,6 +113,24 @@
             </div>
             {% endif %}
 
+            <!-- Notification bell (upstream apps.notifications; Tabler idiom) -->
+            {% if notifications_enabled %}
+            <div class="nav-item d-flex align-items-center me-2">
+                <a href="{% url 'notifications:inbox' %}"
+                   class="nav-link px-0 position-relative text-reset notif-bell"
+                   title="Notifications"
+                   aria-label="Notifications{% if notifications_unread %} — {{ notifications_unread }} unread{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"></path>
+                        <path d="M9 17v1a3 3 0 0 0 6 0v-1"></path>
+                    </svg>
+                    {% if notifications_unread %}
+                    <span class="badge bg-red notif-bell-badge">{{ notifications_unread }}</span>
+                    {% endif %}
+                </a>
+            </div>
+            {% endif %}
+
             <!-- Theme settings trigger -->
             <div class="nav-item d-flex align-items-center me-2">
                 <a href="#" class="nav-link px-0 d-flex align-items-center gap-1 text-reset" data-bs-toggle="offcanvas" data-bs-target="#offcanvas-settings" aria-label="Theme Settings">

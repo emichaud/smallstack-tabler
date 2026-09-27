@@ -26,6 +26,16 @@ if not config("SECRET_KEY", default=""):
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
 
+# Public host for links built OUTSIDE a request — approval/welcome emails and
+# webhook resource URLs, which are emitted from tasks and signal receivers that
+# have no request to derive a host from. smallstack.py defaults this to
+# localhost:8000 (the upstream dev port); this project runs on 8007, so those
+# links otherwise point at a port with nothing behind it. Dev only: production
+# sets SITE_DOMAIN (or SITE_URL) via the environment, and the Approvals monitor
+# flags a local host there — it skips the check while DEBUG is on. Reads the env
+# var first, so .env or a shell export still wins.
+SITE_DOMAIN = config("SITE_DOMAIN", default="localhost:8007")
+
 # Database
 # SQLite is the default - simple, zero-config, perfect for development
 # See /help/database-sqlite/ for why SQLite works great in production too

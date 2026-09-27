@@ -17,7 +17,21 @@ When the user asks you to do any of these, read the matching skill file BEFORE w
 | Run any operational task (diagnose, smoke-test, mint, backup, screenshot, deploy) | `docs/skills/cli-tools.md` |
 | Create a new Django app with admin pages | `docs/skills/django-apps.md` |
 | Add a CRUDView (model → admin + REST + MCP) | `docs/skills/django-apps.md` + `apps/smallstack/docs/building-crud-pages.md` |
-| Add a dashboard widget | `docs/skills/dashboard-widgets.md` |
+| Add keyword search + an MCP search tool to a model | `docs/skills/search.md` |
+| Expose a filtered queryset as typed rows/columns for a dashboard/report/chart UI (`@dataset`) | `docs/skills/datasets.md` |
+| Add stat cards / metric tiles + drill-down modals to a dashboard page | `docs/skills/dashboard-cards.md` |
+| Add a dashboard widget (the central `/smallstack/` dashboard) | `docs/skills/dashboard-widgets.md` |
+| Monitor a subsystem's uptime/health on `/smallstack/status/` (Service + Monitor, or a status chart) | `docs/skills/status-monitors.md` |
+| Open a maintenance window / SLA-exclude a deploy (`manage.py maintenance`, Kamal hooks) | `docs/skills/status-monitors.md` |
+| Test the task queue / heartbeat backend locally (worker + heartbeat harness) | `docs/skills/background-tasks.md` |
+| Schedule recurring work (`@scheduled`, cron/interval/once, the scheduler UI + tick) | `docs/skills/scheduler.md` |
+| Gate an action on a **human approval** (`@approval_kind`, the decision console, agent-files-human-decides) | `docs/skills/approvals.md` |
+| Show a signed-in user an **in-app notification** (topbar bell + inbox, `notify()`) | `docs/skills/notifications.md` |
+| **Any integration work** (Zapier/n8n/Slack/Stripe/GitHub/Azure, or SmallStack↔SmallStack) — read this FIRST | `docs/skills/webhooks.md` |
+| Notify an external system when a model changes — **outbound webhooks** (`enable_webhooks = True`); shape the payload with `@webhook_transform` | `docs/skills/webhooks.md` |
+| Receive/verify an inbound webhook (`@webhook_handler`; provider signatures via `@webhook_verifier`, handshakes via `@webhook_challenge`) | `docs/skills/webhooks.md` |
+| **Publish a model as an RSS/Atom feed** (`enable_rss = True`) or a curated `Feed`; enclosures/podcasts via `rss_item_extra` | `docs/skills/rss.md` |
+| **Consume an external RSS/Atom feed** into a model on a schedule (`register_feed_source`, the collector) | `docs/skills/rss.md` |
 | Expose a model to AI clients via MCP | `docs/skills/mcp/build-mcp-solution.md` |
 | Add a custom REST endpoint (non-CRUD) | `docs/skills/custom-api-endpoints.md` |
 | Debug a "Swagger is empty" / "MCP can't see my tools" / "weird traffic" report | `docs/skills/api-doctor.md` or `docs/skills/mcp/debug-mcp-failure.md` |
@@ -38,7 +52,9 @@ Upstream SmallStack supports four kinds of apps from one codebase:
 - **API servers** — REST emitted from CRUDViews; OpenAPI 3.0.3 schema; Swagger UI at `/api/docs/`; ReDoc at `/api/redoc/`; admin at `/smallstack/api/`
 - **MCP servers** — JSON-RPC + OAuth 2.0 + PKCE at `/mcp`; Claude Desktop and Claude.ai Connectors UI work without setup
 
-The headline pattern: **one `CRUDView` declaration produces HTML admin pages, REST endpoints, and MCP tools** from a single model. Flip `enable_api = True` / `enable_mcp = True` flags on a CRUDView subclass and the surfaces light up.
+- **Human-in-the-loop approvals** — a generic side-car gate (`apps/approvals/`): apps or AI agents file an `ApprovalRequest` (`@approval_kind` + `request_approval()`), a human decides in the themed console (or the `{% approval_card %}` embed), and the app reacts via per-kind callback, signal, webhook event, or polling. Fan-out to in-app notifications (`apps/notifications/`: topbar bell + inbox) and branded email.
+
+The headline pattern: **one `CRUDView` declaration produces HTML admin pages, REST endpoints, and MCP tools** from a single model. Flip `enable_api = True` / `enable_mcp = True` / `enable_webhooks = True` flags on a CRUDView subclass and the surfaces light up.
 
 ## Quick start
 
@@ -58,6 +74,9 @@ All custom apps in `apps/`, registered as `apps.<name>`:
 - `apps/tabler/` — **Tabler theme integration**: bridge `smallstack/base.html`, navbar, settings panel, `tabler_overrides.css` (SmallStack-var aliases, dark/light mode, layout variants), `tabler_theme.js` (settings engine)
 - `apps/preview/` — Tabler preview pages (design reference)
 - `apps/activity/` — RequestLog middleware and admin
+- `apps/approvals/` — Human-in-the-loop approval gate (`@approval_kind` + decision console) at `/smallstack/approvals/requests/`
+- `apps/notifications/` — In-app notifications (topbar bell + inbox) at `/smallstack/notifications/`
+- `apps/telemetry/` — DB-backed log capture (`LogRecord`) + the `/smallstack/logs/` staff viewer + time-boxed capture windows; `log_capture` / `prune_logs`
 - `apps/api/` — `/smallstack/api/` health + activity admin + `api_doctor` command
 - `apps/explorer/` — Generic CRUD browser at `/smallstack/explorer/`
 - `apps/heartbeat/` — Uptime monitoring + `/status/`
@@ -82,6 +101,14 @@ Settings split in `config/settings/`:
 - **Signals**: separate `signals.py`, imported in `apps.py:ready()`.
 - **Tests**: `apps/<name>/tests/test_*.py`. `pytest.mark.django_db` when DB is touched.
 - **Templates**: extend `tabler/base.html` for new pages, or `smallstack/base.html` to inherit through the Tabler bridge. Use `{% load theme_tags %}` for breadcrumbs / nav_active.
+- **Types**: prefer strongly typed code where practical — annotate function
+  signatures (params + return) on new and edited code; reach for `Any` only
+  when the type genuinely can't be expressed. The project typechecks with
+  **mypy + django-stubs** over every app (`[tool.mypy]` in `pyproject.toml`;
+  migrations/tests excluded, untyped bodies not checked — so annotating a
+  function is what opts its body into checking). `make lint` runs ruff **and
+  mypy**; both must be green before reporting work done, and the pre-commit
+  hook enforces the same gate.
 
 ## Theming — Tabler, not modern-dark
 
@@ -108,8 +135,9 @@ Most-used:
 ```bash
 make run                                         # dev server (port 8005 / set PORT for 8007)
 make test                                        # full pytest suite
-make lint                                        # ruff check
+make lint                                        # ruff check + mypy (the full static gate)
 make lint-fix                                    # ruff check --fix
+make typecheck                                   # mypy alone
 make migrate                                     # apply migrations
 make migrations                                  # create new ones
 make backup                                      # SQLite snapshot with retention

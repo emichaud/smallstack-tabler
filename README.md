@@ -5,7 +5,7 @@
 ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue)
 ![Django 6.1](https://img.shields.io/badge/django-6.1-green)
 ![License MIT](https://img.shields.io/badge/license-MIT-brightgreen)
-![Version 0.16.2](https://img.shields.io/badge/version-0.16.2-blue)
+![Version 0.21.3](https://img.shields.io/badge/version-0.21.3-blue)
 
 **One small backend. Many roles.** A small-footprint Django foundation that drops into your stack and plays whatever role you need — often several at once. From a single model definition, SmallStack is an **admin app**, a **REST backend** for your React/Svelte/Solid frontend, an **MCP server** for AI agents, a fast **search engine**, an **integration hub** (webhooks, feeds, OpenAPI), and a **task runner**.
 
@@ -32,7 +32,7 @@ class TicketCRUDView(CRUDView):
 This generates:
 
 **→ HTML** (`/tickets/`)
-CRUD pages with htmx tabs, filters, sorting, pagination. Dark/light themes (5 color palettes).
+CRUD pages with htmx tabs, filters, sorting, pagination. Dark/light themes (6 color palettes).
 
 **→ REST API** (`/api/tickets/`)
 REST endpoints with bearer-token auth, OpenAPI 3.0 spec, automatic pagination and filtering.
@@ -71,7 +71,7 @@ SmallStack isn't one kind of app — it's a small backend that plays whatever ro
 
 **The things you don't have to build:**
 
-- **Web CRUD UI** — HTML pages with htmx interactions, filters, sorting, pagination, dark/light themes (5 color palettes)
+- **Web CRUD UI** — HTML pages with htmx interactions, filters, sorting, pagination, dark/light themes (6 color palettes)
 - **REST API + live docs** — Bearer-token auth, OpenAPI 3.0 with Swagger UI (`/api/docs/`) and ReDoc (`/api/redoc/`), automatic pagination, filtering
 - **Bundled API clients** — Typed TypeScript/JS SDK and a single-file Python client, always the same version as your API (`clients/`)
 - **MCP server** — JSON-RPC + OAuth + PKCE, works with Claude Desktop and agent frameworks
@@ -79,6 +79,8 @@ SmallStack isn't one kind of app — it's a small backend that plays whatever ro
 - **Webhooks** — Signed outbound delivery on model change + verified inbound receivers, with four seams for Zapier/n8n/Stripe/Slack
 - **RSS / Atom feeds** — Publish any model as a feed with one flag, or consume external feeds on a schedule
 - **Background tasks & scheduler** — DB-backed queue (no Redis/Celery to operate) plus a `@scheduled` recurring-job scheduler with a themed UI, REST + MCP surfaces, and cron/interval/once cadences
+- **Human-in-the-loop approvals** — a generic approval gate: apps (or AI agents, via MCP) file a request, a human approves/rejects in a themed console, your code reacts via callback, signal, webhook, or polling
+- **In-app notifications** — a `notify()` service with a topbar bell, unread badge, and inbox — wired into approvals out of the box
 - **Activity & audit logs** — Request logging with auto-pruning and breakdown stats
 - **Auth** — Custom User model, photo, timezone, theme preference, token management
 - **Health monitoring** — Uptime monitoring, status page, API/MCP health dashboards
@@ -95,7 +97,7 @@ SmallStack is built around the vibe-coding workflow. When you open Claude Code o
 **`CLAUDE.md`** — Orients the AI to your codebase and lists the essential skills per task type. The AI knows where to look and what patterns to follow.
 
 **`docs/skills/`** — A library of reference guides covering the full stack:
-- Modern dark theme (how to build pages that work across all 5 palettes on the first try)
+- Modern dark theme (how to build pages that work across all 6 palettes on the first try)
 - CRUDView patterns and configuration
 - SearchBuilder (custom variants, computed fields, ranking)
 - MCP tool authoring
@@ -134,7 +136,7 @@ Open http://localhost:8005, log in with `admin` / `admin`. The `/help/` section 
 
 ## Modern dark theme
 
-Five color palettes × two themes (light/dark) — switchable from the user menu. The default near-black aesthetic with vibrant Tailwind-style accents works in any light. Build pages that look correct across all 5 automatically.
+Six color palettes (django, dark-blue, purple, orange, high-contrast, gold) × two themes (light/dark) — switchable from the user menu. The default near-black aesthetic with vibrant Tailwind-style accents works in any light. Build pages that look correct across all 6 automatically.
 
 <p>
   <img src="apps/smallstack/docs/images/smallstack-docs.png" alt="Help System Dark Mode" width="49%">

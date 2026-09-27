@@ -28,14 +28,43 @@ the same nav data — adding/removing an app in INSTALLED_APPS automatically
 updates navigation.
 """
 
+import logging
 from typing import Any
 
 from django.http import HttpRequest
 from django.urls import NoReverseMatch, reverse
 
+logger = logging.getLogger("smallstack.navigation")
+
 # Sections render in this order; unlisted sections appear last.
 # "topbar" is not rendered in the sidebar — it overrides "main" in the topbar only.
 SECTION_ORDER = ["main", "topbar", "app", "page", "resources", "admin"]
+
+# Sections whose items are listed A–Z by label instead of by ``order``.
+#
+# The admin section is a tool drawer: a dozen unrelated utilities contributed by
+# whichever apps happen to be installed, with no workflow sequence to preserve.
+# Hand-numbering it meant every new app picked a number, the numbers collided
+# (Status and Explorer both sat at 20, so their relative order came down to
+# INSTALLED_APPS ordering), and the list drifted out of alphabetical as soon as
+# anything was added or relabelled. Sorting here keeps it A–Z permanently,
+# including for apps a downstream project adds.
+#
+# ``order`` is ignored for these sections — see ``register``.
+ALPHABETICAL_SECTIONS = {"admin"}
+
+
+def _sort_key(item: "_NavItem") -> tuple:
+    """Alphabetical for tool-drawer sections, explicit ``order`` everywhere else.
+
+    Case-insensitive so "API Health" files under A next to "Activity" rather
+    than ahead of every lowercase label, which is what a reader scanning the
+    menu expects. Falls back to the raw label so the sort stays stable when two
+    labels differ only in case.
+    """
+    if item.section in ALPHABETICAL_SECTIONS:
+        return (0, item.label.casefold(), item.label)
+    return (item.order, "", "")
 
 
 class _NavItem:
@@ -52,6 +81,8 @@ class _NavItem:
         "parent",
         "zone",
         "active_prefix",
+        "active_exact",
+        "visible",
     )
 
     def __init__(
@@ -69,6 +100,8 @@ class _NavItem:
         parent: str | None = None,
         zone: str = "smallstack",
         active_prefix: str | None = None,
+        active_exact: bool = False,
+        visible: Any = None,
     ) -> None:
         self.section = section
         self.label = label
@@ -86,6 +119,21 @@ class _NavItem:
         # Include the trailing slash to avoid bleeding into siblings like
         # "/status-report/". Falls back to the item's own resolved URL when unset.
         self.active_prefix = active_prefix
+        # Only an exact path match marks this item active — never a prefix.
+        # For a section root this is the difference between "you are here" and
+        # "you are somewhere below here": the dashboard lives at /smallstack/,
+        # which prefixes every admin route, so any page with no nav entry of its
+        # own (the notifications inbox, reached from the topbar bell) lit up
+        # Dashboard and told the user they were somewhere they weren't.
+        # (Test round 2026-09-26, T3.)
+        self.active_exact = active_exact
+        # Optional ``(request) -> bool`` predicate, applied AFTER auth_required /
+        # staff_required. For rules the two flags cannot express — most often
+        # "show this entry only to users the staff-only ADMIN section hides",
+        # which is how a non-staff approver gets a link to a console they are
+        # already allowed to use (F-46). A predicate that raises hides the item
+        # rather than breaking the page.
+        self.visible = visible
 
 
 class NavRegistry:
@@ -107,7 +155,16 @@ class NavRegistry:
         parent: str | None = None,
         zone: str = "smallstack",
         active_prefix: str | None = None,
+        active_exact: bool = False,
+        visible: Any = None,
     ) -> None:
+        """Register a nav item.
+
+        ``order`` sorts items within a section — EXCEPT for the sections in
+        ``ALPHABETICAL_SECTIONS`` (currently ``admin``), which are always listed
+        A–Z by label. Passing ``order`` for one of those is harmless but has no
+        effect; drop it rather than tuning a number that does nothing.
+        """
         self._items.append(
             _NavItem(
                 section=section,
@@ -122,6 +179,8 @@ class NavRegistry:
                 parent=parent,
                 zone=zone,
                 active_prefix=active_prefix,
+                active_exact=active_exact,
+                visible=visible,
             )
         )
 
@@ -149,13 +208,23 @@ class NavRegistry:
 
         # First pass: resolve URLs and collect candidates
         resolved: list[tuple[dict, str, str | None]] = []  # (item_dict, url, parent)
-        for item in sorted(self._items, key=lambda i: i.order):
+        for item in sorted(self._items, key=_sort_key):
             if zone is not None and item.zone != zone:
                 continue
             if item.auth_required and not is_authenticated:
                 continue
             if item.staff_required and not is_staff:
                 continue
+            if item.visible is not None:
+                try:
+                    if not item.visible(request):
+                        continue
+                except Exception:  # noqa: BLE001 — a bad predicate hides, never 500s
+                    logger.warning(
+                        "nav: visible() raised for %r — hiding the item", item.label,
+                        exc_info=True,
+                    )
+                    continue
             try:
                 url = reverse(item.url_name, args=item.url_args, kwargs=item.url_kwargs)
             except NoReverseMatch:
@@ -173,6 +242,7 @@ class NavRegistry:
                         "has_active_child": False,
                         # Match against the explicit prefix when given, else the URL.
                         "active_match": item.active_prefix or url,
+                        "active_exact": item.active_exact,
                     },
                     url,
                     item.parent,
@@ -188,6 +258,8 @@ class NavRegistry:
                 best_match = match
                 best_item = item_dict
                 break
+            if item_dict["active_exact"]:
+                continue
             if match != "/" and request.path.startswith(match) and len(match) > len(best_match):
                 best_match = match
                 best_item = item_dict
@@ -225,11 +297,13 @@ class NavRegistry:
             sec = item_dict.pop("section")
             item_dict.pop("url_name", None)
             item_dict.pop("active_match", None)
+            item_dict.pop("active_exact", None)
             # Also clean internal keys from children
             for child in item_dict["children"]:
                 child.pop("section", None)
                 child.pop("url_name", None)
                 child.pop("active_match", None)
+                child.pop("active_exact", None)
             sections.setdefault(sec, []).append(item_dict)
 
         # Return in defined order

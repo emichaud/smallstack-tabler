@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import ipaddress
 import logging
+import re
 import socket
 from datetime import datetime
 from typing import Any
@@ -53,8 +54,15 @@ def signature_header_value(secret: str, body: bytes) -> str:
 
 def verify(secret: str, body: bytes, provided: str) -> bool:
     """Constant-time check of an inbound signature. Accepts a bare hex digest or
-    an ``sha256=<hex>`` prefixed value."""
-    if not provided:
+    an ``sha256=<hex>`` prefixed value.
+
+    An **empty secret never verifies.** Without this, a receiver with
+    ``secret=''`` and ``require_signature=True`` — which reads as "locked down" —
+    accepted any request whose sender computed the HMAC with the empty key, i.e.
+    anyone who knows the scheme. HMAC is happy to key on b""; nothing else was
+    checking. (F-40.)
+    """
+    if not provided or not secret:
         return False
     expected = sign(secret, body)
     candidate = provided.split("=", 1)[1] if provided.startswith("sha256=") else provided
@@ -92,20 +100,33 @@ def url_is_allowed(url: str) -> tuple[bool, str]:
         infos = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80))
     except OSError:
         # Unresolvable at save time is not necessarily fatal (DNS may be
-        # transient); allow it and let the delivery attempt surface the error.
+        # transient); allow it. This pre-check is not the last line: at send
+        # time the delivery re-checks the socket's *connected* peer address
+        # (tasks._check_peer), which also closes the DNS-rebinding window
+        # between this lookup and the connect. (Audit C4.)
         return True, ""
     for info in infos:
-        ip = info[4][0]
-        try:
-            addr = ipaddress.ip_address(ip)
-        except ValueError:
-            continue
-        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+        ip = str(info[4][0])
+        if ip_is_blocked(ip):
             return False, (
                 f"Host {host!r} resolves to a private/loopback address ({ip}). "
                 "Set SMALLSTACK_WEBHOOK_ALLOW_PRIVATE=true to allow (dev only)."
             )
     return True, ""
+
+
+def ip_is_blocked(ip: str) -> bool:
+    """True for private/loopback/link-local/reserved addresses (the SSRF set)."""
+    try:
+        addr = ipaddress.ip_address(ip.split("%", 1)[0])
+    except ValueError:
+        return False
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    return bool(
+        addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+        or addr.is_multicast or addr.is_unspecified
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +321,104 @@ def available_events() -> list[str]:
     return ["*", "*.created", "*.updated", "*.deleted", *sorted(set(events))]
 
 
+_WILDCARD_HINTS = {
+    "*": "everything this instance emits",
+    "*.created": "any record is created",
+    "*.updated": "any record is updated",
+    "*.deleted": "any record is deleted",
+}
+
+
+_PATTERN_RE = re.compile(r"^[A-Za-z0-9_*?\[\]!-]+(\.[A-Za-z0-9_*?\[\]!-]+)*$")
+
+
+def validate_event_patterns(patterns: Any) -> list[str]:
+    """Shape-check an event_filter value; returns human-readable errors.
+
+    A malformed pattern is still valid JSON, so without this a typo (a pasted
+    `["*"]`, a space, a stray quote) sailed through every surface and became a
+    pattern that silently matches nothing — an endpoint that just never fires.
+    Shared by the endpoint form (HTML + REST + MCP + CLI all validate through
+    it) and the pairing view.
+
+    Only the SHAPE is checked: dot-separated tokens of word characters and
+    fnmatch wildcards (`*`, `?`, `[seq]`). A well-formed pattern matching no
+    known event is NOT an error — it may target custom or future events; use
+    ``unmatched_patterns`` to warn about those.
+    """
+    if not isinstance(patterns, list):
+        return ["event_filter must be a list of patterns."]
+    errors: list[str] = []
+    for p in patterns:
+        if not isinstance(p, str) or not p.strip():
+            errors.append(f"{p!r} is not an event pattern.")
+        elif not _PATTERN_RE.match(p):
+            errors.append(
+                f"“{p}” is not a valid pattern — patterns are dot-separated names "
+                "with * wildcards, e.g. support.ticket.* (no spaces, quotes, or brackets)."
+            )
+    return errors
+
+
+def unmatched_patterns(patterns: Any) -> list[str]:
+    """Well-formed patterns that match nothing this instance currently emits.
+
+    Advisory, never blocking: the pattern may target an event that appears
+    later (a model not yet opted in, a custom emitter). Returns [] when no
+    concrete events are known at all — on such an instance every pattern is
+    "unmatched" and the warning would be noise.
+    """
+    from fnmatch import fnmatch
+
+    known = [e for e in available_events() if "*" not in e]
+    if not known or not isinstance(patterns, list):
+        return []
+    return [
+        p
+        for p in patterns
+        if isinstance(p, str)
+        and _PATTERN_RE.match(p)
+        and not any(fnmatch(event, p) for event in known)
+    ]
+
+
+def describe_event_pattern(pattern: str) -> str:
+    """Plain-English hint for one event-filter pattern, for the picker UI.
+
+    Glob syntax reads as line noise to an operator ("what does *. mean?"), so
+    each option carries a description of when it fires. Model patterns resolve
+    the model's verbose name from the CRUDView registry; anything unrecognised
+    returns "" and the picker shows the bare pattern.
+    """
+    hint = _WILDCARD_HINTS.get(pattern)
+    if hint:
+        return hint
+    parts = pattern.split(".")
+    if len(parts) != 3:
+        return ""
+    app_label, model_name, action = parts
+    verbose = model_name
+    try:
+        from apps.smallstack.crud import CRUDView
+
+        for view in CRUDView._registry.values():
+            model = getattr(view, "model", None)
+            if (
+                model is not None
+                and model._meta.app_label == app_label
+                and model._meta.model_name == model_name
+            ):
+                verbose = str(model._meta.verbose_name)
+                break
+    except Exception:  # noqa: BLE001 — a hint must never break the form
+        pass
+    if action == "*":
+        return f"anything happens to a {verbose}"
+    if action in ("created", "updated", "deleted"):
+        return f"a {verbose} is {action}"
+    return f"{verbose}: {action}"
+
+
 def pairing_slug(target_url: str) -> str:
     """A **stable** default receiver slug for a pairing to ``target_url``.
 
@@ -438,6 +557,19 @@ def pair_smallstack(
         f" --events '{_json.dumps(events)}'"
     )
 
+    # Pairing two instances on one box (localhost / 127.0.0.1) is the FIRST thing
+    # anyone tries, and the SSRF guard blocks it at send time with the failure
+    # buried in WebhookDelivery.error — so the demo silently delivered nothing.
+    # Surface it here, where the operator is looking. (F-06 layer 1.)
+    url_ok, url_reason = url_is_allowed(target_url)
+    warnings: list[str] = []
+    if not url_ok:
+        warnings.append(
+            f"Deliveries to {target_url} will be BLOCKED before they are sent: "
+            f"{url_reason}"
+        )
+        logger.warning("webhooks: paired endpoint target is blocked — %s", url_reason)
+
     return {
         "endpoint_id": endpoint.pk,
         "receiver_id": receiver.pk if receiver else None,
@@ -451,6 +583,7 @@ def pair_smallstack(
         "one_way": one_way,
         "endpoint_created": ep_created,
         "mirror_command": mirror_command,
+        "warnings": warnings,
     }
 
 

@@ -3,7 +3,6 @@ URL configuration for smallstack project.
 """
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
@@ -34,6 +33,14 @@ from apps.smallstack.api import (
     api_schema,
 )
 from apps.smallstack.dashboard import api_widgets as api_dashboard_widgets
+from apps.telemetry.api import (
+    api_logger_capture,
+    api_logger_config,
+    api_logger_index,
+    api_logger_loggers,
+    api_logger_record_detail,
+    api_logger_records,
+)
 from apps.webhooks.views import incoming_webhook, webhooks_tick
 
 from .views import health_check, legal_page_view
@@ -104,6 +111,16 @@ if getattr(settings, "SMALLSTACK_API_ENABLED", True):
         path("api/auth/logout/", api_auth_logout, name="api-auth-logout"),
         # API dashboard
         path("api/dashboard/widgets/", api_dashboard_widgets, name="api-dashboard-widgets"),
+        # Logger API — read-only access to captured log records, so a script or
+        # an agent can resolve an X-Request-ID to the lines that explain it
+        # without a browser session. The human surface is /smallstack/logs/.
+        path("api/logger/", api_logger_index, name="api-logger-index"),
+        path("api/logger/records/", api_logger_records, name="api-logger-records"),
+        path("api/logger/records/<int:record_id>/", api_logger_record_detail,
+             name="api-logger-record-detail"),
+        path("api/logger/capture/", api_logger_capture, name="api-logger-capture"),
+        path("api/logger/config/", api_logger_config, name="api-logger-config"),
+        path("api/logger/loggers/", api_logger_loggers, name="api-logger-loggers"),
     ]
 
 # MCP surface — gated by SMALLSTACK_MCP_ENABLED. Off ⇒ no /mcp endpoint, OAuth, or
@@ -127,19 +144,19 @@ if settings.DEBUG:
         path("_error/500/", server_error),
     ]
 
-# Serve media files in development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
-    # Serve media files in production via Django
-    # Note: For high-traffic sites, use nginx or cloud storage (S3) instead
+# Serve media files (dev and production) — except the access-controlled
+# subtrees in SMALLSTACK_PRIVATE_MEDIA_PREFIXES (runbook files), which only
+# their own permission-checked views may read. See apps/smallstack/media.py.
+# Note: for high-traffic sites, use nginx or cloud storage (S3) instead — and
+# carry the same private-prefix exclusion into that config.
+if settings.MEDIA_URL.startswith("/"):
     from django.urls import re_path
-    from django.views.static import serve
+
+    from apps.smallstack.media import public_media_serve
 
     urlpatterns += [
         re_path(
-            r"^media/(?P<path>.*)$",
-            serve,
-            {"document_root": settings.MEDIA_ROOT},
+            r"^%s(?P<path>.*)$" % settings.MEDIA_URL.lstrip("/"),
+            public_media_serve,
         ),
     ]

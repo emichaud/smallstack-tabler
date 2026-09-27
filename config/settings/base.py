@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.help",
     "apps.tasks",
     "apps.activity",
+    "apps.telemetry",  # Telemetry: DB-backed log capture + time-boxed capture windows
     "apps.heartbeat",
     "apps.usermanager",
     "apps.website",  # Project-specific pages (customize freely)
@@ -61,7 +62,10 @@ INSTALLED_APPS = [
     "apps.runbook",  # Runbook: versioned markdown documents (label: smallstack_runbook)
     "apps.scheduler",  # Scheduler: DB-backed recurring jobs over django.tasks
     "apps.webhooks",  # Webhooks: outbound event delivery + inbound receivers
+    "apps.notifications",  # Notifications: in-app bell/inbox primitive (label: smallstack_notifications)
+    "apps.approvals",  # Approvals: side-car human-approval gate (label: smallstack_approvals)
     "apps.feeds",  # Feeds: RSS/Atom publish (enable_rss) + consume (collector)
+    # (Approvals scenario demos are appended below, only when present.)
     # Django built-in apps
     "django.contrib.admin",
     "django.contrib.auth",
@@ -111,6 +115,9 @@ MIDDLEWARE = [
     "django_htmx.middleware.HtmxMiddleware",
     "apps.smallstack.middleware.HtmxLoginRedirectMiddleware",
     "apps.activity.middleware.ActivityMiddleware",
+    # Retires a notification only once its target actually opened (2xx), so a
+    # click that 403s doesn't consume the unread badge.
+    "apps.notifications.middleware.NotificationReadOnArrivalMiddleware",
     "axes.middleware.AxesMiddleware",
     "csp.middleware.CSPMiddleware",
 ]
@@ -129,6 +136,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.smallstack.context_processors.branding",
+                "apps.notifications.context_processors.notifications",
                 "apps.runbook.context_processors.runbook_settings",
             ],
         },
@@ -213,6 +221,13 @@ SQLITE_OPTIONS = {
     ),
 }
 
+# Cookie SameSite — pinned explicitly (these are Django's defaults) so a
+# downstream enabling cross-origin SPA access doesn't weaken them unknowingly.
+# The MCP OAuth consent POST and every session-authenticated form rely on it
+# alongside CSRF tokens. Don't set "None" without understanding that trade.
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
 # Content Security Policy (django-csp)
 # Styles, fonts, and images allow "https:" so CDN frameworks (Bootstrap, Tailwind,
 # Google Fonts, etc.) work out of the box. Scripts stay restricted to 'self' — that's
@@ -252,6 +267,17 @@ CORS_ALLOW_HEADERS = [
     "origin",
     "x-requested-with",
 ]
+# Response headers a cross-origin JS client is allowed to *read* (a different
+# list from CORS_ALLOW_HEADERS above, which is what the browser may *send*).
+# Per the Fetch spec, only the CORS-safelisted response headers (Cache-Control,
+# Content-Language, Content-Type, Expires, Last-Modified, Pragma) are visible
+# to response.headers.get(...) across origins unless explicitly listed here.
+# X-Request-ID (RequestIDMiddleware) is the one custom header SmallStack sets
+# on every response and the one a frontend legitimately needs to read — e.g.
+# to surface "your request ID for support" in its own error UI. There are no
+# pagination headers to add here: paginated endpoints put page/count metadata
+# in the JSON body, not in response headers.
+CORS_EXPOSE_HEADERS = ["X-Request-ID"]
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

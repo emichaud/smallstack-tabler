@@ -89,6 +89,37 @@ def test_unresolvable_task_path_disables_and_marks_invalid(db_backend):
 # --- reconcile surfaces the return value (C-3) ------------------------------
 
 
+def test_enqueue_failure_is_recorded_not_lost(db_backend):
+    """An exception outside the unresolvable-path allowlist (here InvalidTask
+    for an unknown queue) used to advance next_run_at with no run row and
+    last_status still "success" — a silently lost fire. (Audit 2026-09-13, D2.)"""
+    job = _make_due(queue_name="nope-not-configured")
+    ScheduledJob.objects.filter(pk=job.pk).update(last_status="success")
+
+    result = services.run_due_jobs()
+
+    assert result.errors == 1
+    job.refresh_from_db()
+    assert job.last_status == ScheduledJobRun.Status.FAILED
+    assert job.enabled, "possibly-transient failures must not disable the job"
+    run = ScheduledJobRun.objects.get(job=job)
+    assert run.status == ScheduledJobRun.Status.FAILED
+    assert "enqueue failed" in run.message
+
+
+def test_clean_rejects_unknown_queue_name(db_backend):
+    from django.core.exceptions import ValidationError
+
+    job = ScheduledJob(
+        name="q", task_path=TASK_PATH, schedule_type="interval", interval_spec="1h", queue_name="bogus"
+    )
+    with pytest.raises(ValidationError) as exc:
+        job.clean()
+    assert "queue_name" in exc.value.message_dict
+    job.queue_name = "email"
+    job.clean()
+
+
 def test_reconcile_surfaces_success_return_value(db_backend):
     job = _make_due(name="etl")
     services.run_due_jobs()
@@ -321,3 +352,70 @@ def test_once_job_fires_then_retires(db_backend):
     job.refresh_from_db()
     assert job.next_run_at is None  # will not fire again
     assert services.run_due_jobs().enqueued == 0
+
+
+# --- trace_id: each job's slice of a tick is correlated (trace-id finding) --
+
+
+def test_process_job_binds_a_trace_id_for_its_slice_of_the_tick(db_backend, monkeypatch):
+    """apps.smallstack.docs.logging-audit.md documents bind_trace_id() as the
+    correlation primitive for background/scheduled work; the scheduler's own
+    tick didn't use it. This pins that _process_job now binds one trace per
+    job per tick — distinct from the trace apps.tasks binds later around the
+    enqueued task's actual execution — and resets it afterward."""
+    from apps.smallstack.logging import get_trace_id
+
+    seen = {}
+    original_body = services._process_job_body
+
+    def spy(job, *, now, result):
+        seen["trace_id"] = get_trace_id()
+        return original_body(job, now=now, result=result)
+
+    monkeypatch.setattr(services, "_process_job_body", spy)
+
+    job = _make_due(name="traced")
+    assert get_trace_id() == ""
+    services.run_due_jobs()
+
+    assert seen["trace_id"].startswith(f"trace_schedjob_{job.pk}_")
+    assert get_trace_id() == "", "must be reset once the job's processing is done"
+
+
+def test_two_jobs_in_the_same_tick_get_different_trace_ids(db_backend, monkeypatch):
+    from apps.smallstack.logging import get_trace_id
+
+    seen = []
+    original_body = services._process_job_body
+
+    def spy(job, *, now, result):
+        seen.append(get_trace_id())
+        return original_body(job, now=now, result=result)
+
+    monkeypatch.setattr(services, "_process_job_body", spy)
+
+    _make_due(name="job-a")
+    _make_due(name="job-b")
+    services.run_due_jobs()
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1]
+
+
+def test_trace_id_is_reset_even_when_the_job_raises(db_backend, monkeypatch):
+    """run_due_jobs() catches per-job exceptions so one bad job can't sink the
+    tick — the trace binding must unwind on that path too, not just the
+    happy path, or the exception's trace would leak into whatever the tick
+    (or the next job) logs next."""
+    from apps.smallstack.logging import get_trace_id
+
+    def boom(job, *, now, result):
+        raise RuntimeError("job processing exploded")
+
+    monkeypatch.setattr(services, "_process_job_body", boom)
+
+    _make_due(name="explodes")
+    result = services.run_due_jobs()
+
+    assert result.errors == 1
+    assert get_trace_id() == ""

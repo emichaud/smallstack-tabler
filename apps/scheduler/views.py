@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -10,6 +11,7 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -22,6 +24,8 @@ from apps.smallstack.stat_lists import render_stat_list, stat_list_row
 from . import schedules, services
 from .forms import ScheduledJobForm
 from .models import ScheduledJob, ScheduledJobRun
+
+logger = logging.getLogger(__name__)
 
 LOCALHOST_IPS = {"127.0.0.1", "::1"}
 
@@ -370,7 +374,12 @@ def scheduler_stat_detail(request: HttpRequest, stat_type: str) -> HttpResponse:
 
 @require_POST
 def run_now(request: HttpRequest, pk: int) -> HttpResponse:
-    """Enqueue a job immediately, off-schedule (staff-only)."""
+    """Enqueue a job immediately, off-schedule (staff-only).
+
+    Honors a ``next`` form param so callers return where the operator was
+    (the job's control page posts it); same-origin-validated to keep this
+    from becoming an open redirect. Falls back to the dashboard.
+    """
     if not (request.user.is_authenticated and request.user.is_staff):
         return HttpResponse(status=403)
     job = get_object_or_404(ScheduledJob, pk=pk)
@@ -379,6 +388,11 @@ def run_now(request: HttpRequest, pk: int) -> HttpResponse:
         messages.success(request, f"“{job.name}” enqueued.")
     except Exception as exc:  # noqa: BLE001 — surface the failure to the operator
         messages.error(request, f"Could not enqueue “{job.name}”: {exc}")
+    next_url = request.POST.get("next", "")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return redirect(next_url)
     return redirect("scheduler_dashboard")
 
 
@@ -396,8 +410,16 @@ def reset_schedule(request: HttpRequest, pk: int) -> HttpResponse:
 
             sync_code_jobs()  # re-applies the @scheduled cadence when a spec exists
         except Exception:  # noqa: BLE001 — never let re-sync block the reset
-            pass
-        messages.success(request, f"“{job.name}” schedule reset to the code default.")
+            # The flag is cleared, so the next sync will re-apply the code
+            # cadence — but it hasn't happened yet; say so. (Audit D10c.)
+            logger.exception("scheduler: re-sync after resetting %s failed", job.name)
+            messages.warning(
+                request,
+                f"“{job.name}” override cleared, but re-applying the code cadence failed — "
+                "it will be retried on the next scheduler sync. See the logs for details.",
+            )
+        else:
+            messages.success(request, f"“{job.name}” schedule reset to the code default.")
     return redirect("scheduler/jobs-update", pk=pk)
 
 

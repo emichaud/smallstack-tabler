@@ -9,6 +9,807 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-09-26
+
+### Fixed
+- **Public status pages no longer paint all history "down" at 0.07% on long-running
+  sites.** The heartbeat pruner runs every minute (the ping view calls it), so one
+  calendar day is pruned across ~1440 tiny batches — but `_write_daily_summaries`
+  *overwrote* the day's `HeartbeatDaily` row with only the current batch, so every
+  fully-summarized day converged to its final single beat: 1/1440 ⇒ `uptime_pct =
+  0.069%` ⇒ "down" (while the raw-retention window stayed green — the "only ~7 days
+  survive" symptom). Summaries now **accumulate** across batches (counts merge,
+  response times weighted-average), the aggregate-then-delete pair runs in one
+  transaction, and the timeline/calendar/SLA maths are unchanged. Deployments that
+  ran the buggy pruner: `manage.py heartbeat --repair-summaries` deletes the
+  corrupted rows (recorded beats < 5% of expected — the bug's fingerprint; genuine
+  full days and recorded outages are kept), after which those days honestly render
+  "No data". The true counts are unrecoverable.
+
+### Added
+- **User-facing help pages for the scheduler** (`/smallstack/help/smallstack/scheduler/`)
+  — the control console, `@scheduled` cadences, tick triggers, and the run lifecycle
+  finally have a human-readable page (the skill doc existed; Help had nothing).
+- **Webhooks help covers the v0.19 event picker** — the annotated checkbox event
+  list, the Advanced custom-pattern disclosure, and every-surface pattern validation.
+- **Background Tasks help no longer steers cron work to Celery** — the comparison
+  table predated the `@scheduled` scheduler; it now says scheduling is built in and
+  links to the scheduler page.
+
+### Documentation
+- **The palette count is corrected in the three files the v0.21.1 sweep missed.**
+  `README.md` (four claims), `CLAUDE.md` and `apps/smallstack/docs/tldr.md` still said
+  **five** palettes; there are **six** (`django`, `dark-blue`, `purple`, `orange`,
+  `high-contrast`, `gold`). `CLAUDE.md` also named the palettes by label rather than id,
+  omitted `gold`, and left the default unstated — it is `purple`
+  (`SMALLSTACK_COLOR_PALETTE`). These are the read-first files for a new contributor and
+  for an agent onboarding to the repo, so they were contradicting
+  `docs/skills/modern-dark-theme.md`, which v0.21.1 had already fixed.
+
+## [0.21.2] - 2026-09-26
+
+### Removed
+- **The approvals scenario test-harness apps no longer ship in the base template.**
+  `apps/demo_purchasing`, `apps/demo_agentops` and `apps/demo_access` — plus
+  `manage.py approval_scenario` and `manage.py seed_approval_scenarios` — were the QA
+  workspace's test vehicle for the v0.21.x approvals work. They drove the findings but
+  were never meant to land in the starter template: a fresh clone got three extra apps,
+  six extra migrations, and 29 routes under `/demo/` without opting in. The apps, their
+  conditional `INSTALLED_APPS` registration, and the `/demo/` URL mounting are all
+  removed; the framework itself never referenced them, so no framework behavior changes.
+  If you cloned at v0.21.0/v0.21.1 and migrated, see "Scenario demo apps" in
+  `UPGRADING.md` for what the leftovers are (inert) and how to drop them.
+
+## [0.21.1] - 2026-09-26
+
+Fixes for findings from the 2026-09-26 test rounds. Each carries a regression test that
+fails against the old code.
+
+### Fixed
+- **Turning the approval email channel off no longer holds the status page down.**
+  `SMALLSTACK_APPROVALS_EMAILS_ENABLED=False` still enqueued a `notify_*` task per request —
+  the gate lived only at *send* time — so with no worker those rows sat READY forever and
+  `ApprovalsFanoutMonitor` counted exactly them. A **core-category** service card sat
+  permanently DOWN telling the operator to start a mail worker they had deliberately chosen
+  not to run, and `UPGRADING.md` recommended that very setting as the remedy for the
+  symptom. Nothing to send now means nothing to queue, and the monitor ignores a backlog
+  while the channel is off, so rows left from before the switch don't hold it down either.
+- **The approvals monitor no longer reports "email queue drained" while mail is queued.** It
+  now distinguishes *stale* from *queued-but-young* and says which it found — the note
+  described the opposite of the situation on the one channel that fails silently.
+- **The approvals monitor reports every fault in one check.** The `SITE_DOMAIN` branch
+  returned before the backlog was looked at, so an install with both faults learned about
+  the second only after fixing the first.
+- **The notifications inbox has an `<h1>`** — its page heading was an `<h2>`, leaving the
+  page with no `h1` at all and breaking the document outline and heading-jump navigation.
+- **Unread notifications are announced to screen readers.** Unread state was carried only by
+  an `aria-hidden` dot and bold weight, so the state the screen exists to convey was
+  sighted-only (WCAG 1.3.1 / 1.4.1). A visually-hidden "Unread." marker now precedes the row.
+- **The sidebar no longer claims you are on the Dashboard when you are not.** The dashboard
+  lives at `/smallstack/`, which prefixes every admin route, so any page without its own nav
+  entry — the notifications inbox, reached from the topbar bell — lit it up. Nav items gain
+  `active_exact`, set on the dashboard root.
+
+### Changed
+- `nav.register(...)` accepts `active_exact=True`: the item goes active only on an exact path
+  match, never on a prefix. For a section root that is the difference between "you are here"
+  and "you are somewhere below here".
+
+### Documentation
+- **`docs/skills/modern-dark-theme.md` was wrong about the palettes it is the read-first
+  authority for**: it claimed **five**, named a `dark-purple` that does not exist (the id is
+  `purple`), omitted `gold`, and said the default was `django` when it is `purple`. Corrected,
+  with a pointer to `UserProfile.color_palette.choices` + `palettes.css` as the authoritative
+  list. The same claims are fixed in seven other docs.
+- **`UPGRADING.md` under-counted the migrations**: it said "Four", which is what the
+  approvals/notifications *review* added. Coming from v0.20.1 — the only previously released
+  version — you apply **thirteen**. Now stated with the breakdown.
+- **The bundled scenario demo apps are documented.** `apps/demo_purchasing`, `demo_agentops`
+  and `demo_access` ship as of v0.21.0 and register themselves when present, so a fresh clone
+  gets three extra apps, six extra migrations and 29 routes under `/demo/`. `UPGRADING.md`
+  now says so and gives the one-line opt-out; `config/settings/base.py`'s comment no longer
+  claims they are "deliberately not tracked".
+
+## [0.21.0] - 2026-09-26
+
+Fixes from the 2026-09-13 base-framework audit (v0.20.1). Each carries a
+regression test that fails against the old code.
+
+### Security
+- **MCP now checks the *user's* staff flag, not just the token's label.** Any
+  tool at `requires_access="staff"` (or `"auth"`) also requires
+  `token.user.is_staff`, matching REST. Previously a staff-level token held by a
+  non-staff user — flag cleared after minting, or minted for them by another
+  staffer — kept full staff read/write over MCP (26 of 40 tools, incl.
+  `create_webhook`). The token form also refuses to mint staff/auth-level
+  tokens for non-staff users. (C1)
+- **`/media/` no longer serves access-controlled files.** Runbook bodies were
+  reachable anonymously at `/media/runbook/<key>.md`. The media route now 404s
+  prefixes listed in the new `SMALLSTACK_PRIVATE_MEDIA_PREFIXES` (default
+  `runbook/`, env-overridable, comma-separated); profile photos stay public.
+  The gate compares the resolved file path the server would open — not URL
+  strings — so `..` tricks (`/media/%2e%2e/media/runbook/x.md`) and symlinks
+  can't slip past it. (C2)
+- **API tokens no longer leak into logs.** An `HttpRequest` in a log record's
+  `extra` (every `django.request` 4xx/5xx) is reduced to method + path, so a
+  feed's `?token=` never reaches JSON log lines or `LogRecord.extra`. Gunicorn's
+  access log format drops the query string too. (C3)
+- **Webhook delivery can't be redirected into the private network.** 3xx
+  responses are recorded as failures, never followed, and the connected
+  socket's peer address is re-checked before any byte is sent — closing the
+  DNS-rebinding window as well. (C4)
+- **REST detail/update/delete and bulk endpoints honour `get_list_queryset`**,
+  as REST list and all MCP verbs already did. A fork scoping rows per owner
+  leaked other tenants' rows at `/api/<base>/<pk>/`. (C5)
+- **Inbound webhook receiver hardened**: bodies over
+  `SMALLSTACK_WEBHOOK_INBOUND_MAX_BYTES` (1 MB) get 413 before anything is
+  stored; signature-rejected receipts keep a 1 KB excerpt + SHA-256 and stop
+  being recorded past `SMALLSTACK_WEBHOOK_REJECTED_PER_MINUTE` (30); new
+  `prune_webhook_receipts` command (in the shipped crontab). (C6)
+- **Runbook images get server-generated names and a pinned content type.**
+  Only png/jpg/gif/webp are accepted by the form; any other stored name
+  (service/bundle paths, pre-fix uploads) is served as an
+  `application/octet-stream` download, never rendered. (C7)
+- **OAuth consent POST requires a CSRF token** (`AuthorizeView` is no longer
+  `csrf_exempt`), and `SESSION_COOKIE_SAMESITE`/`CSRF_COOKIE_SAMESITE` are
+  pinned to `"Lax"`. The consent page's CSP override regains `base-uri`,
+  `object-src`, `font-src`, `connect-src`. (C8, H5)
+- **Abandoned OAuth codes are scrubbed**: past their TTL the plaintext key is
+  cleared and the never-delivered token deactivated. (C9b)
+- **Passwordless login**: attempts are spent atomically before the code check
+  (parallel guesses bypassed the 5-attempt limit) and codes per account are
+  capped by `SMALLSTACK_LOGIN_CODES_PER_HOUR` (5). (H3)
+- **`.dockerignore` excludes `backups/`, `data/`, `.secret_key`, `.kamal/` and
+  nested `*.sqlite3`** — `COPY . .` was baking DB snapshots into images. (H1)
+- `SMALLSTACK_PUBLIC_STATUS_ENABLED=False` now also closes the per-monitor
+  detail page to anonymous visitors (C9a). New `SMALLSTACK_PUBLIC_PROFILES`
+  flag (default on) lets a deployment require sign-in for `/profile/<username>/`,
+  which otherwise answers "does this account exist" (C9d).
+
+### Fixed
+- **The telemetry `after_id` cursor skipped records.** It filtered by pk but
+  ordered by ts, so batch-inserted records captured earlier than their pk
+  suggests were never returned — with `has_more=False`. Cursor mode now pages
+  in pk order. Affects `/api/logger/records/`, MCP `logs_search`, and
+  `logs --follow`. (D1)
+- **A scheduler fire that failed to enqueue was lost silently.** Any enqueue
+  exception now records a FAILED run and `last_status="failed"`; an unknown
+  `queue_name` is rejected by `ScheduledJob.clean()`. (D2)
+- **The shipped crontab now drives the webhook retry tick** (`POST
+  /webhooks/tick/` every minute) — failed deliveries were never retried or
+  dead-lettered — **and nightly `run_retention`**, the only driver of runbook
+  document TTL expiry. (D3, D4)
+- `api_doctor` and the OpenAPI validity tests validate the spec actually
+  served (custom endpoints included: 68 operations, not 42), via the new
+  `build_served_spec()`. (D5)
+- A log-capture window that would capture nothing extra (a typo, or a level at
+  or above the baseline) is refused with a clear message on every channel
+  instead of being audited and reported as active. (D6)
+- Dynamic status monitors: a DB error is logged instead of silently dropping
+  every endpoint/surface monitor from the tick; one bad row no longer drops
+  the rest. (D7)
+- Bulk deletes log at WARNING, so the v0.20.0 summary line actually reaches
+  the log viewer at the default baseline. (D8)
+- Smaller: heartbeat log uses `attach_display_helpers` (D9); the log viewer
+  gains a CRITICAL filter and flags unknown levels (D10a); write give-ups count
+  toward `dropped` (D10b); `reset_schedule` reports a failed re-sync (D10c);
+  bulk-delete and help-search failures are logged (D10d); the api/mcp/webhook
+  doctors report a missing schema instead of a traceback (D10f); CRUD lists
+  fall back to pk order when the queryset is unordered — fixes
+  `UnorderedObjectListWarning` on the user list (D10g).
+- Dataset CSV export is capped by `SMALLSTACK_DATASET_CSV_MAX_ROWS` (50,000);
+  over the cap is a 400 asking the caller to filter or page. (C9c)
+
+### Added — approvals + notifications
+
+The two primitives themselves, which had no changelog entry: ~19 *fixes* to them
+were documented below before this section said they existed. (F-56 #10)
+
+- **`apps/approvals` — a side-car human-in-the-loop approval gate.** An app (or
+  an AI agent) files an `ApprovalRequest`, a human decides it in the staff queue
+  and decision console at `/smallstack/approvals/requests/`, and the app reacts
+  through a per-kind callback. What "approved" *means* stays app-owned:
+  approvals never write your models. State machine
+  `pending → approved | rejected | canceled | expired`, every transition
+  race-safe (conditional UPDATE, single winner) and audited.
+  - `@approval_kind` registry, autodiscovered from `<app>/approvals.py`, with
+    `default_expires_in`, a `can_decide` eligibility hook that *narrows only*,
+    `assignable` allowlisting, `notify` extra recipients, and a context card
+    template per kind.
+  - One eligibility implementation (`permissions.can_decide`) shared by web,
+    REST and MCP: staff by default, self-approval blocked, assignees narrow.
+  - Surfaces: the console, `{% approval_card %}` for non-staff assignees,
+    `POST …/requests/create/` + `{id}/decide/` REST, `request_approval` /
+    `decide_approval` MCP tools, `approval_requested` / `approval_decided`
+    signals, `.created` / `.updated` webhooks carrying `data.status`, a
+    dashboard widget, and a 5-minute expiry sweep plus lazy expiry so
+    correctness never depends on the worker.
+- **`apps/notifications` — an in-app notification primitive.** A never-raising
+  `notify()` service, topbar bell with unread badge, a LoginRequired inbox at
+  `/smallstack/notifications/` (deliberately *not* staff-only), per-user REST
+  (`api/` + `api/mark-read/`), and a daily retention prune.
+- **New public notifications API** beyond `notify()`: `services.resolve(subject_key,
+  kind="")` retires every unread row about a subject, `notify(..., subject_key=…)`
+  tags a row with a producer-owned handle, and `Notification.subject_key` (indexed)
+  stores it. This is what lets a decision retire the other approvers' now-stale
+  "Approval needed" bells instead of leaving a badge that means nothing. (F-56 #3)
+- **New middleware** — `apps.notifications.middleware.NotificationReadOnArrivalMiddleware`
+  is added to `MIDDLEWARE` in `config/settings/base.py`. It marks a notification
+  read only on a 2xx arrival, so a click that dead-ends cannot silently consume
+  the badge. **A fork that pins its own `MIDDLEWARE` list must add this entry**
+  or it loses read-on-arrival. (F-56 #1)
+- **Nine settings**: `SMALLSTACK_APPROVALS_ENABLED`,
+  `SMALLSTACK_APPROVALS_ALLOW_SELF_APPROVE`, `SMALLSTACK_APPROVALS_STAFF_OVERRIDE`,
+  `SMALLSTACK_APPROVALS_DEFAULT_EXPIRES_MINUTES`, `SMALLSTACK_APPROVALS_EMAILS_ENABLED`,
+  `SMALLSTACK_APPROVALS_NOTIFY_EMAILS`, `SMALLSTACK_APPROVALS_SWEEP_ENABLED`,
+  `SMALLSTACK_NOTIFICATIONS_ENABLED`, `SMALLSTACK_NOTIFICATIONS_RETENTION_DAYS`
+  — plus the five added by the review, listed under Changed.
+
+### Changed — approvals/notifications review (2026-09-25)
+
+Behaviour changes an operator or a fork will notice. Recipes for the ones with a
+remedy are in [`UPGRADING.md`](UPGRADING.md).
+
+- **API tokens held by deactivated accounts stop working.** `APIToken` now
+  refuses a token whose user is `is_active=False` on *every* surface (REST, MCP,
+  feeds, OAuth), and approvals eligibility requires an active user too.
+  Previously an offboarded account's un-revoked token kept reading the queue and
+  **approving/rejecting**, recorded under their name. This changes behaviour at
+  every offboarding: deactivating a user is now sufficient to cut their tokens,
+  where before revocation was also required. (F-10, F-56 #4)
+- **The master switches now un-mount their app's URLs**, following the
+  `SMALLSTACK_MCP_ENABLED` precedent. With `SMALLSTACK_APPROVALS_ENABLED=False`
+  or `SMALLSTACK_NOTIFICATIONS_ENABLED=False`, the routes cease to exist rather
+  than staying live while only the fan-out died. **Consequence:** a template or
+  `reverse()` referencing e.g. `notifications:inbox` under a disabled switch now
+  raises `NoReverseMatch` (a 500) instead of rendering a dead link — guard such
+  references with the switch. (F-11, F-56 #2)
+- **New `WebhookReceiver.signature_header` default:** `"X-Signature"` →
+  `"X-SmallStack-Signature"`, matching what outbound signs, with migration
+  `webhooks/0004`. Existing receivers keep their stored value; **receivers
+  created after the upgrade expect the new spelling**, so a third-party sender
+  configured for `X-Signature` will 401 unless the field is set explicitly.
+  (F-06, F-56 #8)
+- **System-initiated audit entries create one inactive `User` row.** The first
+  write with no human actor (expiry sweep, scheduler retirement) creates an
+  `is_active=False`, non-staff account named by the new
+  `SMALLSTACK_AUDIT_SYSTEM_USERNAME` (default `"system"`), so those entries have
+  an author instead of being invisible. Expect one unfamiliar row in the user
+  list; it cannot log in. (F-15, F-56 #7)
+- **Filing an approval can now return 429.** `SMALLSTACK_APPROVALS_MAX_PENDING_PER_REQUESTER`
+  (default 50) caps one requester's open requests **per kind**; over it, REST and MCP return
+  `too_many_pending`. An agent in a retry loop could previously fill the queue
+  unbounded. (F-18, F-56 #5)
+- **Four more new settings** (F-56 #6):
+  - `SMALLSTACK_APPROVALS_EMAILS_INLINE` — defaults to `DEBUG`. Sending falls
+    back to inline only when set; **in production this means approval email
+    requires a `db_worker` draining the `email` queue.** The new
+    `approvals-fanout` monitor goes DOWN when it isn't.
+  - `SMALLSTACK_APPROVALS_EMAIL_BACKLOG_MINUTES` (15) — how stale the email
+    queue may get before that monitor complains.
+  - `SMALLSTACK_APPROVALS_LAZY_EXPIRE_LIMIT` (25) — rows lazily expired per
+    request, bounding what had been an unbounded synchronous sweep inside a GET.
+  - `SMALLSTACK_AUDIT_SYSTEM_USERNAME` (`"system"`) — see above.
+- **Generated MCP tool refusals carry a machine-readable `code`** —
+  `invalid_argument` · `not_found` · `not_permitted` · `validation_error` ·
+  `unsupported` — where they previously returned a bare English sentence. A
+  rejected create also now sets the protocol-level `isError` flag (it returned
+  `{"errors": …}` with no top-level `error` key, so a model reading the flag saw
+  success). Clients string-matching the old prose must switch to `error.code`.
+  (F-53)
+- **REST exposes `target_ref` and `assignee_usernames` on approval requests**,
+  so the API shows the target it accepts (`"app_label.model:pk"`) instead of
+  serializing it to `null`. (F-35)
+- **Four new framework migrations**: `notifications/0002` (+`subject_key` and its
+  index), `notifications/0003` (backfill — see `UPGRADING.md`), `scheduler/0003`
+  (+`auto_retired`), `webhooks/0004` (the header default above).
+
+### Security — approvals/notifications review (2026-09-25)
+
+- **Per-object authorization now covers every single-object CRUD surface.** New
+  `CRUDView.check_object_permission(obj, request)` hook, applied by the base to
+  detail, edit, delete, field-preview, related-tab, the REST detail/update/delete
+  handlers, the bulk-action view and the generated MCP `get_*`/`update_*`/`delete_*`
+  tools. Previously a view that expressed ownership by overriding one generated
+  base's `get_object` protected only that base: `/smallstack/tokens/<pk>/related/request_logs/`
+  returned **200** with another user's API-token request log — which endpoints
+  that token calls and when — to any logged-in non-staff account, while the
+  detail page beside it correctly answered 403. `tokenmgr` now uses the hook.
+  (F-27)
+- **Deactivating an account no longer widens an approval's audience.** A request
+  routed to one named assignee used to become a broadcast to every active staff
+  user the moment that assignee was offboarded (1 recipient → 6 recipients, 1
+  bell → 10), silently. The fallback remains — the request must not go unseen —
+  but it logs a warning naming the deactivated assignees and both the email
+  subject and the bell title carry `(assignee deactivated)`. (F-32)
+- **The MCP tier ladder is no longer inverted.** It ranked
+  `readonly < staff < auth`, so `requires_access="auth"` — documented as "gate to
+  any authenticated caller" — could be satisfied by *no* login token, and staff
+  were strictly less capable than non-staff on that tier. The ladder is now
+  `readonly < auth < staff`, and only the `staff` tier implies the staff flag.
+  Latent before this (nothing shipped declares `"auth"`, though a dataset author's
+  `mcp_access="auth"` reaches it). (F-26)
+- **An inbound webhook verifier that raises is logged.** The bare
+  `except Exception` around the verifier swallowed everything, so a verifier
+  raising on a *correct* signature was indistinguishable from a forged one with
+  nothing in the log. Still fails closed. (F-37)
+
+### Fixed — approvals/notifications review (2026-09-25)
+
+- **Multi-line `{# … #}` comments no longer render as page text.** Django's `{# #}`
+  is single-line only; three multi-line ones were being emitted verbatim — on the
+  approvals decision console and in *every* CRUDView's no-match empty state. Swept
+  tree-wide (12 more in `smallstack/starter.html`, which ships as "copy this
+  file"). Guarded by `apps/smallstack/test_template_hygiene.py`, which reads every
+  template in the tree and also asserts that rendered CRUD pages contain no `{#`,
+  `{%` or `{{`. (F-45)
+- **The empty state branches on filters, not on "any query param".** It tested
+  `request.GET.urlencode`, which is truthy for pagination, ordering, the display
+  toggle and the `?_notification=` marker the notification bell appends — so a
+  user who sorted an empty list or arrived from a bell row was told to "clear
+  their filters" and lost the create-the-first-one link. New
+  `has_active_filters` context flag; the four divergent copies of the empty state
+  converge on one include. (F-44)
+- **`?status=pending` on the approvals queue now agrees with its own Pending stat
+  card.** Expiry is lazy, so an overdue row's stored `status` still reads
+  `pending`; the filter matched the column while the card counted `actionable()`,
+  and the page contradicted itself by 900 rows. Both now evaluate
+  `ApprovalRequestQuerySet.for_effective_status`, on HTML, REST and MCP, and
+  `?status=expired` includes overdue-but-unswept rows. New generic
+  `CRUDView.apply_filter(qs, field_name, value, request)` hook. (F-29)
+- **`SMALLSTACK_APPROVALS_SWEEP_ENABLED` is a two-way switch again.** Retiring a
+  code-declared scheduled job whose spec disappeared had no reverse, so turning
+  the flag back on never restored the job. New `ScheduledJob.auto_retired` marks
+  automatic retirements and they are undone when the spec returns; a job an
+  operator disabled by hand stays off (and now says so in the log). A relative
+  safety valve also refuses to retire more than half the known code jobs in one
+  sync, which is the signature of a *partial* autodiscovery failure. (F-30)
+- **A verifier that mutates its headers dict works again.** The case-insensitivity
+  fix had narrowed the argument from `dict[str, str]` to Django's immutable
+  `CaseInsensitiveMapping`, so a third-party verifier doing
+  `headers.pop("X-Smallstack-Signature", "")` began returning 401 on correct
+  credentials. The argument is now `webhooks.hooks.CaseInsensitiveDict` — a real
+  mutable `dict` subclass with case-insensitive lookups. (F-37)
+- **A failing status monitor no longer renders as a green tick.** The core tier of
+  `/smallstack/status/overview/` built each service row from `Monitor.inventory()`,
+  whose base implementation returns `{"ok": True}`, so `approvals-fanout` ("191
+  approval email tasks queued and unrun") and `scheduler-tick` ("2 jobs overdue")
+  both showed "on" while recorded as FAILING. The row now needs `inventory()` **and**
+  the recorded state to be good, and carries the monitor's actionable note.
+  Not-yet-recorded still reads as fine. (F-28, F-07)
+- **Generated MCP `get_*`/`update_*`/`delete_*` tools accept `id`.** `serialize()`
+  emits the row identity as `id` and three hand-written tools accept `id`, but the
+  generated ones required `pk` — so an agent passing the id it had just been
+  handed got `{"error": "pk is required"}` on its first call, which is exactly
+  what `request_approval`'s own description told it to do. `pk` remains a
+  permanent alias; schemas declare both with `anyOf`; descriptions name the
+  parameter. (F-25)
+- **A feature's master switch degrades to 503, not 500.** New
+  `apps.smallstack.exceptions.FeatureDisabled`, translated by `api_view` for every
+  endpoint in the project. `ApprovalsDisabled` is one, so a *downstream* app's
+  endpoint that files an approval with approvals switched off returns a 503
+  envelope naming the setting instead of an unhandled 500. Approvals' own dead 503
+  handlers and OpenAPI entries are removed — those routes are unmounted whenever
+  the exception can be raised. `PermissionDenied` gets the same treatment (403).
+  (F-31)
+- **Approval emails warn when they would link to `localhost`.** Approvals mail is
+  sent without a request, so its absolute console link comes from `SITE_DOMAIN`
+  (default `localhost:8000`) — dead on every unconfigured install, including the
+  headline "non-staff assignees decide via the emailed link" story. The approvals
+  monitor now reports it. Skipped under `DEBUG` and when the email channel is off.
+  (F-33)
+- **Global search finds a non-staff assignee's own approvals.** Search was the one
+  read surface the eligibility scoper never reached (`search_access` defaults to
+  STAFF), so a user who could open and decide a request could not find it.
+  (F-43)
+- **A non-staff approver has a nav entry to the console.** The console is
+  LoginRequired + eligibility-scoped, but its only nav registration sat in the
+  staff-only ADMIN section. New `nav.register(visible=<predicate>)` for rules the
+  `auth_required`/`staff_required` flags cannot express. (F-46)
+- **Stale "Approval needed" bells created before the `subject_key` migration can
+  be retired.** New data migration backfills `subject_key` from the row's URL and
+  marks read any bell whose request is already terminal. Without it the
+  retirement feature reached only rows filed after the upgrade — 105 of 105 unread
+  rows on the reference install were unaddressable. Idempotent. (F-42)
+- The decision-email recipient rule is documented correctly at last: the set is
+  **the approvers — including the decider** — plus the requester. The bell differs
+  from the email by exactly one person (it skips the actor), and that asymmetry is
+  now stated in `emails.py` and both `.md` files. (F-04)
+
+## [0.20.1] - 2026-08-29
+
+### Changed
+- **`make lint` now runs ruff *and* mypy** — one command, the full static gate.
+  `make typecheck` existed as a deliberately separate target wired only into
+  the pre-commit hook, so *commits* were type-checked but a by-hand
+  `make test && make lint` gave no type check and no signal one existed. A
+  hand-run lint now enforces exactly what the hook enforces; the hook drops
+  its duplicate mypy step, and `make typecheck` remains for running mypy alone.
+- **CLAUDE.md gains a Types convention**: prefer strongly typed code where
+  practical, annotate signatures on new and edited code — under this mypy
+  config (`check_untyped_defs = false`) annotating a function is what opts its
+  body into checking — and keep `make lint` green before reporting work done.
+  CLI reference docs synced (`cli-reference.md`, `cli-tools.md`).
+
+## [0.20.0] - 2026-08-16
+
+### Added
+- **`/api/logger/` — the telemetry surface a machine can drive.** The staff
+  viewer answered "an operator needs to read the logs without shell access";
+  this answers the same question for a CI job, a frontend dev panel, or an AI
+  agent. Staff-only, Bearer or session auth, advertised in the OpenAPI schema:
+
+  | Endpoint | |
+  |---|---|
+  | `GET /api/logger/` | Capability document — filters, limits, capture state |
+  | `GET /api/logger/records/` | Search, with the viewer's filters |
+  | `GET /api/logger/records/<id>/` | One record, full untruncated traceback |
+  | `GET|POST|DELETE /api/logger/capture/` | Read, open, or close a capture window |
+  | `GET /api/logger/config/` | Effective settings + live handler stats (read-only) |
+  | `GET /api/logger/loggers/` | Logger names with counts, for discovery |
+
+  Shaped for its consumer rather than copying the UI. **Unknown query parameters
+  are a 400**, not silently ignored: a human eventually notices a result set
+  looks wrong, but `?sevrity=ERROR` returning the *unfiltered* table reads to a
+  script as a successful query, and everything concluded afterwards is built on
+  it. **`?after_id=` is a cursor, not a page number** — new rows arrive at the
+  top, so page 2 of a live tail re-reads what page 1 already returned.
+  **`applied_filters` is echoed back**, so a caller can check the server
+  understood the query it thinks it sent. List responses truncate tracebacks and
+  flag `exc_truncated`; the detail endpoint serves the full text.
+
+  `POST /api/logger/capture/` requires a `note` (the CLI leaves it optional — a
+  human running a command is present and accountable in the moment, an
+  unattended caller is neither). Duration is clamped with `clamped: true`
+  reported rather than silently running for a different period than asked for.
+  `DELETE` is idempotent, so a cleanup step in a `finally` is safe. Both are
+  audited. A **read-only token can read everything here but cannot open a
+  window** — the right credential for CI.
+
+  `GET /api/logger/config/` is deliberately read-only. Persistent configuration
+  belongs in settings/env where a deploy reproduces it; an API that rewrote
+  baseline logging config would be a drift generator. The capture window is the
+  one runtime knob, and it expires.
+
+- **Five MCP tools** — `logs_search`, `logs_get`, `logs_status`,
+  `logs_capture_start`, `logs_capture_stop` — so an agent can run a whole
+  debugging session: turn capture up, reproduce, correlate an `X-Request-ID` to
+  the lines that explain it, turn capture back down. Five rather than eight
+  because every tool costs room in an agent's tool list, and "what's the state
+  of logging here" is one question: `logs_status` answers capture state,
+  effective config, and the busiest loggers together.
+
+- **`manage.py logs`** — search captured records from the shell, which
+  previously required a browser. `--level`, `--logger`, `--request-id`,
+  `--trace-id`, `--search`, `--since`/`--until`, `--after-id`, plus `--id` for
+  one record with its full traceback and `--follow` for a cursor-based tail. An
+  empty result says whether capture was simply at its baseline, which is the
+  usual cause.
+
+- **`--json` on `log_capture` and `prune_logs`.** The human output of
+  `log_capture status` printed a *Python dict repr* — single quotes, `False` not
+  `false` — so anything consuming it was screen-scraping something that was
+  never JSON.
+
+- **`apps/telemetry/queries.py`** — one implementation of the filters,
+  validation, serialization, and capture verbs, with the REST API, the MCP
+  tools, and the CLI as thin adapters over it. Two bugs fixed in this same
+  release line were one rule written twice and drifting apart; three transports
+  made that risk structural, so the shared core removes it. Tests assert the
+  three surfaces return identical results for identical queries.
+
+### Fixed
+- **Read-only API tokens could write through any hand-rolled `@api_view`
+  endpoint** (security). CRUDView-generated endpoints have always enforced the
+  read-only rule via `_check_api_permissions`, but that is only reached from the
+  generated views — the `api_view` decorator every *custom* endpoint uses never
+  called it. `apps/runbook/api.py` was unaffected only because it independently
+  re-implemented the same rule in a private helper; anything else was exempt,
+  and a new endpoint had no way to know it needed the check. Verified with a
+  synthetic endpoint: a read-only token returned 200 **and ran its side
+  effect**. Now enforced in `api_view` itself, so the rule is structural rather
+  than remembered. Login tokens (`access_level=""`) are unaffected; only tokens
+  explicitly minted read-only change behaviour, which is the point of minting
+  them.
+
+- **Django's own 4xx access-log lines carried no `request_id`.** `get_response()`
+  calls `log_response(..., request=request)` *after* the middleware chain
+  returns — i.e. after `RequestIDMiddleware`'s `finally` reset — so the
+  `Unauthorized:`/`Not Found:` line documenting a failure was invisible to a
+  search by the very ID the client was told to quote. 500s were fine, which made
+  it easy to miss. `RequestContextFilter` now falls back to `record.request.id`,
+  defensively enough that a missing or broken `request` can never take the line
+  down.
+
+- **`X-Request-ID` was not exposed to cross-origin JavaScript.** The header was
+  on the wire but absent from `Access-Control-Expose-Headers`, so `fetch()` read
+  `null` — the correlation story was unreachable from exactly the browser
+  clients it was written for. `CORS_EXPOSE_HEADERS` now lists it.
+
+- **A freshly-started process ignored an already-open capture window** until it
+  happened to log at or above the baseline level. `Logger.callHandlers` compares
+  `record.levelno` against the handler's level *before* invoking the handler, so
+  nothing inside `emit()` can run for a below-baseline record — meaning the
+  writer/poller thread that picks up capture windows never started. A worker
+  whose early lines are all INFO could sit outside an open DEBUG window
+  indefinitely. `TelemetryConfig.ready()` now starts the poller eagerly.
+  (`_ensure_worker()` also gated on `django_apps.ready`, which `Apps.populate()`
+  only sets *after* every `ready()` returns — always false at that call site.)
+
+- **The log viewer's `?logger=` filter matched sibling names.** It was a raw
+  `startswith`, so `apps.telemetry` also matched `apps.telemetry_report` — the
+  bug class the capture handler's own exclusion check had already been fixed
+  for. Both now share `logger_match.prefix_q`.
+
+- **A non-serializable `extra` value rendered with `str()` while the docs
+  promised `repr()`** — which loses exactly the type information you want when
+  reading a log. Now `repr()`, bounded to 2000 characters. An `extra` value whose
+  `__repr__()` *raises* no longer drops the whole line either: the DB handler's
+  fallback used to re-touch the poisoned value and fail again, losing the
+  message and every healthy field with it.
+
+- **`log_capture start` always claimed the duration was clamped**, because it
+  compared two independently-generated `timezone.now()` values.
+
+- **CRUDView bulk delete/update left no trace.** A 500-row bulk delete was
+  invisible in both the log viewer and the audit trail. Now one summary log line
+  per call (not one per row — that is the unbounded-growth failure mode the
+  handler's own docstring warns about) plus per-row `LogEntry` audit entries
+  written in a single `bulk_create`, because "who deleted row X" has to stay
+  answerable per row.
+
+- **`bind_trace_id()` was documented but unused**, and unreachable in the
+  viewer. Background tasks and scheduler jobs now bind a trace ID
+  automatically, and the viewer gained a `trace_id` filter. The task hook
+  subscribes to **both** identically-named signal pairs — `django_tasks.signals`
+  (sent by `django_tasks_db`'s worker) and `django.tasks.signals` (sent by
+  Django's own backends, including the `ImmediateBackend` the test settings
+  use). Subscribing to one meant trace binding silently stopped the moment
+  `TASKS["default"]["BACKEND"]` changed; it also meant the real
+  `enqueue()`-to-execution path had no test coverage, since the suite runs on
+  the namespace the hook wasn't listening to.
+
+- **`django.server` is no longer captured to the database.** The dev server's
+  per-request access log wrote one INFO record per request, so anything polling
+  the log table filled it with its own poll traffic — the viewer's five-second
+  live mode included. Measured: ten polls of the logger API produced eleven new
+  records; zero after the fix. It does not exist in production (gunicorn writes
+  its own access log), and `RequestLog` already stores the same information
+  properly, with a user and a request ID attached.
+
+The telemetry subsystem itself — the staff log viewer, database-backed capture,
+and real JSON logging — landed after v0.19.0 and ships here too. Its notes
+follow.
+
+### Added — telemetry subsystem
+- **`/smallstack/logs/` — a staff log viewer, so the whole loop works without
+  shell access.** Newest-first, one line per record, with a colour rail down the
+  left edge carrying severity: level is the attribute you scan for, and a rail
+  finds it without reading while costing no row height (a badge would have made
+  every row taller for information the rail already carries). Filters for level
+  (each showing the count you'd get), logger, time range, and a search that
+  covers tracebacks as well as messages — the exception class is what you
+  remember, and it lives in the traceback.
+
+  Rows expand in place for the full message, traceback, `extra` fields and
+  source location; tracebacks load on demand, since one can be 20 KB and fifty
+  inlined would dominate the page. A live mode polls every five seconds.
+
+  **The capture control sits in the page header**, because "nothing here, turn
+  it up" is the first move when the baseline level missed your bug. Opening a
+  window from the UI is audited via `log_action`.
+
+  **Request correlation is now round-trip**: expanding a record links to every
+  line its request produced, and `/smallstack/activity/requests/` gained a
+  `logs` link per request going the other way.
+
+  Verified across the django / orange / dark-blue / high-contrast palettes, in
+  light and dark, and down to a 420px viewport (the logger column drops, the
+  rails hold).
+
+- **`apps/telemetry` — log records are written to the database, so a deployment
+  is debuggable from inside the app.** Console and file logging both assume you
+  can reach the output; a container platform with no shell means the log is
+  written perfectly and you can't see a line of it. Records now also land in
+  `telemetry_logrecord`, browsable at `/admin/telemetry/logrecord/` and through
+  Explorer, each carrying the `request_id` that produced it — so an
+  `X-Request-ID` from a bug report pulls every line that request emitted.
+
+- **Time-boxed capture windows.** Baseline capture is WARNING so the table
+  stays small. `manage.py log_capture start --level DEBUG --minutes 15` turns it
+  up and it closes itself — nothing is left switched on because someone got
+  distracted. The window lives in the database, not one process's memory, so
+  every worker and container picks it up within a poll interval (5s), and each
+  row records who opened it and why.
+
+  Both the handler *and* the logger levels move. A record has to be created
+  before any handler is consulted, so lowering the handler alone would capture
+  nothing new — this is the usual reason "I turned on DEBUG and saw nothing".
+  `TELEMETRY_CAPTURE_LOGGERS` controls which loggers are lowered;
+  `django.db.backends` is pinned at WARNING regardless, because at DEBUG it
+  emits one line per SQL query.
+
+- **`DatabaseLogHandler`, built so logging can never break a request.** Four
+  guards, each for a specific failure mode of writing logs to the database you
+  are serving from:
+  - *recursion* — writing a row runs a query, the query logs, the record comes
+    back to the handler. A thread-local guard plus logger-hierarchy exclusion
+    breaks the cycle.
+  - *raising* — every path swallows; a failed write costs log lines, not a 500.
+  - *latency* — nothing is written on the request path; records go to a bounded
+    queue and a background thread batches them out.
+  - *load* — an incident floods ERROR lines exactly when the database can least
+    absorb them, so the queue drops on overflow and counts the drops instead of
+    blocking the caller. `log_capture status` reports them.
+
+- **`manage.py prune_logs`** — retention by age (`TELEMETRY_LOG_RETENTION_DAYS`,
+  default 7) *and* a hard row cap (`TELEMETRY_LOG_MAX_ROWS`, default 20000),
+  whichever binds first; wired into the container cron every 15 minutes. Age
+  alone wouldn't survive an incident logging a million lines in ten minutes; a
+  cap alone would keep stale rows forever on a quiet site.
+
+- **`manage.py log_capture start|stop|status`** — control surface for the
+  window, plus queue health (written / dropped / errors / worker liveness).
+
+- 51 tests in `apps/telemetry/tests/`. Two bugs they caught during development:
+  logger exclusion used a raw string prefix, which also swallowed unrelated apps
+  like `apps.telemetry_report`; and the row-cap prune cut on `pk`, copied from
+  `prune_activity` where pk order tracks timestamp order — it doesn't here,
+  because records are queued and batched, so concurrent workers interleave.
+  It now cuts on `ts`.
+
+- `TELEMETRY_LOG_CAPTURE_ENABLED=false` switches the whole subsystem off: no
+  handler, no queue, no thread, no rows.
+
+### Fixed — telemetry subsystem
+- **Production log output is now actually JSON.** The `json` formatter was a
+  `%`-style string template (`'{"message": "%(message)s"}'`) that only looked
+  like JSON. It emitted malformed lines in three routine cases, all of which
+  silently corrupted anything downstream that tried to parse them:
+
+  - **Any quote, backslash, or newline in a message** broke the line — nothing
+    escaped `%(message)s`. A single `logger.info('Ticket "42" closed')` was
+    enough.
+  - **`logger.exception()` was unparseable by construction.** Python appends the
+    traceback *after* the formatted string, so the JSON object was followed by
+    20-odd raw `Traceback` lines. The most important events were the ones a
+    collector could never read.
+  - **`extra={...}` was silently discarded.** The format string had no
+    placeholder for it, so existing structured call sites in `apps/api/threats.py`
+    and `apps/help/search.py` were logging fields that went nowhere.
+
+  Formatting now runs through `json.dumps` (`apps.smallstack.logging.JSONFormatter`):
+  messages are escaped, tracebacks land in an `exc` field (with `exc_type`
+  alongside) *inside* the object, `stack_info` lands in `stack`, and `extra`
+  fields are preserved under an `extra` key. Non-serializable values fall back to
+  `repr()` instead of taking the line down, and the formatter cannot raise — a
+  serialization failure degrades to a minimal object carrying the message.
+
+### Added — telemetry subsystem (correlation)
+- **Log lines carry the request ID that produced them.** `RequestIDMiddleware`
+  binds the request ID to a `contextvar`; a new `RequestContextFilter` on each
+  handler copies it onto every record as `request_id`. The docs already promised
+  you could correlate a user-reported `X-Request-ID` to log entries — now you
+  actually can, across both the log stream and the `RequestLog` table, with no
+  changes at any call site.
+- **`bind_trace_id()` / `reset_trace_id()`** in `apps.smallstack.logging`, for
+  stitching together work that isn't a single HTTP request — scheduled jobs,
+  webhook delivery chains, multi-step agent runs. Every log line emitted inside
+  the binding carries a shared `trace_id`.
+- **`apps/smallstack/test_logging.py`** — 33 tests pinning JSON validity
+  (quotes, backslashes, newlines, unicode, nested JSON), traceback containment,
+  `extra` preservation, context binding and reset-on-exception, and a check that
+  the `development.py` / `production.py` `LOGGING` dicts configure cleanly. The
+  test settings override `LOGGING`, so nothing else in the suite exercised them.
+
+### Changed — telemetry subsystem
+- **Production log timestamps are ISO-8601 UTC** (`2026-03-04T14:23:01.123Z`)
+  instead of local-time `%(asctime)s`, so lines from different hosts sort
+  correctly. JSON output is ASCII-escaped by default so it can never raise
+  `UnicodeEncodeError` on a stream with a non-UTF-8 encoding; parsers decode the
+  escapes back to the original text. Pass `ensure_ascii=False` to `JSONFormatter`
+  if you read raw container logs by eye.
+- **Development console lines show `request_id=…`** when emitted during a
+  request, appended at the end of the line so the left edge stays scannable.
+
+## [0.19.0] - 2026-08-16
+
+### Changed
+- **The "Connect a SmallStack" pairing panel picks events instead of asking for
+  raw JSON.** The "Events (JSON)" text field is replaced by the same
+  `EventFilterWidget` picker the endpoint form uses — checkboxes built from
+  `available_events()`, with `*` pre-checked reproducing the old `["*"]`
+  default. Both surfaces now share one picker, upgraded together:
+
+  - **Plain-English annotations** on every option (`*.created — any record is
+    created`; model patterns resolve verbose names: *"a Ticket is created"*).
+  - **A help popup** on the custom-pattern box explaining the
+    `app.model.action` grammar with examples — built on a new reusable
+    `.help-pop` component (`<details>`-based, no JS, keyboard-operable,
+    palette-correct), documented in `admin-page-styling.md`.
+  - **Progressive disclosure**: the custom-pattern box collapses to a quiet
+    "advanced" line when empty and auto-expands with a count badge whenever
+    patterns exist — expansion is round-trip safety, since patterns usually
+    arrive via REST/MCP/CLI and a UI save with the textarea absent would
+    silently strip them.
+
+  The scripted contract is unchanged: raw `events` JSON is still accepted by
+  the pairing action, and REST/MCP/CLI post `event_filter` exactly as before.
+
+### Fixed
+- **Malformed event patterns are now rejected instead of silently matching
+  nothing.** A typo is still valid JSON, so `"support ticket created"` or a
+  pasted `["*"]` sailed through every surface and produced an endpoint that
+  simply never fires, with no error anywhere. `validate_event_patterns()`
+  shape-checks patterns on the endpoint form — HTML, REST, MCP, and CLI all
+  validate through it — and in the pairing view. Well-formed patterns that
+  match nothing this instance currently emits are still accepted (they may
+  target future events); the pairing flow warns about them, staying silent on
+  instances with no concrete events where the warning would be noise. Pairing
+  with an empty selection is rejected rather than creating a link that
+  forwards nothing.
+- **The event picker's border used the undefined `--border-color` variable**,
+  falling back to a hard-coded `#333` on light themes (the v0.15.2 bug class).
+  Now `var(--card-border)`.
+
+## [0.18.0] - 2026-08-15
+
+### Changed
+- **The scheduler job edit page is redesigned as a control console.** It was a
+  1,830px single-column form with **Run now** buried at the bottom as a
+  tertiary outline button; it is now 1,040px with Run now leading the page.
+
+  An **identity strip** replaces both the generic "Edit Scheduled job" card
+  header and the read-only "What it runs" section: status dot, job name as the
+  title, task path / queue / args in the monospace ops voice, a status line,
+  and Run now as a solid-accent button top right. The body becomes two rails —
+  cadence editor left, behavior toggles + the Next-5-runs preview right — so
+  the fire-time feedback is visible *while* the cadence is edited. Collapses
+  to one column under 940px; on mobile Run now stays above the fold.
+
+  The strip also surfaces a state the old page hid: a `next_run_at` in the
+  past (stalled worker) used to display as a future-looking "next fire" — it
+  now reads **"fire overdue since <date> — is the worker running?"** in
+  warning color.
+
+  Delivered as `scheduler/crud/scheduledjob_edit.html` via the CRUDView
+  template chain — no framework changes, all cadence-builder JS and htmx
+  endpoints untouched. Theme-variable-only, verified across palettes.
+
+### Fixed
+- **"Run now" returns to the job page.** `scheduler_run_now` honors a
+  same-origin-validated `next` param (the control page posts its own path);
+  offsite values fall back to the dashboard, so it cannot become an open
+  redirect. Callers that don't pass `next` see the old behavior.
+
+## [0.17.0] - 2026-08-15
+
+### Changed
+- **The admin sidebar section is listed A–Z instead of by hand-assigned
+  `order`.** It reads: Activity, API Health, API Tokens, Backups, Dashboard,
+  Explorer, MCP, Scheduler, Search, Status, Users, Webhooks.
+
+  That section is a tool drawer — a dozen unrelated utilities contributed by
+  whichever apps are installed, with no workflow sequence to preserve. It was
+  hand-numbered across twelve `apps.py` files, so every new app had to pick a
+  number, the numbers collided (`Status` and `Explorer` both sat at `20`, making
+  their relative position a function of `INSTALLED_APPS` ordering rather than
+  intent), and the list drifted out of alphabetical whenever anything was added
+  or relabelled. Sorting in the registry keeps it A–Z permanently, including for
+  apps a downstream project adds — which renumbering upstream could never fix.
+
+  Sorting is case-insensitive, so "API Health" files next to "Activity" rather
+  than ahead of every lowercase label.
+
+  **`order` is now inert for the admin section** (documented on `register()`).
+  A downstream project that deliberately ordered its own admin nav items will
+  see them alphabetised instead. Existing `order=` values are harmless and were
+  left in place. Every other section still honours `order` exactly as before.
+
+  **"Admin Panel" is unaffected** — it isn't a registry item, but a hardcoded
+  link at the end of `sidebar.html` out to Django's own admin, so it stays
+  pinned last rather than filing under A.
+
 ## [0.16.2] - 2026-08-15
 
 ### Fixed
@@ -770,7 +1571,16 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.21.3...HEAD
+[0.21.3]: https://github.com/emichaud/django-smallstack/compare/v0.21.2...v0.21.3
+[0.21.2]: https://github.com/emichaud/django-smallstack/compare/v0.21.1...v0.21.2
+[0.21.1]: https://github.com/emichaud/django-smallstack/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/emichaud/django-smallstack/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/emichaud/django-smallstack/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/emichaud/django-smallstack/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/emichaud/django-smallstack/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/emichaud/django-smallstack/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/emichaud/django-smallstack/compare/v0.16.2...v0.17.0
 [0.16.2]: https://github.com/emichaud/django-smallstack/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/emichaud/django-smallstack/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/emichaud/django-smallstack/compare/v0.15.2...v0.16.0

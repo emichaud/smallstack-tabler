@@ -59,8 +59,13 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [settings.md](settings.md) | Split settings, environment variables, feature flags |
 | [timezones.md](timezones.md) | Timezone middleware, per-user timezone, localtime_tooltip tag |
 | [background-tasks.md](background-tasks.md) | Django Tasks framework with django-tasks-db backend |
+| [scheduler.md](scheduler.md) | **Recurring jobs** — the `@scheduled` decorator, the scheduler UI, cron/interval/once cadences, the tick, overlap/catch-up policies |
+| [approvals.md](approvals.md) | **Human-in-the-loop approval gate** — `@approval_kind` + `request_approval()`, the decision console, eligibility rules (assignees/self-approval/staff), the callback + signal + webhook + poll reaction paths, expiry sweep |
+| [notifications.md](notifications.md) | **In-app notifications** — the never-raising `notify()` service, the topbar bell + unread badge, the inbox, per-user REST, daily prune |
+| [webhooks.md](webhooks.md) | **Webhooks** — a foundational integration surface: outbound event delivery (`enable_webhooks = True`) + inbound receivers (`@webhook_handler`), plus **four extension seams** (`@webhook_transform`/`@webhook_auth`/`@webhook_verifier`/`@webhook_challenge`) that make Zapier/n8n/Stripe/Slack/Event Grid plug-ins, first-class **SmallStack↔SmallStack** pairing (`sc webhook pair`, loop-safe), stable `event_id` dedupe, `Retry-After` + bulk dead-letter replay |
+| [rss.md](rss.md) | **RSS/Atom feeds** — symmetric publish + consume surface. Publish a model with `enable_rss = True` (or a curated `Feed`); the enclosure/podcast seam is `rss_item_extra`. Consume external feeds into a model with `register_feed_source` + the collector (`@scheduled` + `manage.py collect_feeds`). Status-page feed is the reference |
 | [activity-tracking.md](activity-tracking.md) | HTTP request logging middleware and configuration |
-| [logging-audit.md](logging-audit.md) | Logging configuration and audit trail |
+| [logging-audit.md](logging-audit.md) | Logging configuration, audit trail, and **reading logs from a deployment you can't shell into** — JSON output with `request_id` correlation, DB-backed capture, the `/smallstack/logs/` staff viewer, time-boxed capture windows |
 | [screenshot-workflow.md](screenshot-workflow.md) | Visual verification with shot-scraper and screenshot_auth |
 | [docker-deployment.md](docker-deployment.md) | Docker Compose setup, services, volumes |
 | [kamal-deployment.md](kamal-deployment.md) | Kamal deployment configuration, VPS setup, SSL, commands |
@@ -110,6 +115,9 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before adding a help page → read `help-documentation.md`
 - Before changing settings → read `settings.md`
 - Before adding background tasks → read `background-tasks.md`
+- Before scheduling recurring work (`@scheduled`) → read `scheduler.md`
+- Before gating anything on a human decision (an approval step, an AI-agent HITL gate) → read `approvals.md`
+- Before surfacing an in-app "you should see this" message (bell/inbox) → read `notifications.md`
 - Before working with activity tracking → read `activity-tracking.md`
 - Before taking screenshots → read `screenshot-workflow.md`
 - Before deploying with Docker → read `docker-deployment.md`
@@ -130,6 +138,31 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before changing any `MCP_*` setting → read `mcp/configure-mcp.md`
 - Before saying "MCP works" → read `mcp/verify-mcp.md`
 - Before debugging an MCP failure → read `mcp/debug-mcp-failure.md`
+
+## Common combinations
+
+Multi-skill recipes for the headline use cases. Each row is "pick this combination, read these files in this order."
+
+| Goal | Read in this order |
+|---|---|
+| **Model → web admin + REST + MCP + Search in one class** (the headline pipeline) | `crud-views.md` → `enable-mcp-for-a-model.md` → `search.md` → `api-discovery.md` |
+| **End-user CRUD** (Alice signs in and sees only her stuff, on web + REST + MCP) | `building-a-user-facing-site.md` → `mcp/end-user-tools.md` → `crud-views.md` (for `get_list_queryset` + `can_update`/`can_delete`) |
+| **Public catalogue** (anonymous visitors can browse + search published rows) | `building-a-user-facing-site.md` (Recipe 4) → `search.md` (Inventory walkthrough, "Recipe 4") |
+| **AI/RAG over a custom model** (Claude searches your tickets, finds rows, answers with citations) | `search.md` → `mcp/build-mcp-solution.md` → `mcp/enable-mcp-for-a-model.md` → `mcp/connect-claude-desktop.md` |
+| **Both staff + end-user views of the same model** (operator console + customer portal on `Invoice`) | `crud-views.md` (two CRUDView classes on one model, different `url_base`) → `building-a-user-facing-site.md` (the user-facing class) → `search.md` ("Walkthrough: building an Inventory app") |
+| **Custom non-CRUD tool** (a "send-email" or "regenerate-report" MCP/REST action) | `custom-api-endpoints.md` (for REST) → `mcp/write-a-custom-tool.md` (for MCP) → `mcp/enable-mcp-for-a-model.md` (for the auth model) |
+| **OAuth-issued tokens via the Connectors UI** (Claude Desktop calling your CRUDView) | `mcp/connect-claude-desktop.md` → `mcp/enable-mcp-for-a-model.md` → `mcp/verify-mcp.md` |
+| **Theme-correct page across every accent + dark/light combination** (your custom landing page that doesn't break when the accent changes) | `tabler-ui.md` → `tabler/theming.md` → `screenshot-workflow.md` (for the theme-cycle verification) |
+| **Add clickable metric tiles + drill-down modals** (the stat cards atop an app's own dashboard page) | `dashboard-cards.md` → `htmx-patterns.md` (for the partial-response endpoint) |
+| **Add a per-model dashboard widget** (a tile on the central `/smallstack/` dashboard that summarises your data) | `dashboard-widgets.md` → `crud-views.md` (for `get_list_queryset` if the widget should respect tenancy) |
+| **Monitor a subsystem's uptime/health** (a `Service` + `Monitor` on `/smallstack/status/`, or a new status chart) | `status-monitors.md` → `tabler-ui.md` (for visualization partial colors) |
+| **Recurring/scheduled job** (`@scheduled` decorator or the scheduler UI; cron/interval/once) | `scheduler.md` |
+| **Human approval before an action** (publish gate, refund sign-off, AI agent files → human decides → app reacts) | `approvals.md` → `notifications.md` (how approvers hear about it) → `webhooks.md` (remote reaction) |
+| **Notify an external system when data changes** (outbound webhook — Slack/Zapier/a microservice on model create/update/delete; shape the payload with `@webhook_transform`) | `webhooks.md` → `crud-views.md` (for `enable_webhooks` alongside the other flags) |
+| **Receive events from an external system** (inbound webhook — Stripe/GitHub POST; verify with `@webhook_verifier`, handshake with `@webhook_challenge`) | `webhooks.md` (the `@webhook_handler` + seam half) |
+| **Link two SmallStacks** (loop-safe two-way event flow between instances) | `webhooks.md` → the SmallStack↔SmallStack `sc webhook pair` section |
+
+If a goal isn't covered here yet, the canonical decision tree is in `mcp/build-mcp-solution.md` for AI-touching features, or `from-zero-to-running.md` for project-shape questions.
 
 ## For Humans
 

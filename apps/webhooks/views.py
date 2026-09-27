@@ -3,6 +3,7 @@ receiver endpoint, the delivery tick, and the test/replay/reveal actions."""
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -22,6 +23,8 @@ from apps.smallstack.mixins import StaffRequiredMixin
 
 from . import services
 from .models import WebhookDelivery, WebhookEndpoint, WebhookReceipt, WebhookReceiver
+
+logger = logging.getLogger("smallstack.webhooks")
 
 LOCALHOST_IPS = {"127.0.0.1", "::1"}
 
@@ -73,23 +76,63 @@ class EventFilterWidget(forms.Widget):
         checkboxes = format_html_join(
             "",
             '<label style="display:block; font-size:0.85rem; margin:2px 0;">'
-            '<input type="checkbox" name="{}_choice" value="{}"{}> <code>{}</code></label>',
+            '<input type="checkbox" name="{}_choice" value="{}"{}> <code>{}</code>'
+            '<span style="color:var(--body-quiet-color);">{}</span></label>',
             (
-                (name, opt, mark_safe(" checked") if opt in current else "", opt)
+                (
+                    name,
+                    opt,
+                    mark_safe(" checked") if opt in current else "",
+                    opt,
+                    f" — {hint}" if (hint := services.describe_event_pattern(opt)) else "",
+                )
                 for opt in options
             ),
         )
         extra_id = f"id_{name}_extra"
+        # Static markup, no interpolation — mark_safe (format_html requires args).
+        pattern_help = mark_safe(
+            '<details class="help-pop">'
+            '<summary aria-label="Help: what event patterns look like">?</summary>'
+            '<div class="help-pop-panel">'
+            "<p>Patterns match the full event name — <code>app.model.action</code> — "
+            "with <code>*</code> standing for any part. One pattern per line.</p>"
+            '<div class="help-pop-examples">'
+            "<div><code>support.ticket.*</code><span>every Ticket event</span></div>"
+            "<div><code>support.*</code><span>everything from the support app</span></div>"
+            "<div><code>*.deleted</code><span>any record is deleted</span></div>"
+            "<div><code>crm.contact.merged</code><span>one exact event</span></div>"
+            "</div></div></details>"
+        )
+        # The custom-pattern box is an advanced/programmatic surface, so it is
+        # collapsed to one quiet line when empty. It MUST render (expanded)
+        # whenever patterns exist — they usually arrive via REST/MCP/CLI, and a
+        # UI save with the textarea absent would silently strip them.
+        extra_summary = (
+            format_html(
+                "Custom patterns <span style=\"color:var(--warning-fg);\">({} set)</span>",
+                len(extra),
+            )
+            if extra
+            else mark_safe('Custom patterns <span style="opacity:0.7;">(advanced)</span>')
+        )
         return format_html(
             '<div class="event-filter-picker">'
-            '<div style="max-height:180px; overflow:auto; border:1px solid var(--border-color,#333);'
+            '<div style="max-height:180px; overflow:auto; border:1px solid var(--card-border);'
             ' border-radius:6px; padding:6px 10px; margin-bottom:6px;">{}</div>'
+            '<details class="event-filter-custom"{}>'
+            '<summary style="font-size:0.8rem; color:var(--body-quiet-color); cursor:pointer;">{}</summary>'
+            '<div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.35rem;">'
             '<label for="{}" style="font-size:0.8rem; color:var(--body-quiet-color);">'
-            'Custom patterns (one per line, e.g. <code>support.ticket.*</code>)</label>'
+            "One per line, e.g. <code>support.ticket.*</code></label>{}</div>"
             '<textarea id="{}" name="{}_extra" rows="2" class="vTextField" style="width:100%;">{}</textarea>'
+            "</details>"
             "</div>",
             checkboxes,
+            mark_safe(" open") if extra else "",
+            extra_summary,
             extra_id,
+            pattern_help,
             extra_id,
             name,
             "\n".join(extra),
@@ -295,6 +338,19 @@ if "event_filter" in _EndpointForm.base_fields:
     _EndpointForm.base_fields["event_filter"].help_text = (
         "Pick the events to subscribe to, or add custom fnmatch patterns."
     )
+
+    def _clean_event_filter(self):
+        """Reject malformed patterns on every surface (HTML, REST, MCP, CLI all
+        validate through this form). A typo is valid JSON, so without this it
+        became a pattern that silently matches nothing — an endpoint that just
+        never fires, with no error anywhere."""
+        value = self.cleaned_data.get("event_filter") or []
+        errors = services.validate_event_patterns(value)
+        if errors:
+            raise forms.ValidationError(errors)
+        return value
+
+    _EndpointForm.clean_event_filter = _clean_event_filter
 WebhookEndpointCRUDView.form_class = _EndpointForm
 
 WebhookReceiverCRUDView.form_class = _with_write_only_secret(
@@ -361,6 +417,10 @@ class WebhooksDashboardView(StaffRequiredMixin, TemplateView):
         ctx["recent_receipts"] = (
             WebhookReceipt.objects.select_related("receiver").order_by("-received_at")[:10]
         )
+        # The pairing panel reuses the endpoint form's event picker (F-015) so
+        # "which events cross the link" is chosen from what models actually
+        # emit, not typed as raw JSON. "*" pre-checked = the old default.
+        ctx["pair_events_picker"] = EventFilterWidget().render("events", '["*"]')
         return ctx
 
 
@@ -433,7 +493,10 @@ def pair_smallstack(request: HttpRequest) -> HttpResponse:
     if not target:
         messages.error(request, "A peer SmallStack inbound URL is required to pair.")
         return redirect("webhooks_dashboard")
-    events_raw = (request.POST.get("events") or "").strip()
+    # The dashboard posts picker keys (events_choice / events_extra); scripted
+    # callers post raw `events` JSON. The widget's value_from_datadict handles
+    # both, so the API contract is unchanged.
+    events_raw = (EventFilterWidget().value_from_datadict(request.POST, None, "events") or "").strip()
     import json as _json
 
     events = ["*"]
@@ -443,6 +506,26 @@ def pair_smallstack(request: HttpRequest) -> HttpResponse:
         except ValueError:
             messages.error(request, 'Events must be a JSON list, e.g. ["*"].')
             return redirect("webhooks_dashboard")
+    if not events:
+        messages.error(
+            request,
+            "Select at least one event to pair — leave “*” checked to forward everything.",
+        )
+        return redirect("webhooks_dashboard")
+    pattern_errors = services.validate_event_patterns(events)
+    if pattern_errors:
+        messages.error(request, " ".join(pattern_errors))
+        return redirect("webhooks_dashboard")
+    # Advisory only — a pattern may target events that appear later.
+    dead = services.unmatched_patterns(events)
+    if dead:
+        messages.warning(
+            request,
+            "Heads up: "
+            + ", ".join(f"“{p}”" for p in dead)
+            + " matches nothing this instance currently emits. "
+            "It will apply if such events appear later.",
+        )
     one_way = request.POST.get("one_way") in {"1", "true", "on"}
     result = services.pair_smallstack(
         target_url=target, events=events, one_way=one_way, owner=request.user
@@ -465,6 +548,10 @@ def pair_smallstack(request: HttpRequest) -> HttpResponse:
         "Retrieve secrets later via the staff Reveal action here; rotate via Rotate."
     )
     messages.success(request, "\n".join(lines))
+    for warning in result.get("warnings") or []:
+        # e.g. a loopback target blocked by the SSRF guard — say it here rather
+        # than leaving it buried in a failed delivery's error field. (F-06.)
+        messages.warning(request, warning)
     return redirect("webhooks/endpoints-detail", pk=result["endpoint_id"])
 
 
@@ -582,15 +669,47 @@ def incoming_webhook(request: HttpRequest, slug: str) -> HttpResponse:
         if resp is not None:
             return resp
 
+    # Size cap before the body is read or anything touches the DB — this route
+    # is public and unauthenticated. (Audit 2026-09-13, C6.)
+    max_bytes = int(getattr(settings, "SMALLSTACK_WEBHOOK_INBOUND_MAX_BYTES", 1_048_576))
+    try:
+        declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        declared = 0
+    if declared > max_bytes:
+        return JsonResponse({"error": "payload too large"}, status=413)
+
     raw = request.body
+    if len(raw) > max_bytes:
+        return JsonResponse({"error": "payload too large"}, status=413)
     origin = request.headers.get(services.ORIGIN_HEADER, "")
 
     # 2. Verifier seam (F-016): default "hmac" is the current raw-body HMAC check;
     #    a provider scheme (Stripe t.body, GitHub sha256=) is a plug-in.
     verifier = hooks.get_verifier(receiver.verifier)
     try:
-        verified = bool(verifier(raw, dict(request.headers), receiver))
-    except Exception:  # noqa: BLE001 — a broken verifier fails closed (unverified)
+        # Case-INSENSITIVE, and a real mutable dict. HTTP header names are
+        # case-insensitive and Django's HttpHeaders honours that; a plain
+        # `dict(request.headers)` froze Django's own canonicalisation, so a
+        # receiver configured with the documented "X-SmallStack-Signature"
+        # spelling silently 401'd while an undocumented "X-Smallstack-Signature"
+        # worked (F-06). The first fix used Django's CaseInsensitiveMapping, which
+        # is IMMUTABLE — narrowing a seam documented as `dict[str, str]`, so a
+        # third-party verifier doing `headers.pop(...)` started 401ing on a
+        # correct credential (F-37). hooks.CaseInsensitiveDict satisfies both.
+        header_map = hooks.CaseInsensitiveDict(request.headers)
+        verified = bool(verifier(raw, header_map, receiver))
+    except Exception:
+        # A broken verifier fails CLOSED (unverified) — but never silently. This
+        # exception used to be swallowed whole, so a verifier raising on a
+        # perfectly good signature was indistinguishable from a forged one, with
+        # nothing in the log to diagnose. (F-37.)
+        logger.exception(
+            "webhooks: verifier %r raised for receiver %r — treating the delivery "
+            "as UNVERIFIED. Fix the verifier; a raised exception is not a rejection.",
+            receiver.verifier or "hmac",
+            receiver.slug,
+        )
         verified = False
 
     # Snapshot a safe subset of headers (never store cookies/authorization raw).
@@ -601,16 +720,32 @@ def incoming_webhook(request: HttpRequest, slug: str) -> HttpResponse:
     }
 
     if receiver.require_signature and not verified:
-        WebhookReceipt.objects.create(
+        # Anyone can POST here without a credential, so a rejection must not
+        # cost a full-size durable row each time: keep a short excerpt plus a
+        # digest (enough to debug a mis-set secret), and stop recording once a
+        # receiver has taken a burst of rejections this minute. (Audit C6.)
+        limit = int(getattr(settings, "SMALLSTACK_WEBHOOK_REJECTED_PER_MINUTE", 30))
+        recent = WebhookReceipt.objects.filter(
             receiver=receiver,
-            source_ip=request.META.get("REMOTE_ADDR"),
-            headers=safe_headers,
-            body=raw.decode("utf-8", "replace")[:100_000],
-            verified=False,
-            origin=origin,
             status=WebhookReceipt.Status.REJECTED,
-            error="signature verification failed",
-        )
+            received_at__gte=timezone.now() - timedelta(minutes=1),
+        ).count()
+        if recent < limit:
+            import hashlib
+
+            WebhookReceipt.objects.create(
+                receiver=receiver,
+                source_ip=request.META.get("REMOTE_ADDR"),
+                headers=safe_headers,
+                body=raw[:1024].decode("utf-8", "replace"),
+                verified=False,
+                origin=origin[:200],
+                status=WebhookReceipt.Status.REJECTED,
+                error=(
+                    f"signature verification failed "
+                    f"(body {len(raw)} bytes, sha256 {hashlib.sha256(raw).hexdigest()}; first 1 KB kept)"
+                ),
+            )
         return JsonResponse({"error": "invalid signature"}, status=401)
 
     # 3. Loop guard (F-020): drop an event this SmallStack originated (a two-way S2S

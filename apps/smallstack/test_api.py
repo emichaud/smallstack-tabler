@@ -2374,6 +2374,39 @@ class TestTokenErrorMessages:
         msg = response.json()["errors"]["__all__"][0]
         assert msg == "Token revoked"
 
+    def test_deactivating_the_account_invalidates_its_tokens(self, client, auth_user):
+        """F-10 (security). ``is_active=False`` is the standard offboarding
+        action. It used to revoke web login and NOTHING else: an already-minted,
+        un-revoked bearer token kept full authority under the offboarded user's
+        name. Interactive login already refused the account — the token path
+        just never asked.
+        """
+        from apps.smallstack.models import APIToken
+
+        token, raw = APIToken.create_token(
+            user=auth_user, name="offboarded", access_level="auth"
+        )
+        assert client.get(
+            "/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {raw}"
+        ).status_code == 200  # negative control: valid before offboarding
+
+        auth_user.is_active = False
+        auth_user.save()
+
+        response = client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {raw}")
+        assert response.status_code == 401
+        assert response.json()["errors"]["__all__"][0] == "Account is deactivated"
+        # The token itself is untouched — the ACCOUNT is what became unusable.
+        token.refresh_from_db()
+        assert token.is_active is True
+        assert token.is_valid() is True
+        assert token.rejection_reason() == APIToken.REJECT_USER_INACTIVE
+        # And the low-level authenticator refuses to hand back a user at all,
+        # which is what closes the hole on every other surface (MCP, feeds).
+        user, found = APIToken.authenticate(raw)
+        assert user is None
+        assert found is not None
+
 
 # ---------------------------------------------------------------------------
 # Validation: invalid filter values and ordering fields return HTTP 400
@@ -2464,3 +2497,98 @@ class TestOrderingRobustness:
 
         result = _apply_ordering_fields(Heartbeat.objects.all(), "-timestamp", {"timestamp"})
         assert "ORDER BY" in str(result.query)
+
+
+# ---------------------------------------------------------------------------
+# Read-only tokens must not write, on custom @api_view endpoints too
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestReadOnlyTokenOnCustomEndpoints:
+    """CRUDView endpoints have always enforced this (via _check_api_permissions),
+    but that is only reached from the generated views. Hand-rolled @api_view
+    endpoints were exempt unless the author happened to re-implement the rule —
+    apps/runbook/api.py did, in a private helper; nothing else did, and a new
+    endpoint had no way to know it needed to.
+
+    Proven before fixing: a plain @api_view(methods=["POST"]) endpoint returned
+    200 for a read-only token *and ran its side effect*.
+    """
+
+    def _readonly_token(self, user):
+        from .models import APIToken
+
+        raw = APIToken.create_token(name="ro-test", user=user, access_level="readonly")
+        return raw[1] if isinstance(raw, tuple) else raw
+
+    def _staff_token(self, user):
+        from .models import APIToken
+
+        raw = APIToken.create_token(name="staff-test", user=user, access_level="staff")
+        return raw[1] if isinstance(raw, tuple) else raw
+
+    def _endpoint(self, state):
+        from django.test import RequestFactory
+
+        from .api import api_view
+
+        @api_view(methods=["GET", "POST"], require_staff=True)
+        def view(request):
+            if request.method == "POST":
+                state["written"] = True
+            return {"ok": True}
+
+        return view, RequestFactory()
+
+    def _call(self, view, factory, method, key, user):
+        if method == "get":
+            request = factory.get("/fake/")
+        else:
+            request = getattr(factory, method)(
+                "/fake/", data="{}", content_type="application/json"
+            )
+        request.user = user
+        request.META["HTTP_AUTHORIZATION"] = f"Bearer {key}"
+        return view(request)
+
+    def test_readonly_token_cannot_write_and_the_side_effect_never_runs(self, staff_user):
+        state = {"written": False}
+        view, factory = self._endpoint(state)
+
+        response = self._call(view, factory, "post", self._readonly_token(staff_user), staff_user)
+
+        assert response.status_code == 403
+        assert state["written"] is False, "the view body ran despite the 403"
+
+    def test_readonly_token_can_still_read(self, staff_user):
+        state = {"written": False}
+        view, factory = self._endpoint(state)
+
+        response = self._call(view, factory, "get", self._readonly_token(staff_user), staff_user)
+
+        assert response.status_code == 200
+
+    def test_a_staff_token_is_unaffected(self, staff_user):
+        """Negative control for the rule: the same POST must still succeed for a
+        normal token, so the check can't pass by blocking everything."""
+        state = {"written": False}
+        view, factory = self._endpoint(state)
+
+        response = self._call(view, factory, "post", self._staff_token(staff_user), staff_user)
+
+        assert response.status_code == 200
+        assert state["written"] is True
+
+
+def test_token_prefix_is_never_argparse_hostile():
+    """A prefix starting with '-' is read as an option flag by every CLI command
+    that takes one (`sc token revoke <prefix>`), so ~1.4% of real tokens were
+    unrevokable from the CLI — and the CLI's own suite was flaky at that rate.
+    Found while fixing the 2026-09-25 approvals round."""
+    from apps.smallstack.models import APIToken
+
+    for _ in range(500):
+        _raw, prefix, _hashed = APIToken._generate_raw_key()
+        assert not prefix.startswith("-"), prefix
+        assert len(prefix) == APIToken.PREFIX_LENGTH

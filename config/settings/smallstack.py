@@ -364,6 +364,47 @@ SMALLSTACK_SCHEDULER_FAILURE_EMAILS = config(
 )
 
 # ---------------------------------------------------------------------------
+# Background tasks (apps.tasks) — worker heartbeat + lost-task reaper
+# ---------------------------------------------------------------------------
+# SmallStack's db_worker (shadows django-tasks-db's) writes a WorkerHeartbeat
+# row and reaps RUNNING tasks whose worker died. Off ⇒ plain upstream worker,
+# and nothing runs the reaper: schedule `manage.py reap_tasks` if you disable it.
+SMALLSTACK_TASKS_HEARTBEAT_ENABLED = config("SMALLSTACK_TASKS_HEARTBEAT_ENABLED", default=True, cast=bool)
+
+# How often each worker refreshes its heartbeat. The reaper runs every 4 beats —
+# a fixed count, so raising this makes reaping proportionally less frequent
+# (300 ⇒ a reap every 20 minutes, not every minute).
+SMALLSTACK_TASKS_HEARTBEAT_SECONDS = config("SMALLSTACK_TASKS_HEARTBEAT_SECONDS", default=15, cast=int)
+
+# A RUNNING task whose worker hasn't heartbeated for this long is failed as
+# WorkerLost. Keep it several beats wide (default 6 missed beats).
+SMALLSTACK_TASKS_LOST_AFTER_SECONDS = config("SMALLSTACK_TASKS_LOST_AFTER_SECONDS", default=90, cast=int)
+
+# Fallback for RUNNING tasks claimed by a worker with no heartbeat row (plain
+# upstream worker): a long task and a dead worker look alike, so be patient.
+SMALLSTACK_TASKS_ORPHAN_SECONDS = config("SMALLSTACK_TASKS_ORPHAN_SECONDS", default=86_400, cast=int)
+
+# A failed attempt that is being retried logs at WARNING ("state=FAILED
+# retrying_as=<id>") instead of Django's ERROR-with-traceback, so an absorbed
+# transient failure does not page anyone. A *final* failure still logs ERROR
+# with the traceback. False => Django's stock behaviour, every FAILED attempt
+# at ERROR. Same "django.tasks" logger either way.
+SMALLSTACK_TASKS_SOFTEN_RETRYABLE_LOGS = config(
+    "SMALLSTACK_TASKS_SOFTEN_RETRYABLE_LOGS", default=True, cast=bool
+)
+
+# Retries (apps/tasks/reliability.py). Attempts (counting the first run) for a
+# task with no @retry_policy or one that doesn't set max_attempts. 1 = no
+# retries: execution is at-least-once, so retrying is opt-in per task.
+SMALLSTACK_TASKS_DEFAULT_MAX_ATTEMPTS = config("SMALLSTACK_TASKS_DEFAULT_MAX_ATTEMPTS", default=1, cast=int)
+
+# Upper bound of the default first retry delay, not the delay itself: equal
+# jitter picks uniformly from [bound/2, bound], so 5 waits 2.5-5s. The bound
+# doubles per attempt up to the cap.
+SMALLSTACK_TASKS_BACKOFF_SECONDS = config("SMALLSTACK_TASKS_BACKOFF_SECONDS", default=5, cast=int)
+SMALLSTACK_TASKS_BACKOFF_MAX_SECONDS = config("SMALLSTACK_TASKS_BACKOFF_MAX_SECONDS", default=600, cast=int)
+
+# ---------------------------------------------------------------------------
 # Webhooks
 # ---------------------------------------------------------------------------
 # Master switch for the webhooks surface: the outbound change-signal receiver,

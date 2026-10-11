@@ -9,6 +9,392 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-10-11
+
+### Changed
+- **The shipped workers now run under a readable label.** Every `db_worker`
+  launch site passed no `--worker-id`, so upstream's random 32-char default
+  became the label and the heartbeat table read
+  `oxp0RB1Z85F7X4yFX7IO8Vc1kAedLTER#a1b2c3…` — useless to an operator trying to
+  tell one worker from another. The inline worker in `docker-entrypoint.sh` is
+  now `web` (accurate: it runs inside the web container), `utils/dev_services.sh`
+  is `dev`, and the commented-out separate worker container in
+  `config/deploy.yml` is `worker` so it can't collide with the inline one if
+  someone uncomments it. All three honour **`SMALLSTACK_WORKER_ID`** for
+  deployments running several. Reusing a label across restarts is safe — the
+  worker appends a per-process token (`web#a1b2c3…`), which is what v0.23.0's
+  incarnation change made true — so this only needed the labels, no behaviour
+  change. A guard test pins every shipped launch site, since these are shell and
+  YAML that no unit test executes and a dropped flag would silently restore the
+  unreadable default. (Downstream-reported from a production migration.)
+
+## [0.23.0] - 2026-10-11
+
+### Added
+- **Lost tasks no longer stay `RUNNING` forever.** `django-tasks-db` never
+  finished a task whose worker was SIGKILLed, OOM-killed or replaced mid-run.
+  SmallStack now ships its own `db_worker`, which shadows the upstream command
+  (same arguments; every existing entrypoint, compose, Kamal and dev-script
+  invocation picks it up unchanged). Each worker writes a `WorkerHeartbeat` row
+  (`apps.tasks`), refreshes it every `SMALLSTACK_TASKS_HEARTBEAT_SECONDS` (15),
+  and runs a reaper at startup and then every 4 beats — about once a minute at
+  the default interval, and proportionally less often if you raise it (the
+  4-beat period is fixed, so `HEARTBEAT_SECONDS=300` means a reap every 20
+  minutes). The reaper fails a
+  `RUNNING` task as `apps.tasks.exceptions.WorkerLost` when its worker exited, or
+  hasn't heartbeated for `SMALLSTACK_TASKS_LOST_AFTER_SECONDS` (90), or has no
+  heartbeat row at all and the task started more than
+  `SMALLSTACK_TASKS_ORPHAN_SECONDS` (86400) ago. The traceback's last line
+  explains why — naming the host, pid and last-seen time when there is a
+  heartbeat row to read them from, and how long the task has been `RUNNING` when
+  there isn't — and the scheduler's run summary shows it.
+  The update is conditional on `status=RUNNING`, so a late finish always wins
+  and concurrent reapers are safe. Timestamps are written and compared on the
+  **database** clock, so the thresholds don't measure NTP skew between hosts.
+  `manage.py reap_tasks [--dry-run]` runs a
+  pass by hand. `SMALLSTACK_TASKS_HEARTBEAT_ENABLED=False` turns the worker back
+  into a plain pass-through — note that this also removes the only thing that
+  *runs* the reaper, so if you disable it, schedule `manage.py reap_tasks`
+  yourself or nothing will ever reap. New migration: `tasks.0001_initial`; run
+  `migrate`.
+- **Task retries with backoff** (`apps/tasks/reliability.py`). Put
+  `@retry_policy(max_attempts=3, backoff=5, backoff_max=600, retry_on=(OSError,))`
+  above `@task`. When an attempt fails, a fresh copy of the task is enqueued
+  with `run_after` set by exponential backoff with jitter. It keeps the same
+  args, queue, priority and backend. Every attempt is its own result row, so
+  every traceback is kept. A `TaskAttempt` row links each retry to its chain.
+  Its `parent_id` is unique, so the three paths that can retry (the worker's
+  `task_finished` signal, the reaper for lost tasks, and a repair sweep for
+  retries a crash skipped) never produce two retries. By default a lost or
+  force-stopped attempt is retried too (`retry_lost=True`). **Retries are
+  opt-in**: `SMALLSTACK_TASKS_DEFAULT_MAX_ATTEMPTS` defaults to 1 because
+  execution is at-least-once. The built-in email tasks (`send_email_task`,
+  `send_html_email_task`, `send_welcome_email`) now retry up to 3 attempts on
+  `OSError` (SMTP and socket errors). `SMALLSTACK_TASKS_BACKOFF_SECONDS` (5) and
+  `SMALLSTACK_TASKS_BACKOFF_MAX_SECONDS` (600) set the defaults. Retries only
+  happen on the database backend; `ImmediateBackend` behaves as before.
+- **Scheduled jobs retry: `ScheduledJob.max_retries` is live.** It was
+  "Reserved" until now. It's editable in the scheduler form, REST and MCP, where
+  a validator caps it at 10 (the cap is not a database constraint). When greater
+  than 0, each run's first attempt is enqueued in the same transaction as a
+  pinned budget of `max_retries + 1` attempts. This pins the **attempt count
+  only** — which exceptions retry (`retry_on`), whether a worker death retries
+  (`retry_lost`) and the backoff still come from the task's own `@retry_policy`,
+  so `max_retries=5` on a task declaring `retry_on=(OSError,)` will not retry a
+  `ValueError`. On a task with **no** `@retry_policy` the pinned budget uses a
+  deliberately conservative fallback: any exception the task *raises* retries,
+  but a run whose worker died mid-task is **not** re-run, because re-running a
+  half-finished task is an at-least-once decision only an explicit
+  `@retry_policy(retry_lost=True)` may make. 0 (the default) means
+  the task's policy applies unchanged. The scheduler now reads a run's outcome
+  from the **latest attempt** of its retry chain
+  (`apps.tasks.reliability.chain_outcome`). A run stays `QUEUED` while a retry
+  is pending, so the overlap guard keeps waiting for it. The run ends `SUCCESS`
+  with an "(attempt N)" suffix if a retry succeeds. The failure email goes out
+  once, after the last attempt, with an "after N attempts:" message. A failed
+  attempt with budget left that no retry ever picks up is treated as final
+  after an hour. Migration: `scheduler.0004_max_retries_live` (help text and
+  validator only).
+- **Explorer → System** now also lists **Worker heartbeats** (which workers are
+  alive, when each was last seen or stopped) and **Task attempts** (retry
+  chains). Both are read-only.
+- **Scheduler failure emails include the error** ("Error: after 3 attempts:
+  …"), not just the first attempt's result id.
+- Docs: a Reliability section in `docs/skills/background-tasks.md` and in the
+  help page. Also updated the scheduler skill and help pages (retries), the CLI
+  reference (`db_worker`, `reap_tasks`), `cli-tools.md`, the settings
+  reference, and `UPGRADING.md`.
+
+### Compatibility
+- **A failed attempt that is being retried no longer logs like a real failure.**
+  Django's `log_task_finished` logs every `FAILED` result at `ERROR` with a
+  traceback, including attempts this layer is in the middle of absorbing — so a
+  task that fails twice and succeeds paged someone twice, and the feature's
+  success became its own false-alarm source. SmallStack now owns that record
+  (`apps/tasks/signals.py`): an attempt with a retry enqueued logs `WARNING`
+  with `retrying_as=<id>` and no traceback, a final failure keeps `ERROR` with
+  the traceback, and both use the same `django.tasks` logger and
+  `Task id=… path=… state=…` prefix so existing alert rules and parsers still
+  match. `SMALLSTACK_TASKS_SOFTEN_RETRYABLE_LOGS=False` restores Django's stock
+  behaviour.
+- **`django-tasks-db` is pinned to one minor** (`>=0.13,<0.14`). `apps/tasks`
+  shadows that package's `db_worker`, subclasses it, and imports its
+  `DatabaseBackend` and `DBTaskResult`, so a minor bump can stop the whole
+  reliability layer importing — which is exactly what 0.12 → 0.13 did. A floor
+  alone could not have caught it. The 0.12 compatibility shim is gone with it:
+  unreachable under the pin, so untestable, and its failure mode was a double
+  delivery that enqueues a retry and then cancels it.
+- **Works with django-tasks-db 0.13** (shipped in v0.22.0) and still with 0.12.
+  0.13 removed its bundled `django_tasks` package, so the reliability modules
+  now import `TaskResultStatus` from `django.tasks`. Before this change the app
+  failed to start at all on 0.13. 0.13's worker also sends Django's own
+  `django.tasks.signals`, the same signals `ImmediateBackend` sends, where
+  0.12 sent a private pair. The retry receiver therefore now acts only when
+  `sender` is a `DatabaseBackend`. It accepts both the instance (upstream's
+  success path) and the class (its failure path). It also stays subscribed to
+  0.12's signal when that package is present. 0.13's new
+  `db_worker --exclude-queues` passes through, and the heartbeat row records it
+  ("* (excluding email)").
+- **Every failed attempt now logs at ERROR, retried or not.** On 0.13 the worker
+  sends Django's signals, and Django's own `log_task_finished` receiver logs
+  each `FAILED` result to the `django.tasks` logger at ERROR, with the
+  traceback. That includes attempts `@retry_policy` is about to retry. The
+  retry itself still logs at INFO (`apps.tasks.reliability`: "retrying … as …").
+  If you alert on ERROR, key the alert on the chain's final outcome (the
+  scheduler's failure email, or `chain_outcome`), not on individual attempts.
+- **`safe_reap()` no longer closes a caller's database connection.** It
+  refreshed connections with `close_old_connections()`, which closes any
+  connection inside an `atomic()` block. On Postgres that killed the caller's
+  transaction ("the connection is closed"), while SQLite's in-memory test
+  database ignored it. It now skips connections in an atomic block
+  (`heartbeat.refresh_owned_connections`). The worker's own calls run in
+  autocommit and were never affected. This predates 0.13. Three tests had been
+  failing on Postgres only. The full suite now passes on SQLite and on
+  Postgres 16.
+
+## [0.22.0] - 2026-10-10
+
+### Removed
+- **The `mcp` SDK is no longer a dependency.** SmallStack implements the
+  protocol itself — JSON-RPC envelope, `initialize`/`tools/list`/`tools/call`
+  dispatch and OAuth are plain Django in `apps/mcp/views.py` — and the package
+  was declared for one thing: a singleton `mcp.server.lowlevel.Server` that
+  nothing ever read. Removing it drops **20 packages** from every install
+  (`pydantic`, `starlette`, `uvicorn`, `sse-starlette`, `httpx2`, `jsonschema`,
+  `pyjwt[crypto]`, `opentelemetry-api`, `anyio`, `cryptography` and others —
+  several of them ASGI machinery SmallStack never runs). The MCP surface is
+  unchanged: tools, `@tool`, `TOOL_REGISTRY`, `/mcp`, OAuth, Claude Desktop and
+  `MCP_SERVER_NAME` all behave exactly as before. `mcp_doctor` loses its
+  `"mcp package"` row, which only verified that its own dependency was
+  importable; every check describing the live surface stays. **If your own code
+  does `import mcp`, declare it in your own `pyproject.toml`** — see
+  `UPGRADING.md`. A new test guards against the import creeping back, because
+  it would keep working in any virtualenv that still has the package and fail
+  only on a clean install.
+
+### Security
+- **Django floor raised to 6.1.2** (released 2026-10-06), which fixes four
+  security issues. Two apply to any SmallStack install: **CVE-2026-77050**
+  (denial of service in `get_supported_language_variant()`, i.e. Accept-Language
+  parsing) and **CVE-2026-84429** (denial of service in HTTP header parsing).
+  The other two are GeoDjango request forgery (**CVE-2026-87890**, not applicable
+  — SmallStack doesn't use spatial lookups) and privilege abuse in model
+  formsets with editable primary keys (**CVE-2026-87975**). The floor is raised
+  rather than only re-locked, so a downstream resolve can't land on a
+  vulnerable version.
+
+### Changed
+- **Dependencies refreshed across the board** (`uv lock --upgrade`): notably
+  django-tasks-db 0.12→0.13, django-filter 25.2→26.2, gunicorn 25→26,
+  mcp 1.27→2.3, psycopg 3.3.6, starlette 1.3→1.7, tzdata 2025.3→2026.5, plus
+  dev tooling (ruff 0.15→0.17, mypy 2.3→2.4, django-stubs 6.0→6.1).
+- **`apps/tasks/tracing.py` survives the django-tasks-db 0.13 restructure.**
+  0.13 dropped the bundled `django_tasks` package for Django's own
+  `django.tasks`, so the unguarded `from django_tasks.signals import …` at
+  import time broke startup outright (`manage.py check` included). That import
+  is now guarded exactly like the built-in one already was, so trace binding
+  keeps working on **either** version rather than the one that happened to be
+  installed. The tracing tests were asserting "both signal pairs exist" — true
+  for one dependency generation only; they now assert the durable invariant:
+  *every* pair available on this install is subscribed (and at least one is).
+- Six `form_valid()` overrides carry a scoped `# type: ignore[override]`:
+  django-stubs 6.1 flags narrowing the parameter to the view's own `form_class`
+  as a Liskov violation. The narrower type is accurate at runtime (Django only
+  passes `get_form()`'s result) and more useful to a reader; the formally-correct
+  fix — parameterising `UpdateView[Model, Form]` — needs
+  `django_stubs_ext.monkeypatch()` at runtime, and django-stubs is dev-only here.
+
+Verified on **Python 3.13 and 3.14**, and on **SQLite and Postgres 16**:
+2,684 / 2,685 tests green, ruff + mypy clean. `requires-python` stays at
+`>=3.12` — Django 6.1 supports it and it's maintained until 2028, so raising
+the floor would break downstreams for no gain. (Django 6.2 is **not** released;
+6.1.2 is the current stable.)
+
+### Added
+- **`schema()["filters"]` now advertises a widget for computed (annotated)
+  dataset columns.** v0.21.11 made those filters apply; this makes a builder UI
+  able to *offer* them. The widget is typed from the annotation — booleans get
+  All/Yes/No, date/datetime get the usual preset dropdown plus `range`, and
+  anything else gets a dropdown of the values actually present (probed, capped
+  at 30 distinct — the ceiling model fields already use). The pairing is the
+  point: a **choice widget means an exact match** in this framework and
+  computed columns compare exactly, so a dropdown is the only control whose
+  semantics are honest. Two cases stay unadvertised on purpose — **aggregate**
+  annotations (probing the domain would mean a GROUP BY over the table, and the
+  filter is a `HAVING`) and computed strings with **>30 distinct values** (a
+  text box would promise substring matching the exact comparison won't
+  deliver). Not offered ≠ not supported: the filter still applies when the
+  param is passed.
+
+## [0.21.11] - 2026-10-10
+
+### Fixed
+- **Filters on computed (annotated) dataset columns are no longer silently
+  ignored.** `_apply_list_filters` resolved every declared filter name with
+  `model._meta.get_field()` and skipped the filter when that raised — so a
+  plain filter on an annotation (`?hours_band=business`, `?route=on_call`,
+  `?answered=1`) was dropped and the query returned **every row**. No error and
+  no empty result, which is the dangerous shape for an analytical surface: a
+  tile labelled "business hours" quietly showing all hours. It also broke two
+  documented promises — "every operation works on a computed dataset" and the
+  one-filter-contract-for-rows/series/scalar invariant. The pipeline now
+  consults `qs.query.annotations` before giving up and types the comparison
+  from the annotation's `output_field` (booleans take 1/0/true/false,
+  date/datetime take the usual presets, everything else is an exact match —
+  computed columns are categorical). Genuinely unknown keys are still
+  tolerated-and-ignored, and only *declared* filter fields are considered, so
+  nothing new is filterable by accident. Annotated CRUDView querysets get the
+  same fix for free. (Downstream-reported; they patched their own copy.)
+
+## [0.21.10] - 2026-09-28
+
+### Fixed
+- **`help_article_count()` no longer re-parses the whole markdown corpus on
+  Postgres.** The last ENGINE-string check in `apps/help/search.py` (everything
+  else had moved to `connection.vendor`) was written when only SQLite had a
+  help FTS table, so **every non-SQLite engine — i.e. production** — counted
+  articles by calling `build_search_index()`: a full re-read and re-render of
+  every markdown doc, ~1.5s locally and seconds on a small box. `@lru_cache`
+  bounded it, but `sync_help_index()` *clears* that cache, so after v0.21.9
+  gave Postgres a real lazy index build, each build made the next count pay the
+  parse again. Postgres has had `help_articles_search_idx` since v0.21.9, so it
+  now takes the same cheap `COUNT(*)` as SQLite — and the number means the same
+  thing on both engines (rows in the index, which is what "currently indexed"
+  claims). Guarded by a test that fails if a count ever parses markdown.
+  (Downstream-reported, with their own equivalent guard.)
+
+### Changed
+- **`test_transaction_safety.py` no longer fails a downstream that routes help
+  search differently.** The v0.21.9 memo self-heal tests drove
+  `search_help_articles()`, so they also asserted *which engines route to FTS* —
+  a separate contract, and one a downstream may legitimately override. They now
+  drive the engine's FTS query path directly (where the fix lives), and the
+  routing contract gets **its own named test**, so a diverging project sees one
+  honest failure instead of three misleading ones. `docs/skills/testing.md`
+  gains the general rule with the three cases that taught it.
+
+## [0.21.9] - 2026-09-28
+
+### Fixed
+- **`rebuild_search_index` can run inside an open transaction again, and
+  `ensure_index` stops locking provisioned tables.** The Postgres backend
+  guarded its GIN index with `_index_exists` but issued the column
+  `ALTER TABLE … ADD COLUMN IF NOT EXISTS` unconditionally. Verified against
+  PG 16, that costs two things even as a no-op: it takes an
+  **AccessExclusiveLock** on the table (every `post_migrate`, every rebuild —
+  briefly blocking every reader and writer on a live table), and Postgres
+  refuses it outright when the transaction holds pending **deferred**
+  constraint trigger events (`cannot ALTER TABLE "x" because it has pending
+  trigger events`). A new `_column_exists` guard mirrors the existing index
+  guard, so a provisioned model issues **no DDL at all**. Note the refined
+  mechanism vs. the downstream report: plain writes aren't enough — a
+  non-deferrable FK's after-row trigger fires at end of statement, so it takes
+  `SET CONSTRAINTS ALL DEFERRED` (what `loaddata` does) or a deferrable
+  constraint. (Downstream item #6.)
+- **Help search no longer poisons the caller's transaction on Postgres.** Every
+  raw query in `apps/help/search.py` sat inside a bare `except Exception` —
+  including the "does my FTS table exist?" probe, which asks by running
+  `SELECT COUNT(*)` and catching the failure. On Postgres that aborts the whole
+  transaction, so the swallowed probe killed every later query in the request:
+  help-search 500s, the activity middleware's log write, and (how it was found)
+  two unrelated approvals *search* tests. All six such cursors now run in
+  `transaction.atomic()`. Second layer: `_HELP_INDEX_BUILT` is a process-global
+  memo of *database* state, so a dropped/restored index left help search empty
+  until the process restarted — a failed query now clears the memo and the next
+  call rebuilds. Found by running the full suite against a real Postgres 16;
+  **both suites are now fully green on both backends** (2,664 PG / 2,663 SQLite).
+- **`test_orphan_renders_muted_with_remove` no longer assumes `pk == 1`.**
+  Postgres sequences are not transactional — `nextval()` survives the test
+  rollback — so the hard-coded pk passed in isolation and failed whenever an
+  earlier test in the session created a `MonitoredSurface`; SQLite's rowid
+  counter rolls back, hiding it. The test now asserts the row's own pk. This
+  was the downstream's one undiagnosed failure; diagnosed and reproduced here
+  against a real Postgres 16.
+
+### Documentation
+- `sqlite-vs-postgres.md`: a dedicated section on **`except Exception` around a
+  DB statement** — the bug hit four times in one week — including *"the visible
+  error is not the culprit; read the Postgres server log"* and *"probe by
+  failing is not free"*. Plus **sequences are not transactional** — never assert a
+  literal primary key (plus the checklist item), and **existence-check DDL
+  before issuing it** — `IF NOT EXISTS` is not free (AccessExclusiveLock +
+  the deferred-trigger-events refusal, with the exact conditions).
+
+## [0.21.8] - 2026-09-27
+
+### Fixed
+- **The test suite's throwaway MCP tables no longer break Postgres teardown.**
+  The root `conftest.py` creates `mcp_server_widget`/`mcp_server_gadget`
+  (managed=False, schema_editor) with real FK constraints to `accounts_user` —
+  and since flush doesn't truncate unmanaged tables, Postgres refused to
+  TRUNCATE `accounts_user` at every `transaction=True` teardown ("cannot
+  truncate a table referenced in a foreign key constraint"), failing 46 tests
+  and leaking rows that surfaced as duplicate-username collisions later. The
+  FKs are now `db_constraint=False` (ORM joins/expansions unchanged), with an
+  introspection test that fails on any backend if a real constraint returns.
+  Fourth of the SQLite-forgives family, same downstream reporter.
+
+### Documentation
+- `sqlite-vs-postgres.md`: dots and emails tokenize **atomically with no
+  part-lexemes** on Postgres (`file`/`email` parser tokens) on both the
+  document AND query side — unlike hyphens, document-side splitting can't
+  rescue them. Searching `probe` finds `unique.probe` on SQLite and misses it
+  on Postgres.
+
+## [0.21.7] - 2026-09-27
+
+### Fixed
+- **MCP async tool dispatch keeps ORM work on the request's connection.** Async
+  tool handlers were dispatched with `asyncio.run(handler(...))`, which gives
+  asgiref no executor context — so every `sync_to_async(thread_sensitive=True)`
+  (the default; how every tool touches the ORM) ran on asgiref's process-global
+  `single_thread_executor`: one shared background thread with its own
+  long-lived connection. The tool's DB work therefore ran outside the request's
+  transaction, serialized process-wide across all tools, was one nested
+  thread-sensitive call from asgiref's "would deadlock" guard, and on Postgres
+  killed `transaction=True` test teardowns ("cursor already closed" during the
+  flush) — a downstream's 46 teardown failures. Dispatch now uses
+  `async_to_sync(handler)`, whose `CurrentThreadExecutor` hops the ORM work
+  back to the calling thread and its connection. Third instance of the
+  SQLite-forgives-Postgres-doesn't family (same downstream reporter); the
+  mechanism-pinning tests fail under the old dispatch on SQLite too
+  ("database table is locked" — the cross-connection symptom in miniature).
+
+## [0.21.6] - 2026-09-27
+
+### Fixed
+- **From-scratch `migrate` on Postgres can no longer be aborted by the search
+  index.** Three facts compounded (downstream report, validated here): the
+  search `post_save` receiver has no `sender` filter; `get_view()` resolves by
+  label string, so the *historical* model `apps.get_model()` hands a RunPython
+  migration matches the real model's registry entry; and the index is
+  provisioned at `post_migrate` — after every migration. A downstream that
+  creates a searchable row in a migration therefore wrote to the missing
+  `search_vector` column inside the migration's transaction, poisoning it —
+  the visible error was Django's own `INSERT INTO django_migrations`, and a
+  fresh Postgres build (DR restore, new region, CI) was impossible. SQLite
+  hid the category: its FTS index is a separate table and a failed statement
+  doesn't poison the transaction. The handlers now require
+  `view.model is sender` (historical models no-op) and wrap each index write
+  in `transaction.atomic()` — a savepoint — so "a search index write should
+  never break a model save" is finally true on Postgres, not just SQLite.
+- **Telemetry's synchronous flush no longer manages a connection it doesn't
+  own.** `_write()` unconditionally called `close_old_connections()` and, on
+  error, `connection.close()` — correct on the worker thread (which owns its
+  thread-local connection), wrong on the `flush()` path, which runs on the
+  CALLER's thread: `start_worker=False` mode, tests, and `logging.shutdown()`
+  at interpreter exit. On Postgres that closes a live request's (or test
+  transaction's) connection; SQLite's shared in-memory connection made both
+  calls no-ops, hiding it. Connection management is now gated to the worker
+  path, and the batch insert runs in `transaction.atomic()` so a failed write
+  can't poison a caller's transaction either. (Same downstream report — two
+  independent instances of code silently depending on SQLite's forgiving
+  semantics.)
+- The `config/settings/test.py` comment claiming "CI runs both backends" is
+  corrected (this repo deliberately ships no CI); it now recommends the cheap
+  gate for downstreams that add CI — a from-scratch `migrate` against an empty
+  Postgres — and the sqlite-vs-postgres skill checklist gained the same item.
+
 ## [0.21.5] - 2026-09-27
 
 ### Fixed
@@ -1630,7 +2016,16 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.21.5...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/emichaud/django-smallstack/compare/v0.23.0...v0.23.1
+[0.23.0]: https://github.com/emichaud/django-smallstack/compare/v0.22.0...v0.23.0
+[0.22.0]: https://github.com/emichaud/django-smallstack/compare/v0.21.11...v0.22.0
+[0.21.11]: https://github.com/emichaud/django-smallstack/compare/v0.21.10...v0.21.11
+[0.21.10]: https://github.com/emichaud/django-smallstack/compare/v0.21.9...v0.21.10
+[0.21.9]: https://github.com/emichaud/django-smallstack/compare/v0.21.8...v0.21.9
+[0.21.8]: https://github.com/emichaud/django-smallstack/compare/v0.21.7...v0.21.8
+[0.21.7]: https://github.com/emichaud/django-smallstack/compare/v0.21.6...v0.21.7
+[0.21.6]: https://github.com/emichaud/django-smallstack/compare/v0.21.5...v0.21.6
 [0.21.5]: https://github.com/emichaud/django-smallstack/compare/v0.21.4...v0.21.5
 [0.21.4]: https://github.com/emichaud/django-smallstack/compare/v0.21.3...v0.21.4
 [0.21.3]: https://github.com/emichaud/django-smallstack/compare/v0.21.2...v0.21.3

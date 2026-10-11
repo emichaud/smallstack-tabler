@@ -9,6 +9,84 @@ listed, no downstream migration is required.
 
 ---
 
+## v0.23.0 — task reliability: lost-task reaper + retries
+
+Run `make migrate`. It applies **five** migrations.
+
+This note deliberately does **not** name the release you are coming from. A version is only a
+proxy for "which migrations you already have", and the proxy goes stale every time `main`
+releases — it has already gone stale twice in this document while the feature was in review.
+Migration ids don't drift. So the state these five assume is:
+
+- `apps/tasks` has **no** migrations applied — it had none at all before this feature; and
+- `scheduler` is at **`0003_scheduledjob_auto_retired`**.
+
+That is every release before this one. Confirm with
+`manage.py showmigrations tasks scheduler`; if it matches, the list below is what you get.
+
+| Migration | What it does |
+|---|---|
+| `tasks.0001_initial` | The first models in `apps/tasks`: `WorkerHeartbeat`, `TaskAttempt` |
+| `tasks.0002_worker_incarnation` | Keys worker liveness to a process, not to `--worker-id`. **Not additive — see below** |
+| `tasks.0003_late_completion_marker` | Records a chain that executed more than once. Additive |
+| `tasks.0004_widen_worker_id` | Widens `worker_id` to 128 so a worker identity cannot be silently truncated. Additive |
+| `scheduler.0004_max_retries_live` | `ScheduledJob.max_retries` help text + validator. No DDL |
+
+> **`tasks.0002_worker_incarnation` deletes rows.** It is the only destructive operation in
+> this release. Its `RunPython` empties `tasks_workerheartbeat`, because pre-upgrade rows are
+> keyed on the operator's `--worker-id` label and would match a pre-upgrade task's recorded
+> claimant *exactly* — so a row that happened to carry `stopped_at` would cause that task to be
+> failed as `WorkerLost` the instant the migration landed, even if it were still running.
+> Emptying the table sends every pre-upgrade claim down the conservative
+> `SMALLSTACK_TASKS_ORPHAN_SECONDS` path instead. Nothing of value is lost: the table is
+> ephemeral liveness state that the reaper already prunes on a timer, any worker running during
+> a migration is being restarted anyway, and the next heartbeat writes a fresh row. **Stop your
+> workers before migrating** if you want the transition to be boring.
+
+You don't need to change any code. Check the table if one of these applies to you.
+
+| If you… | What changes | What to do |
+|---|---|---|
+| Run `manage.py db_worker` anywhere | It's now SmallStack's `db_worker`, which replaces django-tasks-db's. It takes the same arguments and adds a worker heartbeat plus a reaper for tasks whose worker died | Nothing. To opt out, set `SMALLSTACK_TASKS_HEARTBEAT_ENABLED=False`. |
+| Have your **own** `db_worker` command in an app | Django uses the first app in `INSTALLED_APPS` that defines it | If your app comes before `apps.tasks`, yours wins and you get no heartbeat. Subclass `apps.tasks.management.commands.db_worker.Command` instead. |
+| Replaced or edited `apps/tasks/tasks.py` | Upstream's email tasks now carry `@retry_policy(max_attempts=3, retry_on=(OSError,))` | When you merge, keep the decorators if you want SMTP errors retried. Keep `send_email_task` itself, because the scheduler and approvals import it. |
+| See tasks go `FAILED` with `apps.tasks.exceptions.WorkerLost` | Their worker died mid-run. Before this change they would have stayed `RUNNING` forever | Expected. Add `@retry_policy` to tasks that are safe to repeat if you want them re-run. |
+| Poll a task's first result id to learn its outcome | With retries, a later attempt is a **new** result | Use `apps.tasks.reliability.chain_outcome(result_id)` to follow the chain. |
+| Pass `--worker-id` to `db_worker` | It is now an operator **label**, not the worker's identity. Each process appends its own token, so `DBTaskResult.worker_ids` holds `<label>#<token>` and `WorkerHeartbeat` has one row per process | Nothing. A stable `--worker-id` is now safe and is the recommended way to label a worker — previously it made a restarting worker hide the task its predecessor abandoned. |
+| Parse `DBTaskResult.worker_ids` yourself | Entries are now `<label>#<token>` rather than the bare `--worker-id` | Match on the `WorkerHeartbeat.label` column, or split on the last `#`. |
+| Run `manage.py check` in CI | Four new warnings can fire: `tasks.W001` (another app's `db_worker` shadows ours), `W002`/`W003` (`LOST_AFTER_SECONDS` under three heartbeats), `W004` (`USE_TZ = False` stops the reaper) | None fire on shipped defaults. Each names the misconfiguration and what it costs. |
+| Care whether a task ever runs twice | A worker paused past `SMALLSTACK_TASKS_LOST_AFTER_SECONDS` mid-task is reaped and replaced, then may finish anyway. The late result wins, and the double execution is **recorded** (`TaskAttempt.parent_completed_at`, the run message, a WARNING) rather than prevented | Make such tasks idempotent. This is not new behaviour in the engine — it is newly *visible*. |
+| Alert on ERROR-level log lines | With django-tasks-db 0.13, Django logs every `FAILED` attempt to `django.tasks` at ERROR, including attempts that `@retry_policy` will retry | Alert on a chain's final outcome (the scheduler's failure email, or `chain_outcome(...)`), not on per-attempt ERRORs. |
+| Set `ScheduledJob.max_retries` on a task with no `@retry_policy` | It retries what the task **raises**, but will not re-run an attempt whose worker died | Add `@retry_policy(retry_lost=True)` to the task if repeating it after a worker death is genuinely safe. |
+
+---
+
+## v0.22.0 — the `mcp` SDK is no longer a dependency (check your own imports)
+
+SmallStack **implements the Model Context Protocol itself** — the JSON-RPC
+envelope, `initialize` / `tools/list` / `tools/call` dispatch, and OAuth are
+plain Django in `apps/mcp/views.py`, served by gunicorn like every other route.
+The `mcp` PyPI package was a declared dependency for exactly one thing: a
+singleton `mcp.server.lowlevel.Server` in `apps/mcp/server.py` that nothing
+ever read. It has been removed.
+
+**Nothing about the MCP surface changes.** Your tools, `@tool`, `TOOL_REGISTRY`,
+`current_context()`, `/mcp`, the OAuth flow, `mcp_doctor` and Claude Desktop /
+Connectors all behave exactly as before. `MCP_SERVER_NAME` is still honoured
+(it's reported in the `initialize` response).
+
+| If you… | What happens | What to do |
+|---|---|---|
+| Only use SmallStack's `@tool` / CRUDView `enable_mcp` | Nothing | Nothing. You get a smaller install: **20 packages** drop out, including `pydantic`, `starlette`, `uvicorn`, `sse-starlette`, `httpx2`, `jsonschema`, `pyjwt[crypto]`, `opentelemetry-api`, `anyio` and `cryptography` — several of which are ASGI machinery SmallStack never runs. |
+| `import mcp` anywhere in **your** code | It kept working only because SmallStack installed the SDK for you. After this upgrade a **clean install** no longer has it | Declare it yourself: add `mcp>=2.3` to your own `pyproject.toml` dependencies and re-lock. |
+| Imported `mcp_server` from `apps.mcp.server` | That name is gone | Nothing to migrate — the object was never wired to anything. Delete the import. |
+| Script against `mcp_doctor --json` | The `"mcp package"` row is gone | Drop it from any parsing. The checks that describe the live surface — `Settings`, `Server registry`, `URL conf`, `Tokens`, and the end-to-end self-test — are unchanged. The removed row only verified that its own dependency was importable. |
+
+The catch worth knowing: a stray `import mcp` in your code will keep working in
+any existing virtualenv that still has the package lying around, and fail only
+when someone does a clean install. If you're unsure, check with
+`grep -rn "^import mcp\|^from mcp" your_app/` before deploying.
+
 ## v0.21.0 — 2026-09-13 audit fixes (behaviour tightened, no code changes required)
 
 These are security/correctness fixes. Most projects need to do nothing; check the list only if

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -42,6 +43,14 @@ def _backend_queues(task_path: str) -> set[str]:
 
 class ScheduledJob(models.Model):
     """A recurring (or one-off) schedule that enqueues a django.tasks task."""
+
+    # Ceiling on max_retries. Single source: the model validator (which is what
+    # actually enforces it, via full_clean from the form, REST and MCP), the
+    # form field's max_value (which is what the OpenAPI and MCP schemas
+    # *advertise*), and the number input's max attribute. They drifted once —
+    # the bound was enforced but not advertised, so MCP clients could not
+    # discover it — which is why there is now one constant.
+    MAX_RETRIES_CAP = 10
 
     class Type(models.TextChoices):
         ONCE = "once", "Once"
@@ -89,7 +98,16 @@ class ScheduledJob(models.Model):
         help_text="If off, skip a fire while the previous run is still unfinished.",
     )
     catch_up = models.CharField(max_length=10, choices=CatchUp.choices, default=CatchUp.RUN_ONCE)
-    max_retries = models.PositiveSmallIntegerField(default=0, help_text="Reserved (Phase 3).")
+    max_retries = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[MaxValueValidator(MAX_RETRIES_CAP)],
+        help_text=(
+            "Retries after a failed run, each waiting longer than the last, when the task raises. "
+            "A run whose worker died mid-task is not re-run — only the task's own @retry_policy "
+            "can opt into that, since repeating it may duplicate work already done. "
+            "0 = use the task's @retry_policy, if it has one."
+        ),
+    )
 
     source = models.CharField(max_length=8, choices=Source.choices, default=Source.UI)
     # An operator changed the cadence in the UI. Code sync keeps their value

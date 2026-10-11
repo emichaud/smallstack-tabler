@@ -208,6 +208,7 @@ When generating screenshots or working data, write to `/tmp/` so it stays out of
 - `docs/skills/tabler-ui.md` — **read first for any page work in this Tabler downstream**. Router into the specialized skills.
 - `docs/skills/tabler/README.md` — detailed map of every Tabler skill (foundations, theming, layouts, components, forms, tables, charts, page recipes, customization, troubleshooting)
 - `docs/skills/upstream-workflow.md` — how to merge upstream `django-smallstack` updates without losing Tabler customizations
+- `CHANGELOG-tabler.md` — this fork's own changelog and its `vX.Y.Z-tabler.N` versioning scheme. Downstream entries go here; `CHANGELOG.md` is upstream's and is overwritten on every merge
 - `apps/smallstack/docs/cli-reference.md` — every `manage.py` command + Make target + system tool, with options and examples
 - `apps/smallstack/docs/mcp.md` — Model Context Protocol overview
 - `apps/smallstack/docs/building-crud-pages.md` — the CRUDView walkthrough

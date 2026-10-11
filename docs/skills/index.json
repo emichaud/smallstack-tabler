@@ -218,6 +218,14 @@
       "use_when": "Merging upstream SmallStack updates into a downstream project like opshugger or smallstack_web."
     },
     {
+      "id": "upstream-workflow",
+      "file": "upstream-workflow.md",
+      "name": "Upstream Workflow & Downstream Releases",
+      "description": "THIS repo's fork workflow: merging upstream django-smallstack without losing the Tabler chrome, the conflict table, and how this downstream versions and releases (vX.Y.Z-tabler.N tags, CHANGELOG-tabler.md, never bump pyproject, never push --tags). Upstream's release-process.md does NOT apply here.",
+      "keywords": ["upstream", "fork", "merge", "downstream", "release", "version", "tag", "changelog", "tabler.N", "CHANGELOG-tabler", "semver", "gh release"],
+      "use_when": "Merging upstream into this Tabler repo, cutting a release here, or deciding what version/tag to use."
+    },
+    {
       "id": "tabler-ui",
       "file": "tabler-ui.md",
       "name": "Tabler UI — top-level orientation",

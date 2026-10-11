@@ -70,7 +70,8 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [docker-deployment.md](docker-deployment.md) | Docker Compose setup, services, volumes |
 | [kamal-deployment.md](kamal-deployment.md) | Kamal deployment configuration, VPS setup, SSL, commands |
 | [development-workflow.md](development-workflow.md) | Branching, testing, coverage, documentation, commit style |
-| [release-process.md](release-process.md) | Versioning, release checklist, GitHub releases |
+| [upstream-workflow.md](upstream-workflow.md) | **This repo's fork workflow.** Merging upstream without losing the Tabler chrome, and how THIS downstream versions + releases (`vX.Y.Z-tabler.N`, `CHANGELOG-tabler.md`) |
+| [release-process.md](release-process.md) | Versioning, release checklist, GitHub releases — **upstream's process; does NOT apply to this fork**, see `upstream-workflow.md` |
 | [integration-workflow.md](integration-workflow.md) | Pulling upstream into downstream projects, deploying |
 | [api-discovery.md](api-discovery.md) | API discovery endpoints: schema introspection, OpenAPI spec, OPTIONS metadata |
 | [custom-api-endpoints.md](custom-api-endpoints.md) | Building non-CRUD API endpoints with the `@api_view` decorator |
@@ -123,7 +124,7 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before deploying with Docker → read `docker-deployment.md`
 - Before deploying with Kamal → read `kamal-deployment.md`
 - Before developing features → read `development-workflow.md`
-- Before releasing a version → read `release-process.md`
+- **Before releasing a version or merging upstream in THIS repo → read `upstream-workflow.md`** (not `release-process.md`, which is upstream's own process and would have you bump a version line this fork never bumps)
 - Before pulling upstream into downstream → read `integration-workflow.md`
 - Before integrating with the SmallStack API → read `api-discovery.md`
 - Before building custom (non-CRUD) API endpoints → read `custom-api-endpoints.md`

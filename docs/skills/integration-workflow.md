@@ -6,12 +6,16 @@ How to pull SmallStack upstream changes into downstream projects and deploy.
 
 SmallStack is an upstream package. Downstream projects clone it and add their own business logic. This workflow covers pulling updates, resolving conflicts, and redeploying.
 
-## Downstream Projects
+## Your Downstream Projects
+
+Keep the map of your own projects in *your* repo's `CLAUDE.md` (or a project-local skill), not here — this
+file ships to every fork. The shape worth recording:
 
 | Project | Directory | Deployment | Purpose |
 |---------|-----------|------------|---------|
-| smallstack_web | `../smallstack_web/` | django-small-stack.space | Marketing/demo site |
-| opshugger | `../opshugger/` | www.opshugger.com | IT operations tool |
+| `<name>` | `../<name>/` | `<host or kamal destination>` | `<what it is>` |
+
+Throughout this file, `../<your-project>` stands for one of those checkouts.
 
 ## Pull Upstream Updates
 
@@ -20,7 +24,7 @@ SmallStack is an upstream package. Downstream projects clone it and add their ow
 If the downstream project doesn't have an upstream remote:
 
 ```bash
-cd ../smallstack_web
+cd ../<your-project>
 git remote add upstream https://github.com/emichaud/django-smallstack.git
 git fetch upstream
 ```
@@ -28,7 +32,7 @@ git fetch upstream
 ### Regular Pull
 
 ```bash
-cd ../smallstack_web
+cd ../<your-project>
 git fetch upstream
 git merge upstream/main
 ```
@@ -48,6 +52,53 @@ Common conflict areas and resolution strategies:
 | `apps/profile/models.py` | Merge — may have custom palette choices |
 | `Makefile` | Merge — downstream may have custom targets |
 | `.env` / `.env.example` | Merge — add new upstream vars, keep downstream values |
+| `docs/skills/README.md`, `docs/skills/index.json` | Take upstream (`git checkout --theirs`), then `make skills-index`. Keep *your* skill rows in `docs/skills/local.md`, which upstream never ships — see below |
+| `docs/skills/release-process.md` | Take upstream — it documents upstream's own release ritual, not yours. Keep your release doc under your own name and register it in `local.md` |
+
+### Keep the Typing Gate
+
+Upstream's `make lint` runs **mypy + django-stubs** (the `[tool.mypy]` block in `pyproject.toml`),
+and the apps listed under `[[tool.mypy.overrides]]` are checked strictly — an unannotated function
+there fails lint. A downstream has to *carry* that gate or its own code drifts silently: the global
+config is lenient on purpose (`check_untyped_defs = false`), so a function with no annotations is
+simply not checked until someone annotates it, at which point every accumulated error appears at
+once. That is not an upstream setting misbehaving; it is the absence of the gate.
+
+On every pull, check three things:
+
+```bash
+grep -n "tool.mypy" pyproject.toml          # the block + the overrides survived the merge
+grep -n "mypy" Makefile                     # `lint:` still runs `uv run mypy`
+uv run mypy                                 # green before you commit the merge
+```
+
+A clone from before v0.9 never had the gate at all. Add the `[tool.mypy]` block and the
+`uv run mypy` line to `lint:` from upstream, then run `make typecheck-strict` to see how far your
+own apps are from joining the ratchet — add each one to the overrides list the moment it reaches
+zero, and keep your new apps on that list from day one.
+
+### Keep Your Own Skills Out of the Conflict Zone
+
+Upstream's skill index (`docs/skills/README.md` → generated `docs/skills/index.json`) is upstream-tracked, so
+registering your project's own skill files there means a conflict on every pull. Put them in
+**`docs/skills/local.md`** instead — same table format, upstream ships no such file:
+
+```markdown
+## Our Skills
+
+| File | Description |
+|------|-------------|
+| [upstream-workflow.md](upstream-workflow.md) | **(forks / downstream)** How *this* project pulls upstream and cuts releases |
+| [billing.md](billing.md) | Our Stripe integration, plan gating, dunning |
+```
+
+Then `make skills-index`. Those rows land in `index.json` tagged `"origin": "fork-local"`, so an agent
+consulting the index finds *your* skills alongside upstream's — which is the whole point: a skill file that
+`CLAUDE.md` references but no index knows about sends agents to the neighbouring (wrong) skill instead.
+`make lint` fails on a skill file registered in neither table, so this can't silently rot.
+
+Rows upstream marks **(upstream repo only)** — `release-process.md` today — describe upstream's own process
+and do not apply to your project. Write your own and register it in `local.md`.
 
 ### Post-Merge Steps
 
@@ -70,7 +121,7 @@ make run
 
 ## Deploying Downstream
 
-### Kamal Deployment (opshugger, smallstack_web)
+### Kamal Deployment
 
 ```bash
 git add -A

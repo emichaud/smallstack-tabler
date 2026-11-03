@@ -28,7 +28,7 @@ from apps.smallstack.api import (
 )
 from apps.smallstack.audit import ADDITION, CHANGE, DELETION, log_write
 from apps.smallstack.crud import Action
-from apps.smallstack.form_bridge import merge_form_payload
+from apps.smallstack.form_bridge import build_form, merge_form_payload
 from apps.smallstack.mixins import StaffRequiredMixin
 
 from .server import TOOL_REGISTRY, ToolDef, current_context, tool
@@ -157,6 +157,7 @@ _JSON_SCHEMA_TYPES: dict[str, Any] = {
     "datetime": "string",
     "time": "string",
     "choice": "string",
+    "multichoice": "array",
     "file": "string",
     "integer": "integer",
     "fk": "integer",
@@ -174,6 +175,12 @@ def _to_json_schema_prop(schema: dict[str, Any]) -> dict[str, Any]:
     prop: dict[str, Any] = {"type": _JSON_SCHEMA_TYPES.get(internal, "string")}
     if internal == "choice" and schema.get("choices"):
         prop["enum"] = [c[0] for c in schema["choices"]]
+    if internal == "multichoice":
+        items: dict[str, Any] = {"type": "string"}
+        if schema.get("choices"):
+            items["enum"] = [c[0] for c in schema["choices"]]
+        prop["items"] = items
+        prop["description"] = "A list of choice keys (any subset of the allowed values)."
     if internal == "fk" and schema.get("related_model"):
         prop["description"] = f"Primary key of the related {schema['related_model']}."
     if schema.get("max_length") is not None:
@@ -199,6 +206,15 @@ def _build_form_input_schema(view_cls, *, include_pk: bool = False) -> dict[str,
 
     if form_class is not None:
         try:
+            # Deliberately unscoped, and safe: this builds the *tool schema*,
+            # which is generated once per process and shared by every caller, so
+            # there is no one user to scope it to. It discloses nothing per-tenant
+            # because `_field_to_schema` matches ModelChoiceField first and
+            # reports an FK as {"type": "fk", "related_model": <ClassName>} —
+            # only the related model's *name*, never its rows. (`enum` IS emitted,
+            # but only for ChoiceField/TypedChoiceField, i.e. static TextChoices
+            # like `visibility`.) Authorization of a submitted pk happens on the
+            # user-scoped form in the create/update handlers below.
             form_instance = form_class()
             for fname, ffield in form_instance.fields.items():
                 schema = field_to_schema(fname, ffield, view_cls.model)
@@ -403,7 +419,14 @@ def _build_create_tool(view_cls, *, singular: str):
             return _tool_error("unsupported", "no form_class available")
         # Native JSON args pass straight through (arrays/objects stay native);
         # omitted fields fall back to model defaults, mirroring REST create.
-        form = form_class(merge_form_payload(form_class, args, fill_defaults=True))
+        # user= so a form that scopes its ModelChoiceField querysets does so
+        # here too: a create has no object for can_update/check_object_permission
+        # to inspect, so the form is the only authorization gate on this path.
+        form = build_form(
+            form_class,
+            merge_form_payload(form_class, args, fill_defaults=True),
+            user=ctx.user,
+        )
         if not form.is_valid():
             return _tool_error("validation_error", "the submitted fields are not valid", fields=form.errors)
         obj = form.save()
@@ -444,7 +467,7 @@ def _build_update_tool(view_cls, *, singular: str):
             instance_fields=view_cls.fields or view_cls._get_detail_fields(),
         )
 
-        form = form_class(merged, instance=obj)
+        form = build_form(form_class, merged, instance=obj, user=ctx.user)
         if not form.is_valid():
             return _tool_error("validation_error", "the submitted fields are not valid", fields=form.errors)
         obj = form.save()

@@ -9,6 +9,649 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-31
+
+### Fixed
+- **Subscribing to the `.ics` feed from a calendar app could not work.** The
+  help page said to mint a token and give it to the app as a password, but
+  the API accepted a token only as a `Bearer` header, which Apple Calendar,
+  Google Calendar and Outlook cannot send — a real subscription got 401 and
+  only the signed-in browser download worked. `_authenticate_api_request` now
+  also reads **HTTP Basic** credentials, taking the API token as the password
+  (any username; a user's account password is still never accepted), so
+  `curl -u anything:<token>` and every API route work the same way. The
+  `.ics` route alone answers an unauthenticated request with a
+  `WWW-Authenticate: Basic` challenge so the app prompts; JSON routes do not,
+  which would make browsers pop a native login dialog. The help page now
+  gives the three steps.
+- **The calendar's delete pages crashed.** Both calendar CRUDViews handed the
+  signed-in user to every generated view's form, and Django's `DeleteView` is
+  a `FormMixin` with a bare `Form` that takes no `user`, so
+  `/smallstack/calendar/events/<pk>/delete/` and the saved-view equivalent
+  raised `TypeError`. The form kwarg now goes to the create and edit views
+  only; a test opens and submits both delete pages.
+
+### Changed
+- **The calendar's entry and view pages have their own design.** Like Runbook
+  and My blogs, the Events and Saved views pages no longer use the generic
+  explorer table and form. The Events list is an **agenda** (`AgendaDisplay`,
+  beside the Calendar and Board displays): rows grouped by month, each led by a
+  tear-off *leaf* (month over a large day number, the end of a span under it),
+  with the time, category and location on one line and Cancelled / private
+  tags on the right; search, filters, sort and the delete modal are the list
+  page's own and still work. The entry form is narrow, labels above fields,
+  grouped **What / When / Details**, with first and last day side by side and
+  a time row that switches off while All day is ticked. The entry page leads
+  with the leaf and the long-form date, shows only the facts that are filled
+  in, and offers **Show on calendar**. Delete is a real page with the leaf and
+  a sentence on what deleting means (and when to mark cancelled instead).
+  Saved views list as rows with their calendars as chips in the same series
+  colours the calendar page uses (`SavedViewsDisplay`), and the view form
+  picks calendars from colour-swatched tiles. Templates live under
+  `apps/calendar/templates/smallstack_calendar/crud/` — the per-app CRUD
+  template seam — so a project can override any one of them.
+- **Selecting a day no longer scrolls the calendar back to the top.** A grid
+  cell, a board day heading and the day column's × were full page loads, so a
+  click after scrolling down landed you at the top of the page again. A small
+  script (`calendar/js/calendar.js`) now fetches the same URL and swaps in only
+  the grid/board and the day column (`data-cal-region="main"` / `"day"`), so
+  the scroll position stays put; the address bar follows, and the links still
+  work as plain navigation without script, with a modifier key, or if the
+  fetch fails. Applies to the shared page and to every `RangeBoardDisplay` /
+  `{% calendar_board %}` page (the runbook's board included); the day column is
+  `aria-live="polite"` so the change is announced.
+- **Calendar page: the picker is as tall as the calendar.** The Calendars
+  column now stretches to exactly the month grid's (or board's) height and the
+  list scrolls inside the card instead of running past the grid; the
+  Subscribe (.ics) / JSON links moved into the card as its footer so the two
+  bottom edges line up. A sparse 30/60/90 board gets a height floor near the
+  month grid's so Month ⇄ board no longer re-flows the page. Below 1280px the
+  picker still folds into a chip row above the grid.
+
+## [0.28.0] - 2026-10-28
+
+### Security
+- **Pillow floor raised to 13.0.** 13.0.0 (2026-10-16) closes fifteen CVEs
+  filed against the 12.x image decoders (CVE-2026-96638, -96640, -96778,
+  -112390/1/3/9, -112401/6, -112891/2/3/4, -112900, GHSA-78g4-xqwv-q3g8) —
+  the path an `ImageField` upload reaches. `pillow>=13.0` in `pyproject.toml`
+  so a downstream resolve can't land on a vulnerable version; the lockfile
+  moves to 13.0.0. SmallStack uses Pillow only through `ImageField`, so none
+  of 13.0's removed APIs apply. The lock refresh also takes the current
+  tooling patches (ruff 0.17.3, mypy 2.4.1, pytest 9.2) and croniter's
+  python-dateutil 3.0; the full suite passes on all of them.
+
+### Fixed
+- **ICS `UID`s were derived from the request host.** `/smallstack/calendar/api/events.ics`
+  built each `UID` from `request.get_host()`, so one event had a different
+  identity per host *or port* — the same row answered `…@localhost:8055` to one
+  caller and `…@localhost` to another. A subscribed client keys on `UID` to
+  recognise an event it already has (RFC 5545 §3.8.4.7), so the day the host
+  changes — dev → prod, a new domain, a proxy forwarding a different `Host` —
+  every event re-appears as new: duplicates accumulate and the originals stop
+  updating. The domain now comes from `SITE_DOMAIN` (then a URL-shaped
+  `SITE_URL`/`BASE_URL`, then the request as a last resort) with the port
+  stripped, so it is stable across environments. `{calendar}-{pk}` on the left
+  was always stable; only the right-hand side moved. (Found by the integration
+  harness.)
+- **`MultipleChoiceField` was advertised as a single string.** The REST
+  OPTIONS metadata, the OpenAPI document and the generated MCP tool schemas
+  described a multiple-choice form field as `choice` / `"type": "string"` with
+  an enum, so a schema-strict client (Claude Desktop validates tool inputs)
+  would send one value where the form requires a list. Such a field is now
+  `multichoice` → `{"type": "array", "items": {"type": "string", "enum": […]}}`
+  on all three surfaces. (Found via the calendar's saved views.)
+
+### Changed
+- **`check_object_permission` enforces `can_update` / `can_delete` by
+  default.** Those hooks used to decide only which buttons render — REST, MCP
+  and the bulk views consulted them, but the HTML edit and delete views did
+  not, so a CRUDView that implemented `can_update` and stopped there still
+  accepted a non-owner's POST to `…/edit/`. The default now refuses with 403
+  on the edit/delete routes (any method) and on every non-GET unless the
+  matching hook says yes; `enforce_write_hooks()` is the reusable body for
+  overrides that want to keep it. A CRUDView whose `can_update` returns
+  False purely to hide a button will now also block the write — which is
+  what the hook's name always promised.
+
+### Added
+- **Agent discovery, three standards.** *(1)* `AGENTS.md` is now the
+  tool-neutral project instruction file (https://agents.md/ — read by Codex,
+  Cursor, Copilot, Gemini CLI and, since 2.1.277, Claude Code); `CLAUDE.md`
+  imports it with `@AGENTS.md` and keeps only Claude-specific notes. *(2)*
+  Every registered skill in `docs/skills/` is also generated as an **Agent
+  Skill** (https://agentskills.io/specification): `.agents/skills/<name>/
+  SKILL.md` with spec-valid frontmatter, long skills split into
+  `references/`, and `.claude/skills/<name>` symlinks for Claude Code (which
+  reads only that directory). `make skills-index` writes both; `--check` (and
+  so `make lint`) fails on drift. Hand-made skills in either directory are
+  left alone. The former loose `.claude/skills/branding.md` became a
+  registered `docs/skills/branding.md`. *(3)* **`/llms.txt`** and
+  **`/llms-full.txt`** (https://llmstxt.org) publish the help system as an
+  agent-readable index and a single concatenation; every help page now has a
+  Markdown alternate at `…/<slug>.md`, advertised with
+  `<link rel="alternate" type="text/markdown">`. New setting
+  `SMALLSTACK_LLMS_DESCRIPTION` for the one-line summary.
+- **Three pages on the starter site.** `/platform/datasets-calendars/` and
+  `/platform/blogs-newsletters/` explain, at a high level and with
+  screenshots, how datasets, calendars, blogs and newsletters work for the
+  bundled apps and are ready for a project's own apps (one code example each,
+  the REST / `.ics` / MCP surfaces, links to the help pages). `/prompts/`
+  carries the common task-oriented prompts for coding agents with a Copy
+  button each. The topbar links all three; Getting Started's "Keep going"
+  section links the two platform pages and its agent aside points at the
+  prompts. Screenshots live under `static/website/img/`.
+- **Help: "Prompting a coding agent."** A new Getting Started page
+  (`/smallstack/help/smallstack/prompting-coding-agents/`) with copy-ready
+  prompts for the common first tasks — a new app on SmallStack, the public
+  site, an end-user app with tenancy, a model with pages + REST + MCP, a
+  calendar, a dataset, a scheduled job, an approval gate, a status monitor, a
+  webhook integration, a blog, a themed page, a deploy, an upstream update, a
+  diagnosis — each naming the skill files to read first, the built-in seams
+  to ask for by name, and the gate (`make lint`, `make test`, two-palette
+  screenshots) that counts as done. Linked from "Extending with AI".
+- **Calendar app** (`apps/calendar/`, label `smallstack_calendar`) — a user
+  app beside Runbook and My blogs. A *calendar dataset* is an ordinary
+  `@dataset` plus a small protocol: `start` (a date/datetime column), optional
+  `end` for ranged events, per-row `title` / `subtitle` / `status` resolvers
+  and an `access` level (`staff` default, or `authenticated`). Declare one with
+  `@calendar_dataset(...)` (every `@dataset` keyword passes through) or attach
+  the protocol to an existing dataset with `register_calendar(key, ...)`. The
+  ladder is CRUDView → dataset → calendar dataset: nothing is copied, the
+  calendar reads rows through `Dataset.queryset()` so per-user scoping and row
+  links apply. `/smallstack/calendar/` merges any number of calendars onto one
+  month grid — three columns: the additive picker (a stable colour per
+  calendar from the new `--series-1…8` theme tokens, light + dark), the grid,
+  and the selected day's events (today by default; click a day to switch;
+  grouped by calendar with a monospace time gutter). A **Month | 30 | 60 | 90
+  days** control swaps the grid for a day-range board — one column per week,
+  an entry card per event — and a **Weekends** toggle hides Sat/Sun in both.
+  Saved views open from an A–Z dropdown. **The renderers are reusable
+  components**: partials under `calendar/components/` wrapped in the
+  `{% calendar_month %}`, `{% calendar_board %}` and `{% calendar_day %}`
+  template tags (driven by `CalendarEvent` rows from `collect_events` or the
+  new `core.events_from_objects`), and `apps.calendar.displays.RangeBoardDisplay`
+  — a `ListDisplay` sibling of `CalendarDisplay` that gives any CRUDView a
+  Table ⇄ Calendar ⇄ Board toggle (adopted by the scheduler's jobs and run history,
+  the maintenance-window explorer, and the blog's posts and newsletter issues;
+  `backward=True` for history-shaped models). `core.RangeWindow` reads the
+  board's URL state for hand-rolled pages — the runbook's documents page gained
+  a Table | Board toggle this way. **Provider-backed calendars**:
+  `@calendar_provider(key, …)` / `register_calendar(key, provider=fn)` make the
+  function the source — `fn(lower, upper, request)` yields
+  `CalendarEvent.make(...)` rows — for dates that are computed rather than
+  stored (rule-generated holidays, milestones, folded rotas); no dataset
+  needed, and every surface reads them the same way. `CalendarEvent` gained
+  `cancelled` (struck through on the board, `STATUS:CANCELLED` in ICS) and
+  `image` (a small face beside the row), both also resolvers on the column
+  protocol; `color=N` pins a calendar to a `--series-N` token. Hiding weekends
+  is now honest: entries on hidden days are counted and announced beside the
+  toggle, and a week column with no visible day in range is dropped. New
+  setting `SMALLSTACK_CALENDAR_WEEKENDS_DEFAULT` (default on) makes a
+  work-week desk the site default (`?weekends=1` shows them on demand).
+  **The Events calendar** — the one a person types into: an `Event` model
+  (all-day by default, optional times, inclusive end date, category, location,
+  url, cancelled flag, members/private visibility) with a login-scoped
+  CRUDView at `/smallstack/calendar/events/` (HTML + REST + MCP, so an agent
+  can file one), **Add event** on the calendar page, and registration under
+  one key `smallstack_events` as both a bundled dataset and a provider-backed
+  calendar open to every signed-in user. `CalendarEvent` gained `calendar_label`
+  (also on the events API) and `series`. The shared page renders through the
+  same partials,
+  month navigation, every state a link. **Saved views** (`SavedCalendarView`:
+  name + list of calendar keys, one default per owner) are a per-user CRUDView
+  with REST (`/smallstack/api/calendar/views/`) and MCP; **Save this view**
+  prefills one from the current selection. Events API: `/smallstack/calendar/
+  api/` (calendars), `…/api/events/?ds=&start=&end=` (merged, normalised
+  `{calendar, id, title, subtitle, start, end, all_day, status, url}`),
+  `…/api/<key>/events/`, and `…/api/events.ics` — an iCalendar feed a desktop
+  or phone calendar subscribes to. MCP tools `list_calendars` and
+  `calendar_events`. Eleven **bundled calendars** are attached to the framework
+  datasets: maintenance windows (ranged), daily uptime (SLA-tinted), upcoming
+  scheduled jobs + job runs, API token expiry (amber ≤14 days, red past),
+  backups, approval deadlines, blog posts, newsletter sends, log capture
+  windows (ranged) and user sign-ups — all staff-only. Plus a
+  `smallstack_calendar_views` dataset, a dashboard widget, help pages at
+  `/smallstack/help/calendar/` and `docs/skills/calendar.md`. New settings:
+  `SMALLSTACK_CALENDAR_ENABLED` (default on; off ⇒ no nav, routes, tools or
+  widget) and `SMALLSTACK_CALENDAR_MAX_WINDOW_DAYS` (default 366 — the widest
+  window one events/ICS/MCP request may ask for).
+
+## [0.27.1] - 2026-10-26
+
+### Changed
+- **Dataset browser index is paged.** Each section (Project / Framework)
+  pages independently (`ppage` / `fpage`) with a shared per-page selector
+  (10, 25, 50, 100; default 10) that preserves the other query params.
+
+## [0.27.0] - 2026-10-26
+
+### Added
+- **Bundled framework datasets.** Every module that creates data now ships a
+  lightweight, read-only `@dataset` over it — 27 datasets keyed
+  `smallstack_<thing>` (requests, log records, heartbeats + the daily rollup,
+  task attempts, workers, scheduled jobs + runs, webhook endpoints /
+  deliveries / receivers / receipts, notifications, approval requests,
+  collected feed items, blog posts / subscriptions / issues / deliveries,
+  runbook documents + versions, users, profiles, API tokens, backups). They
+  are the browse/report seam downstream reporting tools build on:
+  `get_dataset("smallstack_…")` in-process, `/smallstack/datasets/smallstack_…/`
+  over REST (staff-gated, `?format=csv`). Declared through
+  `apps.datasets.framework.framework_dataset`, which enforces the reserved
+  prefix and an explicit column allow-list — credential hashes, secrets,
+  OAuth codes, payloads, bodies and task kwargs are never columns. Newsletter
+  issues declare `sent_pct` / `failed_pct` ratio measures (sum over sum, never
+  an average of percentages). New settings:
+  `SMALLSTACK_FRAMEWORK_DATASETS_ENABLED` (default on) and
+  `SMALLSTACK_FRAMEWORK_DATASETS_MCP` (default off — set it to also publish
+  each as a staff-tier `query_dataset_smallstack_<thing>` MCP tool). See the
+  "Bundled framework datasets" section of `docs/skills/datasets.md`.
+- **Dataset browser.** A staff page at `/smallstack/datasets/browse/`
+  ("Datasets" in the admin nav) lists every registered dataset and opens each
+  in a generic, schema-driven viewer: filter widgets from
+  `schema()["filters"]` (dropdowns, text, date presets + from/before range),
+  a sortable paged table from `schema()["columns"]`, a roll-up card (group by
+  any column, optional measure + aggregate, declared ratios included) and a
+  Download CSV card that deep-links the REST export with the active filters.
+  Hard-codes no model, so a downstream `@dataset` shows up with no wiring.
+- **Dataset row links.** Every dataset row now carries a `url` key — the
+  page where that record can be viewed — on `rows()`, REST, MCP and as the
+  CSV's last column; `schema()["links"]` advertises it and the browser
+  renders the first column as the link. Resolved generically from the model's
+  CRUDView page (detail, else edit) or `get_absolute_url()`; `@dataset(link=…)`
+  takes a callable or a route name to override, `link=False` opts out. A link
+  that can't be built is `null`, never an error.
+
+## [0.26.0] - 2026-10-25
+
+### Added
+- **Resizable CRUD table columns.** Every `{% crud_table %}` header now has
+  a drag handle (`table-resize.js`): drag to resize, double-click to fit the
+  column to its content, and — the handle is a focusable `role="separator"` —
+  ←/→ to nudge, Enter to fit, Home to collapse. Widths persist in
+  `localStorage` per table, keyed by `url_base` + the field list so a
+  changed `list_fields` never replays stale widths, and re-apply after every
+  htmx swap. Widening a column grows the table (the wrapper scrolls) instead
+  of squeezing its neighbours. Two tools render under the table: **Wrap
+  text** (cells wrap instead of clipping; persisted) and **Reset columns**.
+  Progressive enhancement — without the script the handles and tools are
+  hidden. Handles are hidden below 768px.
+- **Activity drilldowns by user and by resource.** `/smallstack/activity/`
+  gained a per-user page (`users/<pk>/`: histogram, status mix, top
+  resources, addresses, clients, API tokens, and the user's requests /
+  resources / errors) and a Resources page (`resources/`, one row per URL
+  pattern plus unmatched paths) with a per-resource page (`resources/detail/
+  ?r=`: histogram, who uses it, status and method mix, sample paths, the
+  slowest requests). Every request row now links to its resource, its user,
+  its IP, and its telemetry log lines. `RequestLog.route` (new, backfilled by
+  migration) stores the matched URL pattern so `/things/1/` and `/things/2/`
+  roll up together.
+- **Probing & noise warning area.** The Requests page classifies the
+  window's traffic (`services.probe_report`): error responses to scanner
+  paths (`.php`, `/wp-admin`, `/.env`, `/.git`, traversal, dumps, consoles),
+  scanner user agents, and anonymous addresses that are mostly 404s across
+  many paths, mostly denied, or locked out by django-axes. A warning band
+  lists the addresses with their reasons and the most-probed paths; a Probes
+  tab lists every flagged request; flagged rows carry a `!` glyph
+  everywhere. A flagged address contributes only its error rows, never its
+  whole traffic. `ACTIVITY_PROBE_PATTERNS_EXTRA`,
+  `ACTIVITY_SCANNER_AGENTS_EXTRA` and `ACTIVITY_PROBE_IGNORE_PATHS` tune it.
+- **A time window on every activity page** (`?window=1h|24h|7d|30d|all`,
+  default `ACTIVITY_DEFAULT_WINDOW` = 7d), carried through tabs, filters,
+  sort and paging, and a traffic histogram on each page. Request tables have
+  a filter bar (status, method, path contains, IP, anonymous only, exact
+  path) and are resizable `crud-table`s. `{% sortable_th %}` now emits
+  `data-field` + the resize handle, so any hand-written `crud-table` with a
+  `data-table-key` is column-resizable.
+- Sidebar sub-items under Activity: Requests, Users, Resources.
+
+### Changed
+- **Type-derived default column widths.** `.crud-table` is
+  `table-layout: fixed`, so every column the view did not size got an equal
+  share — a ✓/— boolean was as wide as an email column, and the email
+  clipped. `_build_sort_headers` now emits a pixel default for naturally
+  compact fields (booleans 110px, datetimes 170px, dates 120px, times 100px,
+  durations 110px, numbers 100px, `choices` CharFields 130px); free-text,
+  relation and pk columns stay unset and share the freed space. An explicit
+  `column_widths` entry always wins. Documented in `tables.md`.
+- The Users page leads with the per-user roll-up (hits, errors, paths,
+  latency, last seen, each linking to the user page); theme usage moved to a
+  Preferences tab. "Inactive" now means no logged request *and* no login in
+  the window, instead of no row ever (which the retention cap made
+  meaningless). Signups follow the window.
+- All activity tables use the standard `crud-table`; the page-local
+  primary-tinted zebra styles and the hard-coded `orange` status fallback
+  are gone. Status codes render as tinted pills.
+- `apps.activity` joins the strict-typing ratchet.
+
+### Fixed
+- The Activity dashboard showed "1 tracked requests" and a Requests card of
+  1: the theme-usage loop reused the name `total` and overwrote the request
+  count. Every headline number now comes from one aggregate.
+
+## [0.25.2] - 2026-10-16
+
+### Changed
+- **A typing ratchet.** The global mypy config stays lenient (legacy debt in
+  `apps/smallstack`, `explorer` and `usermanager` would flood the gate), but
+  the apps that are already fully annotated — approvals, blog, datasets,
+  feeds, notifications, runbook, scheduler, webhooks — are now checked with
+  `disallow_untyped_defs`, `disallow_incomplete_defs` and
+  `check_untyped_defs` via `[[tool.mypy.overrides]]`, so an unannotated
+  function in any of them fails `make lint` instead of passing silently. The
+  remaining unannotated signatures in those apps were completed (feeds
+  parser/collector, approvals MCP helpers, webhooks views, datasets core,
+  notifications inbox, scheduler post-migrate hook, runbook command), as were
+  the six found in the 0.25 work (`form_bridge.build_form`, the profile Blogs
+  card, the blog dashboard widget) and every dashboard widget's `get_data` /
+  `get_api_extras`, which now match the base-class signature. New
+  `make typecheck-strict` shows what the lenient config hides and which app to
+  add next. `CLAUDE.md` documents the ratchet and that a downstream must carry
+  the mypy block and run it in lint — a clone from before v0.9 never had it.
+
+
+## [0.25.1] - 2026-10-12
+
+### Removed
+- **`enable_rss` and the one-flag model feed.** `ModelFeed` built its items
+  from `model.objects.all()` and never applied `get_list_queryset` or
+  `search_visibility`, so a single flag could syndicate drafts and other
+  tenants' rows to an anonymous URL — the one place in the framework where an
+  opt-in could leak private rows. Nothing upstream used it; the blog and the
+  status page were already curated feeds. `apps/feeds/model_feed.py`, the
+  `enable_rss` / `rss_*` attributes and `rss_item_extra()` are gone, and
+  setting any of them on a CRUDView raises `ImproperlyConfigured` at import so
+  a stale copy fails at startup rather than serving an unscoped feed. The
+  engine — `Feed`, `FeedItem`, `register_feed`, `render_feed`, access tiers,
+  token auth, the collector — is unchanged. Migration recipe in `UPGRADING.md`.
+
+### Changed
+- **Feeds are a publishing surface, not an integration one.** The README, the
+  shipped site (home page pipeline, roles, surface cards, seams; the
+  getting-started reference grid; the features deck, where "Webhooks & feeds"
+  became "Webhooks" and feeds joined the publishing slide), the help Welcome
+  table, `CLAUDE.md` and the settings comments now present RSS/Atom/JSON feeds
+  as how blogs, podcasts and changelogs reach readers and the tools that
+  subscribe on their own terms, with the collector filed under integrations
+  for sources that only speak RSS. Integrations you own are webhooks, the REST
+  API and MCP. `docs/skills/rss.md` and the feeds reference were rewritten to
+  lead with the curated pattern, per-runtime-object feeds via `render_feed`,
+  and a podcast enclosure example.
+
+## [0.25.0] - 2026-10-12
+
+### Added
+- **A worked `SearchBuilder` example on the public search page.** The blog's
+  `PostCRUDView` now implements `get_search_variants` + `transform_hit`
+  (`apps/blog/views.py:search_hit_for_post`): a hit carries the blog name,
+  publish date, reading time, tags and cover with a `card: "article"`
+  discriminator, and `/search/` renders those hits as an article card
+  (`templates/website/includes/search_article_card.html`) while every other
+  model keeps the default row. The `compact` variant is exposed as its own
+  MCP tool, `search_blog_posts_compact`. The empty `/search/` page gains a
+  "Shape a result" panel with the recipe and a rendered example, so the
+  pattern is visible before any post exists. Documented in
+  `docs/skills/search.md` and the search reference.
+- **Blog + newsletter (`apps/blog/`, label `smallstack_blog`).** Per-user blog
+  channels of markdown posts, with a three-tier visibility ladder
+  (`private` / `members` / `public`) instead of a single public flag — the
+  middle tier is an internal team blog readable by every signed-in colleague
+  and invisible to the internet. A post has its own lifecycle (draft /
+  scheduled / published / archived) and both gates apply, so a published post
+  in a private blog stays private and a draft in a public blog stays a draft.
+  Authoring console at `/smallstack/blog/` (login-gated and ownership-scoped,
+  not staff-only); public reading surface at `/blog/`.
+  New settings: `SMALLSTACK_BLOG_ENABLED` (master switch),
+  `SMALLSTACK_BLOG_PUBLIC_ENABLED` (the anonymous reading surface, separately
+  switchable because "drafting internally, nothing public yet" is a real
+  state — off ⇒ every public route 404s rather than 403s),
+  `SMALLSTACK_BLOG_PAGE_SIZE`, `SMALLSTACK_BLOG_FEED_LIMIT`.
+- **Newsletter sending.** Email-identity subscribers (not tied to
+  `AUTH_USER_MODEL`), double opt-in, and a durable batched sender whose
+  per-recipient `Delivery` rows are the progress ledger — a worker killed
+  mid-send resumes without re-sending anyone.
+  New settings: `SMALLSTACK_BLOG_SEND_BATCH_SIZE`,
+  `SMALLSTACK_BLOG_SEND_MAX_BATCHES` (defaults drain 2,000 recipients a minute
+  while keeping each task inside the lost-task reaper window),
+  `SMALLSTACK_BLOG_CLAIM_TIMEOUT_MINUTES`,
+  `SMALLSTACK_BLOG_SEND_MAX_ATTEMPTS`,
+  `SMALLSTACK_BLOG_SOFT_FAIL_LIMIT` (consecutive soft failures, counted across
+  issues and reset on any success, before an address is suppressed — a single
+  transient SMTP error must never permanently drop a good reader),
+  `SMALLSTACK_BLOG_REQUIRE_PUBLIC_URL` (refuse to queue a send whose
+  unsubscribe links would point at localhost — a blast cannot be recalled), and
+  `SMALLSTACK_BLOG_CONFIRM_MAX_AGE_DAYS`. The unsubscribe link deliberately has
+  no expiry: an RFC 8058 one-click header in a two-year-old email must still
+  work.
+
+- **The runbook → blog bridge.** A runbook `Document` can be published into a
+  blog from `/smallstack/blog/import-runbook/`, from REST, or from MCP. Reads
+  go through `runbook.service` + `runbook.permissions`, so locking,
+  authorization and the audit trail still apply and nothing can publish a
+  document its caller could not read; runbook itself is untouched and unaware.
+  Frontmatter is *parsed* (title/description become the post's title and
+  excerpt) rather than merely stripped, and `sync="auto"` keeps a post
+  following the runbook page via the `document_written` signal while
+  `sync="manual"` leaves an author's adaptations alone.
+- **The writing studio at `/my/blogs/`.** A person's own blogs, apart from the
+  system manager: a list of posts with drafts first (or cards, remembered per viewer), a compact editor
+  (borderless title, markdown body with live server-rendered preview, a side
+  rail for publishing and details, ⌘S to save), and blog settings with the
+  newsletter block split out. Publish, Schedule and Archive are buttons that
+  save the editor first and then transition in the same request. Reached from
+  "My blogs" beside Runbook in the nav, from the user dropdown, and from a
+  Blogs card on the profile page.
+- **`docs/skills/blog.md`** plus six in-app help pages at `/help/blog/`,
+  including *Showing posts in your own pages*: the permission scopers for a
+  same-project template, the anonymous JSON API's shapes and rules for a
+  separate front end, and publishing from code via the service layer, REST
+  or MCP.
+
+### Changed
+- **The shipped site now frames SmallStack as a platform to build apps on,
+  not an app starter — and knows about every app added since 0.13.** The
+  home page's hero, "what you can build on it" shapes (internal tools, API
+  backends, MCP servers, integration hubs, workflow apps, publishing), the
+  pipeline (now `enable_webhooks` + `enable_rss` + the `sc` CLI alongside
+  HTML/REST/MCP/search), a 16-tile batteries grid (Runbook, Blog &
+  newsletter, Approvals, Notifications, Scheduler, Webhooks, Search, Logs
+  join the original eight; staff get live links, everyone else the help
+  page, and a switched-off app falls back to its docs automatically), and a
+  new "build on it" section listing the seams the built-in apps register
+  through. The about page's lede and the `features` slide deck (new slides
+  for surfaces, search, webhooks & feeds, approvals & notifications,
+  runbook/blog/newsletter; stale 5-palette and "recurring schedules are on
+  the way" copy fixed), the getting-started page (a sixth "platform apps"
+  step with the `SMALLSTACK_*_ENABLED` flags, six surfaces, an expanded
+  reference grid), the help "Welcome" page (full what's-included table with
+  deep links, and its `/help/...` links — which 404'd — fixed to
+  `/smallstack/help/...`), and the README ledes follow the same framing.
+- **UI consistency pass across Runbook, Help and Blog.** The studio's list
+  pages (My blogs, a blog, settings, new blog) now use the same header band
+  with the breadcrumb inside it that Runbook, Help and the CRUD console use,
+  and the dashboard shows the `{% stat_card %}` row instead of a sentence; the
+  editor stays flat on purpose. Button and link copy in Runbook and Help is
+  sentence case ("Edit content", "New runbook", "Table of contents"); the three
+  upload buttons all say "Upload new version"; "Save Changes" is "Save". The
+  "On this page" rail is headed identically on all three reading surfaces.
+  Runbook's visibility badge says **Signed-in** rather than "Public", because
+  one sidebar entry away a public *blog* means the internet.
+- **The public blog post has an "On this page" rail** built from the TOC the
+  renderer already stores, shown once a post has three or more headings.
+- **One hardened markdown renderer for the whole framework.**
+  `render_markdown()` moved from `apps/runbook/utils.py` into
+  `apps/smallstack/transforms.py`, beside the `harden_markdown_renderer()` it
+  already depended on, so runbook, blog and the CRUD field preview share a
+  single renderer rather than three near-copies. Re-exported from
+  `apps.runbook.utils`, so every existing import keeps working. It gained
+  `extensions=` / `toc=` options, and refuses `attr_list`, `legacy_attrs` and
+  `md_in_html` outright: hardening strips raw HTML and dangerous URL schemes
+  but *cannot* strip authored attributes, so those three reopen a stored-XSS
+  vector. A fork wanting richer markdown (`codehilite`, say) passes its own
+  `extensions` and owns that choice.
+- **`split_frontmatter()` / `parse_frontmatter()`** added to
+  `apps/smallstack/transforms.py`; `runbook.models.strip_frontmatter()` now
+  delegates to it. The YAML-mapping check that distinguishes real frontmatter
+  from a `---` thematic break is now shared, and malformed frontmatter degrades
+  to "no metadata" rather than costing the document body.
+- **`send_branded_email()`** accepts `headers=`, `connection=`, `reply_to=` and
+  `from_email=`, all optional and all defaulting to the previous behaviour.
+  Without them bulk list mail was impossible: `List-Unsubscribe` /
+  `List-Unsubscribe-Post` could not be set at all (so no RFC 8058 one-click
+  unsubscribe), and every message opened its own SMTP connection — one TCP+TLS
+  handshake and one AUTH per recipient.
+
+### Fixed
+- **Cross-tenant create on the generated REST and MCP write surfaces.** CRUDView
+  hands `request.user` to its HTML forms (that is how a form scopes its own
+  `ModelChoiceField` querysets), but the scripted surfaces built the form with
+  no user, so the queryset stayed unscoped — and on a create the form is the
+  only gate. Any authenticated account could POST a post into another user's
+  private blog, or do the same through `create_blog_post`. `form_bridge.build_form()`
+  now passes `user=` whenever the form declares it, walking the MRO so a
+  subclass that overrides `__init__` and forwards `**kwargs` still counts.
+  Wired into REST create/update/bulk-update/OPTIONS and MCP create/update.
+- **`serialize()` crashed on `FileField`/`ImageField` and emitted non-JSON
+  primitives.** A create wrote the row and *then* 500'd (three identical POSTs
+  made three posts); GET detail broke; and because `apps/webhooks` stores the
+  same dict in a `JSONField` with no encoder, a `UUIDField` in `detail_fields`
+  raised on the webhook write. Files now serialise to their URL (or `None`),
+  and UUID/Decimal/timedelta to strings — the REST wire format is unchanged.
+- **A webhook fan-out failure silently discarded the caller's write.** `fan_out()`
+  runs in a `post_save` receiver inside the caller's `atomic()`; a failed delivery
+  INSERT marked the block for rollback, so `service.create_post` returned a pk
+  and left no row. Each delivery INSERT now runs in its own savepoint.
+- **`api_expand_fields` and `.only()` were mutually exclusive.** Expanded FKs
+  were joined but deferred, so `/smallstack/api/blog/issues/` 500'd with no
+  client input. Expanded fields now join the `only()` set.
+- **`blog_send --dry-run` sent the newsletter for real** when `--issue` was
+  omitted. The flag is now honoured before the drain, reaping is skipped too,
+  and `service.pending_send_summary()` is read-only.
+- **Queueing a second issue for one post answered 500.** `queue_issue` now
+  raises a readable `AlreadySending` naming the live campaign; the database
+  constraint remains the guarantee.
+- **`SMALLSTACK_BLOG_ENABLED=False` did not take the public blog offline.** Only
+  `ready()` honoured it: the public routes, JSON API, per-blog feeds and both
+  scheduled ticks kept running, and a disabled blog published a scheduled post.
+  `public_surface_enabled()` now requires both switches and the tick bodies
+  check the flag themselves. `SMALLSTACK_BLOG_PUBLIC_ENABLED=False` also
+  unregisters the site-wide `/feed/blog.rss` river.
+- **Blog slugs were enumerable anonymously.** Members blogs redirected to
+  login while unused slugs 404'd; the first fix moved the oracle onto private
+  blogs. An anonymous visitor now gets the same login redirect for members,
+  private and no-such-slug alike; a signed-in visitor still gets an honest 404.
+- **An explicit `https://` in `SITE_URL` was downgraded** to `http://` in
+  mailed unsubscribe and permalink links when `USE_HTTPS` was left at its
+  default. The explicit scheme now wins when it names the same host.
+- **Auto-synced runbook posts had no monitor.** `sync="auto"` enqueues a task,
+  so with no worker the post silently kept old text; `AutoSyncMonitor` now
+  reports it on the status page.
+- **`p` (the shortlink prefix) was not a reserved blog slug**, and
+  `canonical_url` reached an `href` unfiltered from trusted internal callers.
+  Both closed; a test walks `public_urls.py` so the reserved set cannot drift.
+- **MCP tool registry leaks between tests.** Several suites wipe
+  `TOOL_REGISTRY` / `TOOL_HANDLERS` with `clear_registry_for_tests()` to
+  test registration in isolation and left them empty for the rest of the
+  process, so any later test asserting "my app's tools are registered"
+  passed or failed on file order alone — green in the default alphabetical
+  run, 24 failures when `apps/search apps/mcp apps/blog` ran together. The
+  root `conftest.py` now snapshots both registries before every test and
+  restores them after (`apps.mcp.server.isolated_tool_registry`), pinned by
+  `apps/mcp/tests/test_registry_isolation.py`. The per-app conftests that
+  re-registered their own tools to cope (runbook, webhooks, approvals,
+  telemetry) still work and are now redundant.
+- **Help's dark theme was hard-coded again.** `help.css` carried 26 legacy-grey
+  literals (`#1e1e1e`, `#3a3a3a`, `#e0e0e0`, …) inside `[data-theme="dark"]`
+  blocks — the exact anti-pattern `modern-dark-theme.md` cites that file as
+  the fixed example of. It rendered correctly on the purple palette and muddy
+  on orange and gold. Every value is now a theme variable, Runbook's one
+  literal (the toggle thumb) is `--button-fg`, and a new test pins every app
+  stylesheet literal-free so it cannot drift back quietly.
+- **The search hub advertised MCP tool names that don't exist.** Two functions
+  derive the name — `registry._mcp_tool_name_for` for the "what's indexed"
+  panel and `mcp_tools._tool_name_for` for the actual registration — and they
+  had drifted onto different attributes (`mcp_tool_name` vs the documented
+  `mcp_tool_noun_plural`), despite a comment saying they were kept in sync.
+  Runbook was the shipped instance: the panel said `search_documents` while the
+  registered tool was `search_runbook_documents`, so an agent reading the panel
+  to learn the tool name called something that did not exist. A test now pins
+  the two derivations together for every registered view.
+- **Scheduler tick tests were not isolated from code-declared jobs.**
+  `services.run_due_jobs()` is global — it runs every job that is due — so a
+  test asserting `enqueued == 0` was implicitly asserting that no app anywhere
+  in the project has a `@scheduled` job due at that moment. That held only
+  while every bundled cadence was 5 minutes or longer; adding a one-minute job
+  broke eight unrelated tests intermittently, depending on how long the run had
+  been going. `apps/scheduler/tests/conftest.py` now clears code-declared rows
+  and suppresses the lazy sync per test, so a downstream project with a
+  frequent job does not inherit the same puzzle.
+- **CRUDView filter dropdowns ignored the view's tenancy scope.** `filter_fields`
+  builds a `<select>` per field, and for a `ForeignKey` the options came from
+  `related_model._default_manager.all()[:100]` — the whole related table,
+  whoever was looking. On a tenancy-scoped CRUDView (the documented end-user
+  pattern in `building-a-user-facing-site.md`) `get_list_queryset` correctly
+  hid other people's rows from the table while the filter bar above it listed
+  them by name. `/smallstack/tokens/` is the shipped instance: reachable by any
+  signed-in user, scoped by `owner`, and declaring `user` among its
+  `filter_fields`, so its filter bar enumerated up to 100 usernames from the
+  installation. Choices now come from the tenancy-scoped list queryset, taken
+  *before* the request's own filters are applied so the dropdowns stay
+  switchable; the low-cardinality distinct-values branch is scoped the same
+  way. Staff and `user=None` callers are unaffected.
+- **The search hub's "what's indexed" preview ignored `search_visibility`.**
+  `get_indexed_sources()` sampled five recent rows with
+  `model._default_manager.all()` and rendered their display values and links,
+  applying only the per-view *access tier*. For any view whose tier is broader
+  than staff, that previewed other users' rows — including unpublished ones —
+  to every caller the tier admitted. Now scoped exactly as `search_all()`
+  scopes hits, with staff and trusted-internal callers bypassing as before and
+  a raising callback failing safe to no preview. The row *count* stays
+  table-wide by design: on Postgres it is a planner estimate, and a per-user
+  `COUNT` would undo that on every render.
+
+## [0.24.0] - 2026-10-11
+
+### Added
+- **The agent skill index is generated, and `make lint` checks it.**
+  `docs/skills/README.md`'s tables are now the single source of truth;
+  `docs/skills/index.json` is generated from them by `manage.py skills_index`
+  (`make skills-index`). `--check` runs inside `make lint` and the pre-commit
+  hook, failing on a skill file registered nowhere, a row pointing at a missing
+  file, or a stale index. Hand-curated `name` / `keywords` / `use_when` fields
+  carry forward across regeneration, and a `**(upstream repo only)**` or
+  `**(forks / downstream)**` prefix on a row becomes a `scope` field agents can
+  read. The checks assert self-consistency only — never that a particular skill
+  exists — so a project built on SmallStack stays free to add, delete or rewrite
+  skills. It no-ops where there's no `docs/skills/README.md`.
+- **`docs/skills/local.md`** — a skill registry upstream never ships, so a
+  project can register *its own* skill files (tagged `"origin": "fork-local"` in
+  the generated index) without taking a merge conflict on every
+  `git pull upstream main`.
+
+### Fixed
+- **The skill index agents consult was two-thirds empty.** It listed 29 of 76
+  skill files: every read-first skill (`modern-dark-theme`, `cli-tools`,
+  `accessibility`, `modify-palettes`) was missing, 19 of the 25 files `CLAUDE.md`
+  names were absent, and it still carried an entry for `report-card.md`, deleted
+  releases ago. Nothing read it and registering a skill meant hand-editing two
+  files with no check, so it had rotted since 0.8.7. Now 76 of 76, with 11 files
+  that had no README row given one (`crud-views.md` and `from-zero-to-running.md`
+  among them) and 54 entries carrying keywords + `use_when`.
+  (Downstream-reported: a fork's own skill file was referenced by `CLAUDE.md` but
+  registered in neither index, so an agent looking for release guidance found
+  upstream's `release-process.md` — exactly the wrong one for a fork.)
+- **`release-process.md` now says it's upstream-only** and points a fork at
+  `integration-workflow.md` / `downstream-release-migration.md` instead; its own
+  "Version Locations" table named a file that no longer exists and omitted
+  `CHANGELOG.md` and the post-bump `uv sync`.
+- **Shipped docs no longer name the maintainer's own projects.** Deployment
+  hostnames and project names from the author's workspace appeared in
+  `integration-workflow.md`, `UPGRADING.md`, `kamal-deployment.md`,
+  `screenshot-workflow.md` and others, which every clone inherited as if they
+  were its own. The screenshot "port reference" became the rule it was hiding:
+  8005 is the default here *and* in every clone, so two checkouts collide —
+  override with `PORT=N`.
+
 ## [0.23.1] - 2026-10-11
 
 ### Changed
@@ -2016,7 +2659,16 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/emichaud/django-smallstack/compare/v0.28.0...v0.29.0
+[0.28.0]: https://github.com/emichaud/django-smallstack/compare/v0.27.1...v0.28.0
+[0.27.1]: https://github.com/emichaud/django-smallstack/compare/v0.27.0...v0.27.1
+[0.27.0]: https://github.com/emichaud/django-smallstack/compare/v0.26.0...v0.27.0
+[0.26.0]: https://github.com/emichaud/django-smallstack/compare/v0.25.2...v0.26.0
+[0.25.2]: https://github.com/emichaud/django-smallstack/compare/v0.25.1...v0.25.2
+[0.25.1]: https://github.com/emichaud/django-smallstack/compare/v0.25.0...v0.25.1
+[0.25.0]: https://github.com/emichaud/django-smallstack/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/emichaud/django-smallstack/compare/v0.23.1...v0.24.0
 [0.23.1]: https://github.com/emichaud/django-smallstack/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/emichaud/django-smallstack/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/emichaud/django-smallstack/compare/v0.21.11...v0.22.0

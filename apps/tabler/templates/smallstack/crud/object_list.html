@@ -61,9 +61,10 @@
     </div>
     {% endif %}
     <div class="card-body">
+        <div id="crud-list-content">
         {% if display_template %}
             {% include "smallstack/crud/includes/display_palette.html" %}
-            <div id="crud-display-area">
+            <div id="crud-display-area" style="--paginate-by: {{ paginate_by|default:0 }};">
                 {% include display_template %}
             </div>
         {% elif object_list %}
@@ -78,6 +79,7 @@
         {% if not display_template and is_paginated %}
         {% render_paginator page_obj "#crud-content" %}
         {% endif %}
+        </div>
     </div>
 </div>
 {% include "smallstack/crud/includes/delete_modal.html" %}

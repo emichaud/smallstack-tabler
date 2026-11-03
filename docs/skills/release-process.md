@@ -1,5 +1,11 @@
 # Skill: Release Process
 
+> **Scope: the `django-smallstack` upstream repo only.** This is how *SmallStack itself* is versioned and
+> published. If you're working in a project built on SmallStack, this file does not describe your release
+> process — follow your own project's release doc, and read
+> [`integration-workflow.md`](integration-workflow.md) (pull a new upstream version) and
+> [`downstream-release-migration.md`](downstream-release-migration.md) (migrate across releases) instead.
+
 How to version, release, and publish SmallStack.
 
 ## Versioning
@@ -14,13 +20,16 @@ SmallStack uses **Semantic Versioning** (semver): `MAJOR.MINOR.PATCH`
 
 ### Version Locations
 
-Version must be updated in **three** places:
-
 | File | Field | Example |
 |------|-------|---------|
-| `pyproject.toml` | `version = "X.Y.Z"` | `version = "0.7.1"` |
-| `apps/help/smallstack/_config.yaml` | `version: "X.Y.Z"` | `version: "0.7.1"` |
-| `README.md` | Coverage/version badges | Update badge URLs if needed |
+| `pyproject.toml` | `version = "X.Y.Z"` | `version = "0.25.2"` |
+| `README.md` | the version badge | `![Version 0.25.2](…/badge/version-0.25.2-blue)` |
+| `CHANGELOG.md` | a new `## [X.Y.Z] - YYYY-MM-DD` section, plus the `[Unreleased]` and `[X.Y.Z]` link refs at the bottom | — |
+| `uv.lock` | the project's own `version` — refreshed by the `uv sync` below, not by hand | — |
+
+Then **`uv sync --extra dev`**. The bump leaves the installed distribution's metadata on the
+old version, and `smallstack.W001` fires on `manage.py check --deploy` until the package is
+reinstalled — a bare `uv sync` installs it but prunes the dev extras, so pass `--extra dev`.
 
 ## Pre-Release Checklist
 
@@ -113,8 +122,8 @@ EOF
 After pushing a release, update downstream projects:
 
 ```bash
-# In each downstream project (smallstack_web, opshugger, etc.)
-cd ../smallstack_web
+# In each project built on SmallStack
+cd ../<your-project>
 git pull upstream main              # Pull SmallStack updates
 # Resolve any merge conflicts
 make migrate                        # Run new migrations

@@ -1,11 +1,110 @@
 # Upgrading SmallStack
 
-Breaking changes and the migration steps for each. Downstream projects (smallstack_web,
-opshugger, and any clone) should read the section for any version they cross when pulling
-upstream.
+Breaking changes and the migration steps for each. Any project built on SmallStack should
+read the section for every version it crosses when pulling upstream.
 
 Most releases are non-breaking patch/minor bumps and won't appear here. If a release isn't
 listed, no downstream migration is required.
+
+---
+
+## v0.28.0 — `can_update` / `can_delete` now gate writes, not just buttons
+
+**Who is affected:** any CRUDView that overrides `can_update(obj, request)` or
+`can_delete(obj, request)` *and* relies on the default `check_object_permission`.
+If you never override those hooks, nothing changes.
+
+**What changed.** Those hooks used to decide only which buttons render on the
+detail and list pages; REST, MCP and the bulk views consulted them, but the
+HTML edit and delete views did not, so a CRUDView that implemented `can_update`
+and stopped there still accepted a non-owner's POST to `…/edit/`. The default
+`check_object_permission` now calls `enforce_write_hooks(obj, request)`, which
+raises `PermissionDenied` (403) on the edit and delete routes for any method,
+and on every non-GET request, unless the matching hook returns True.
+
+**Migration.**
+
+- If a hook returned False **only to hide a button** while the write was meant
+  to stay allowed, that write is now refused. Either let the hook return True
+  and hide the button in the template, or move the cosmetic rule out of the
+  hook — the hook's name always promised the stricter meaning.
+- If you override `check_object_permission` for a read-side rule (ownership,
+  tenancy) and want the new write gate too, call
+  `cls.enforce_write_hooks(obj, request)` at the end of your override. An override
+  that does not call it keeps the old behaviour.
+- The calendar's `EventCRUDView` is the upstream example: `can_update` says
+  "author or staff" and the framework default now enforces it on every surface.
+
+---
+
+## v0.25.1 — `enable_rss` removed; feeds are a publishing surface
+
+**Who is affected:** any CRUDView that set `enable_rss = True`, any `rss_*`
+attribute, or overrode `rss_item_extra()`. Nothing in upstream did; the blog
+and the status page were already curated feeds. If you never touched these,
+nothing to do.
+
+**What changed.** The one-flag model feed (`apps/feeds/model_feed.py`) built
+its items from `model.objects.all()` and never applied `get_list_queryset` or
+`search_visibility`, so a single flag could syndicate drafts and other
+tenants' rows to an anonymous URL. Rather than keep a seam that is unsafe on
+exactly the models people want to syndicate, it is gone. Setting `enable_rss`,
+any `rss_*` attribute or `rss_item_extra` on a CRUDView now raises
+`ImproperlyConfigured` at import, so a stale copy fails loudly at startup
+instead of quietly serving an unscoped feed.
+
+The engine is unchanged: `Feed`, `FeedItem`, `register_feed`, `render_feed`,
+the `/feed/<slug>.rss|atom` routes, access tiers, token auth, the collector.
+
+**Migration** (10–20 lines per feed):
+
+```python
+# before
+class ReleaseView(CRUDView):
+    model = Release
+    enable_rss = True
+    rss_slug = "releases"
+    rss_access = SearchAccess.ANONYMOUS
+    search_display = "title"
+    search_subtitle = "summary"
+    def rss_item_extra(self, obj):
+        return {"enclosures": [...]}
+
+# after — apps/<app>/feeds.py
+from apps.feeds import Feed, FeedItem, register_feed
+
+class ReleasesFeed(Feed):
+    slug = "releases"                        # same slug → same URL, subscribers notice nothing
+    title = "Releases"
+    access = SearchAccess.ANONYMOUS
+
+    def items(self, request):
+        qs = Release.objects.filter(published=True).order_by("-published_at", "-id")[:50]
+        for obj in qs:                        # ← scope it; this is the step the flag never did
+            yield FeedItem(
+                title=obj.title, link=obj.get_absolute_url(),
+                unique_id=f"app.Release:{obj.pk}",   # keep the old GUID scheme
+                description=obj.summary, pubdate=obj.published_at,
+                extra_kwargs={"enclosures": [...]},
+            )
+
+# apps/<app>/apps.py  ready():
+register_feed(ReleasesFeed())
+```
+
+Attribute map: `rss_slug`→`slug`; `rss_feed_title`/`rss_feed_description`→
+`title`/`description`; `rss_access`→`access`; `rss_limit`/`rss_ordering`→ the
+slice and `order_by` in `items()`; `rss_title_field`/`rss_description_field`/
+`rss_date_field`/`rss_author_field`→ the `FeedItem` kwargs;
+`rss_item_extra()`→`extra_kwargs=`. The full recipe, including per-runtime-object
+feeds rendered from your own view, is in `docs/skills/rss.md`.
+
+**Positioning.** Feeds moved from the "integration hub" story to "publishing"
+across the README, the shipped site and the skills: feeds are for readers,
+podcast apps and the tools that subscribe on their own terms; integrations you
+own use webhooks, the REST API and MCP. The collector (`register_feed_source`)
+stays, filed under integrations as the way to pull in sources that only speak
+RSS.
 
 ---
 

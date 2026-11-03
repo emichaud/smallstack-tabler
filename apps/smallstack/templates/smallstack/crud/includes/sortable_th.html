@@ -1,4 +1,4 @@
-<th scope="col" class="th-sortable{% if align == "right" %} th-sortable-right{% endif %}" aria-sort="{% if direction == 'desc' %}descending{% elif direction == 'asc' %}ascending{% else %}none{% endif %}">
+<th scope="col" class="th-sortable{% if align == "right" %} th-right{% endif %}" data-field="{{ field_name }}"{% if width %} style="width: {{ width }};"{% endif %} aria-sort="{% if direction == 'desc' %}descending{% elif direction == 'asc' %}ascending{% else %}none{% endif %}">
     <button type="button" class="th-sort"
         hx-get="?{{ query_string }}"
         hx-target="{{ hx_target }}"
@@ -6,8 +6,9 @@
         hx-push-url="true"
         hx-swap="innerHTML"
         aria-label="{{ label }}, {% if direction == 'desc' %}sorted descending{% elif direction == 'asc' %}sorted ascending{% else %}not sorted{% endif %} — sort by {{ label }}">
-        {% if align == "right" %}<span aria-hidden="true" style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>
-        <span>{{ label }}</span>{% else %}<span>{{ label }}</span>
-        <span aria-hidden="true" style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>{% endif %}
+        <span>{{ label }}</span>
+        <span aria-hidden="true" style="font-size: 0.65rem; display: inline-block; width: 0.65em;{% if not direction %} visibility: hidden;{% endif %}">{% if direction == "desc" %}&#9660;{% else %}&#9650;{% endif %}</span>
     </button>
+    {% comment %}Inert unless the <table> carries data-table-key (table-resize.js).{% endcomment %}
+    {% include "smallstack/crud/includes/col_resizer.html" with label=label %}
 </th>

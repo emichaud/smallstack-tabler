@@ -337,21 +337,56 @@ def api_view(methods=None, require_auth=True, require_staff=False, require_auth_
     return decorator
 
 
+def _token_from_authorization(auth_header: str) -> str | None:
+    """The API token carried by an ``Authorization`` header, or ``None``.
+
+    Two schemes carry a token:
+
+    * ``Bearer <token>`` — scripts, agents, Swagger's Authorize button.
+    * ``Basic base64(<anything>:<token>)`` — what a calendar app, a feed
+      reader or ``curl -u`` sends when a URL asks for a username and password.
+      Those clients cannot set a custom header, so the API token goes in the
+      password slot and the username is ignored (a token is not a user's
+      password, and a user's password is never accepted here). A Basic header
+      with an empty password but a token-shaped username is also accepted,
+      for apps that insist on filling only one field.
+
+    Any other scheme, or an undecodable Basic value, is ``None`` — the caller
+    then falls through to session auth, exactly as before.
+    """
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:].strip() or None
+    if auth_header.startswith("Basic "):
+        import base64
+        import binascii
+
+        try:
+            decoded = base64.b64decode(auth_header[6:].strip(), validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return None
+        username, sep, password = decoded.partition(":")
+        if sep and password.strip():
+            return password.strip()
+        return username.strip() or None
+    return None
+
+
 def _authenticate_api_request(
     request: HttpRequest,
 ) -> tuple[Any, JsonResponse | None]:
-    """Authenticate via Bearer token or existing session. API views only.
+    """Authenticate via an API token (``Bearer`` or ``Basic``) or the existing
+    session. API views only.
 
     The user slot is the swappable ``AUTH_USER_MODEL`` instance (``Any``) when
     the second element is ``None``; ``None`` otherwise.
     """
     auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    raw_key = _token_from_authorization(auth_header)
 
-    if auth_header.startswith("Bearer "):
+    if raw_key is not None or auth_header.startswith(("Bearer ", "Basic ")):
         from .models import APIToken
 
-        raw_key = auth_header[7:]
-        user, token = APIToken.authenticate(raw_key)
+        user, token = APIToken.authenticate(raw_key or "")
         if user is None:
             # Distinguish "credential was real but is now invalid" from
             # "credential is wrong" so CI logs and human debuggers see
@@ -376,7 +411,7 @@ def _authenticate_api_request(
         setattr(request, "_api_token_auth", True)
         return user, None
 
-    # No Bearer header — use existing session auth
+    # No token header — use existing session auth
     if request.user.is_authenticated:
         return request.user, None
 
@@ -559,7 +594,7 @@ def _apply_select_related(qs, model, expand_fields: set[str]):
     return qs
 
 
-def _resolve_only_fields(model, list_fields, extra_fields) -> list[str] | None:
+def _resolve_only_fields(model, list_fields, extra_fields, expand_fields=None) -> list[str] | None:
     """Return the concrete column names to pass to ``.only()``, or ``None``.
 
     The list serializer reads ``list_fields`` + ``api_extra_fields`` off each
@@ -574,17 +609,32 @@ def _resolve_only_fields(model, list_fields, extra_fields) -> list[str] | None:
     optimization only kicks in when it is provably safe; otherwise the endpoint
     behaves exactly as before. The pk is always loaded by Django regardless.
     """
-    names = list(list_fields) + list(extra_fields or [])
+    # Expanded FKs must be in the .only() set as well. `.only()` defers every
+    # column it isn't given, and asking Django to both defer a field and
+    # traverse it with select_related() is a hard error:
+    #
+    #   FieldError: Field Issue.post cannot be both deferred and traversed
+    #               using select_related at the same time.
+    #
+    # So a CRUDView listing an FK in `api_expand_fields` that is absent from
+    # `list_fields` returned a 500 on its list endpoint with no client input at
+    # all — and `?expand=<any fk not in list_fields>` let any caller trigger the
+    # same thing on demand.
+    names = list(list_fields) + list(extra_fields or []) + list(expand_fields or [])
     if not names:
         return None
+    seen: set[str] = set()
     only: list[str] = []
     for name in names:
+        if name in seen:
+            continue
         try:
             field = model._meta.get_field(name)
         except Exception:
             return None  # property / annotation / unknown — bail to full load
         if not getattr(field, "concrete", False) or getattr(field, "many_to_many", False):
             return None  # reverse relation or m2m — bail to full load
+        seen.add(name)
         only.append(name)
     return only
 
@@ -687,17 +737,71 @@ def _serialize(
     extra_fields: list[str] | None = None,
     expand_fields: set[str] | None = None,
 ) -> dict:
-    """Serialize a model instance to a dict.
+    """Serialize a model instance to a dict of **JSON-primitive** values.
 
     When *expand_fields* is provided, FK fields in that set are serialized as
     ``{"id": pk, "name": str(related_obj)}`` instead of a bare integer PK.
     Nullable FKs still serialize as ``null``.
+
+    Every value must be something plain ``json.dumps`` accepts, not merely
+    something ``JsonResponse`` accepts. The two are different, and the gap was a
+    silent data-loss bug: ``JsonResponse`` encodes with ``DjangoJSONEncoder``
+    (which handles UUID, Decimal, date), while ``apps/webhooks`` stores the same
+    dict in a ``JSONField`` that has no ``encoder=`` and therefore uses plain
+    ``json.dumps``. So a ``UUIDField`` in a CRUDView's ``detail_fields``
+    serialized fine over REST and blew up on the webhook write — inside the
+    caller's ``atomic()`` block, which rolled the caller's INSERT back while
+    ``fan_out``'s bare ``except`` hid the cause. ``service.create_post`` returned
+    a Post with a pk and left no row in the database.
+
+    Keep this function's output JSON-primitive and both consumers are safe.
     """
+    import datetime
+    from decimal import Decimal
+    from uuid import UUID
+
+    from django.db.models.fields.files import FieldFile
+
     data: dict = {"id": obj.pk}
     all_fields = list(fields) + list(extra_fields or [])
     for f in all_fields:
         val: Any = getattr(obj, f, None)
-        if hasattr(val, "isoformat"):
+        if isinstance(val, FieldFile):
+            # A File/ImageField is not JSON-serializable, and JsonResponse has no
+            # `default=` fallback — so any CRUDView carrying one in `fields` or
+            # `detail_fields` used to raise TypeError *after* the row had been
+            # written, returning 500 on a committed create. A client retrying on
+            # 5xx then duplicated the row on every attempt.
+            #
+            # Emit the URL (what a caller can actually use) or None when empty,
+            # matching the public blog API's `cover` convention in
+            # apps/blog/public_views.py. The MCP channel appeared unaffected only
+            # because apps/mcp/views.py dumps with `default=str`, which quietly
+            # rendered a *populated* file as "" — so this fixes a silent wrong
+            # value there as well as the 500 here.
+            if not val:
+                val = None
+            else:
+                try:
+                    val = val.url
+                except (ValueError, NotImplementedError):
+                    # No MEDIA_URL, or a storage backend without URL support.
+                    val = val.name
+        elif isinstance(val, UUID):
+            # A UUIDField. DjangoJSONEncoder would stringify this for REST, so
+            # the wire format is unchanged — but plain json.dumps will not, and
+            # that is what the webhook JSONField uses. See the docstring.
+            val = str(val)
+        elif isinstance(val, Decimal):
+            # Same asymmetry: DjangoJSONEncoder emits a JSON string for Decimal.
+            # Match it rather than emitting a float, so money does not silently
+            # acquire binary rounding on its way out.
+            val = str(val)
+        elif isinstance(val, datetime.timedelta):
+            # DurationField. DjangoJSONEncoder uses an ISO-8601 duration; plain
+            # json.dumps refuses. str() is the documented Django repr.
+            val = str(val)
+        elif hasattr(val, "isoformat"):
             val = val.isoformat()
         elif hasattr(val, "pk"):
             if expand_fields and f in expand_fields:
@@ -796,6 +900,13 @@ def _field_to_schema(name: str, form_field: forms.Field, model: type[Model]) -> 
         info["type"] = "fk"
         if form_field.queryset is not None:
             info["related_model"] = form_field.queryset.model.__name__
+    elif isinstance(form_field, forms.MultipleChoiceField):
+        # A subclass of ChoiceField, so it must be matched first. The wire value
+        # is a LIST of choice keys — advertised as such so a schema-strict
+        # client (MCP, OpenAPI codegen) sends an array, not one string.
+        info["type"] = "multichoice"
+        choices = cast("list[tuple[Any, Any]]", form_field.choices)
+        info["choices"] = [[v, str(label)] for v, label in choices if v != ""]
     elif isinstance(form_field, forms.TypedChoiceField) or isinstance(form_field, forms.ChoiceField):
         info["type"] = "choice"
         # .choices is a normalized list of pairs at runtime; the stub type is a
@@ -887,10 +998,18 @@ def _model_field_type(model: type[Model], field_name: str) -> str:
     return "string"
 
 
-def _build_options_response(crud_config) -> JsonResponse:
+def _build_options_response(crud_config, user=None) -> JsonResponse:
     """Build OPTIONS response with field metadata for a CRUDView."""
+    from .form_bridge import build_form
+
     form_class = crud_config.form_class or crud_config._make_form_class()
-    form = form_class()
+    # Built with the user for consistency with the write paths, not because
+    # anything leaks today: `_field_to_schema` matches ModelChoiceField first
+    # and reports it as {"type": "fk", "related_model": <ClassName>} — it never
+    # enumerates the queryset, so an unscoped build discloses no rows. Passing
+    # the user keeps one construction rule for every scripted surface, so the
+    # day someone does emit FK choices here it is already scoped.
+    form = build_form(form_class, user=user)
 
     fields: dict = {}
     for name, form_field in form.fields.items():
@@ -920,7 +1039,7 @@ def _make_api_list_view(crud_config):
     @csrf_exempt
     def api_list_view(request):
         if request.method == "OPTIONS":
-            return _build_options_response(crud_config)
+            return _build_options_response(crud_config, getattr(request, "user", None))
 
         user, err = _authenticate_api_request(request)
         if err:
@@ -946,7 +1065,7 @@ def _make_api_detail_view(crud_config):
     @csrf_exempt
     def api_detail_view(request, pk):
         if request.method == "OPTIONS":
-            return _build_options_response(crud_config)
+            return _build_options_response(crud_config, getattr(request, "user", None))
 
         user, err = _authenticate_api_request(request)
         if err:
@@ -1132,9 +1251,12 @@ def _api_list(request, crud_config):
 
     # Load only the columns the serializer reads. Safe no-op when any field is
     # non-concrete (see _resolve_only_fields). Runs after export/aggregation so
-    # those still see the full queryset; count() ignores the column set. An
-    # expanded FK stays fully loaded via the select_related() join above.
-    only_fields = _resolve_only_fields(crud_config.model, fields, crud_config.api_extra_fields)
+    # those still see the full queryset; count() ignores the column set.
+    # `expand_fields` is passed in because a select_related'd FK must not be
+    # deferred — Django raises FieldError if it is both.
+    only_fields = _resolve_only_fields(
+        crud_config.model, fields, crud_config.api_extra_fields, expand_fields
+    )
     if only_fields is not None:
         qs = qs.only(*only_fields)
 
@@ -1147,7 +1269,7 @@ def _api_list(request, crud_config):
 
 def _api_create(request, crud_config):
     """Handle POST on list endpoint: create a new object."""
-    from .form_bridge import merge_form_payload
+    from .form_bridge import build_form, merge_form_payload
 
     raw, err = _load_json_body(request)
     if err:
@@ -1156,7 +1278,15 @@ def _api_create(request, crud_config):
     form_class = crud_config.form_class or crud_config._make_form_class()
     # Native JSON values pass straight through (JSONField arrays/objects stay
     # native); omitted fields fall back to model defaults, mirroring .create().
-    form = form_class(merge_form_payload(form_class, raw, fill_defaults=True))
+    # `user=` goes in so a form that scopes its own ModelChoiceField querysets
+    # does so here too. On a create the form is the ONLY authorization gate —
+    # there is no object for check_object_permission, and get_list_queryset
+    # scopes reads — so building it without the user was a cross-tenant write.
+    form = build_form(
+        form_class,
+        merge_form_payload(form_class, raw, fill_defaults=True),
+        user=getattr(request, "user", None),
+    )
     if form.is_valid():
         obj = form.save()
         crud_config.on_form_valid(request, form, obj, is_create=True)
@@ -1172,7 +1302,7 @@ def _api_create(request, crud_config):
 
 def _api_update(request, obj, crud_config):
     """Handle PUT/PATCH on detail endpoint."""
-    from .form_bridge import merge_form_payload
+    from .form_bridge import build_form, merge_form_payload
 
     raw, err = _load_json_body(request)
     if err:
@@ -1193,7 +1323,9 @@ def _api_update(request, obj, crud_config):
     else:
         data = merge_form_payload(form_class, raw)
 
-    form = form_class(data, instance=obj)
+    # user= for the same reason as create: re-pointing a scoped FK at another
+    # tenant's row must fail validation here, not just on the HTML surface.
+    form = build_form(form_class, data, instance=obj, user=getattr(request, "user", None))
     if form.is_valid():
         obj = form.save()
         crud_config.on_form_valid(request, form, obj, is_create=False)
@@ -1387,6 +1519,8 @@ def _make_api_bulk_update_view(crud_config):
             # Build PATCH-style form
             from django.forms.models import model_to_dict
 
+            from .form_bridge import build_form
+
             existing = model_to_dict(obj, fields=crud_config.fields or [])
             merged = QueryDict(mutable=True)
             for key, value in existing.items():
@@ -1400,7 +1534,9 @@ def _make_api_bulk_update_view(crud_config):
                 merged[key] = str(value) if value is not None else ""
 
             form_class = crud_config.form_class or crud_config._make_form_class()
-            form = form_class(merged, instance=obj)
+            form = build_form(
+                form_class, merged, instance=obj, user=getattr(request, "user", None)
+            )
             if form.is_valid():
                 obj = form.save()
                 crud_config.on_form_valid(request, form, obj, is_create=False)

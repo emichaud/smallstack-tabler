@@ -93,6 +93,10 @@ PASSWORD_RESET_TIMEOUT = config("PASSWORD_RESET_TIMEOUT", default=86400, cast=in
 # SmallStack Help Documentation
 # Set to False to hide SmallStack reference docs from /help/
 SMALLSTACK_DOCS_ENABLED = config("SMALLSTACK_DOCS_ENABLED", default=True, cast=bool)
+# The one-line summary at the top of /llms.txt (https://llmstxt.org) — the
+# agent-readable index of this site's documentation. Blank uses a generic
+# SmallStack description; set it to say what THIS site is.
+SMALLSTACK_LLMS_DESCRIPTION = config("SMALLSTACK_LLMS_DESCRIPTION", default="")
 
 # SmallStack Color Palette
 # System-wide default palette. Users can override in their profile.
@@ -156,6 +160,15 @@ ACTIVITY_EXCLUDE_PATHS = [
     # DatabaseLogHandler's recursion guard breaks, one level up.
     "/api/logger/",
 ]
+
+# Default time window for the activity pages (1h / 24h / 7d / 30d / all).
+ACTIVITY_DEFAULT_WINDOW = config("ACTIVITY_DEFAULT_WINDOW", default="7d")
+# Probe detection (apps/activity/services.py): extend the built-in path
+# signatures (case-insensitive regexes) and scanner user-agent substrings, or
+# exempt path prefixes your site legitimately serves.
+ACTIVITY_PROBE_PATTERNS_EXTRA: list[str] = []
+ACTIVITY_SCANNER_AGENTS_EXTRA: list[str] = []
+ACTIVITY_PROBE_IGNORE_PATHS: list[str] = []
 
 # ---------------------------------------------------------------------------
 # Telemetry — database-backed log capture
@@ -238,6 +251,20 @@ SMALLSTACK_DATASETS_ENABLED = config("SMALLSTACK_DATASETS_ENABLED", default=True
 # Largest ?format=csv export (rows). Over it the endpoint returns 400 asking the
 # caller to filter or page — the export is built in memory.
 SMALLSTACK_DATASET_CSV_MAX_ROWS = config("SMALLSTACK_DATASET_CSV_MAX_ROWS", default=50_000, cast=int)
+# The bundled framework datasets — one lightweight, read-only ``smallstack_<thing>``
+# dataset per shipped module (requests, log records, heartbeats, scheduled job
+# runs, webhook deliveries, notifications, approvals, blog posts, …). They are
+# the browse/report seam downstream reporting tools build on. Default on; off
+# registers none of them (your own ``@dataset`` declarations are unaffected).
+SMALLSTACK_FRAMEWORK_DATASETS_ENABLED = config(
+    "SMALLSTACK_FRAMEWORK_DATASETS_ENABLED", default=True, cast=bool
+)
+# Also publish each bundled dataset as a ``query_dataset_smallstack_<thing>`` MCP
+# tool (staff tier). Default off — two dozen extra tools crowd an agent's tool
+# list; flip it on when an agent should query framework data directly.
+SMALLSTACK_FRAMEWORK_DATASETS_MCP = config(
+    "SMALLSTACK_FRAMEWORK_DATASETS_MCP", default=False, cast=bool
+)
 
 # ---------------------------------------------------------------------------
 # Login Rate Limiting (django-axes)
@@ -413,7 +440,7 @@ SMALLSTACK_TASKS_BACKOFF_MAX_SECONDS = config("SMALLSTACK_TASKS_BACKOFF_MAX_SECO
 # fans out, and /webhooks/in/<slug>/ 404s. Harmless with zero endpoints, so on.
 SMALLSTACK_WEBHOOKS_ENABLED = config("SMALLSTACK_WEBHOOKS_ENABLED", default=True, cast=bool)
 
-# Feeds: publish CRUDViews as RSS/Atom (enable_rss) and consume external feeds
+# Feeds: publish curated RSS/Atom feeds (register_feed) and consume external feeds
 # into a model (the collector). Off ⇒ /feed/ 404s and the collector no-ops.
 SMALLSTACK_FEEDS_ENABLED = config("SMALLSTACK_FEEDS_ENABLED", default=True, cast=bool)
 
@@ -568,3 +595,85 @@ SMALLSTACK_APPROVALS_MAX_PENDING_PER_REQUESTER = config(
 # can authenticate as an inactive user on any surface). Blank ⇒ system writes are
 # logged to the application log only. (F-15.)
 SMALLSTACK_AUDIT_SYSTEM_USERNAME = config("SMALLSTACK_AUDIT_SYSTEM_USERNAME", default="system")
+
+
+# ---------------------------------------------------------------------------
+# Calendar (apps.calendar) — datasets with a date axis on one month grid
+# ---------------------------------------------------------------------------
+# Master switch. Off ⇒ no nav item, no /smallstack/calendar/ routes (page, saved
+# views, events API, ICS), no MCP tools, no dashboard widget. The app stays
+# installed (migrations apply) so turning it back on never needs a schema change.
+# Calendar *specs* still register, so in-process ``apps.calendar.core`` keeps
+# working for your own code.
+SMALLSTACK_CALENDAR_ENABLED = config("SMALLSTACK_CALENDAR_ENABLED", default=True, cast=bool)
+# Widest window (days) one events / ICS / MCP request may ask for. The page
+# always asks for one month; this bounds scripted callers.
+SMALLSTACK_CALENDAR_MAX_WINDOW_DAYS = config("SMALLSTACK_CALENDAR_MAX_WINDOW_DAYS", default=366, cast=int)
+# Whether Saturdays and Sundays show when a calendar page says nothing. A desk
+# that isn't staffed at the weekend sets this False and every calendar — the
+# shared page, the CRUDView boards, the template tags — opens as a work week;
+# ``?weekends=1`` still shows them on demand. Entries that fall on hidden days
+# are counted and announced next to the toggle, never dropped silently.
+SMALLSTACK_CALENDAR_WEEKENDS_DEFAULT = config("SMALLSTACK_CALENDAR_WEEKENDS_DEFAULT", default=True, cast=bool)
+
+# ---------------------------------------------------------------------------
+# Blog + newsletter (apps.blog)
+# ---------------------------------------------------------------------------
+# Master switch. Off ⇒ no nav, no console routes, no public routes, no feeds,
+# no scheduled ticks. The app stays installed (migrations apply) so turning it
+# back on never needs a schema change.
+SMALLSTACK_BLOG_ENABLED = config("SMALLSTACK_BLOG_ENABLED", default=True, cast=bool)
+
+# The anonymous reading surface at /blog/ — separately switchable, because
+# "authors draft internally, nothing is on the internet yet" is a real state.
+# Off ⇒ every public route 404s (not 403: a disabled feature should look absent).
+SMALLSTACK_BLOG_PUBLIC_ENABLED = config(
+    "SMALLSTACK_BLOG_PUBLIC_ENABLED", default=True, cast=bool
+)
+
+# Posts per page on the public blog and its archive.
+SMALLSTACK_BLOG_PAGE_SIZE = config("SMALLSTACK_BLOG_PAGE_SIZE", default=10, cast=int)
+
+# Items in a blog feed (RSS/Atom/JSON) and in the site-wide river.
+SMALLSTACK_BLOG_FEED_LIMIT = config("SMALLSTACK_BLOG_FEED_LIMIT", default=25, cast=int)
+
+# --- Newsletter sending ----------------------------------------------------
+# Recipients per batch, and batches per tick. Defaults drain 2,000 recipients a
+# minute while keeping each task well inside the lost-task reaper window (see
+# SMALLSTACK_TASKS_LOST_AFTER_SECONDS) — a batch that outlives it gets declared
+# lost and retried, which is how a send would double up.
+SMALLSTACK_BLOG_SEND_BATCH_SIZE = config("SMALLSTACK_BLOG_SEND_BATCH_SIZE", default=100, cast=int)
+SMALLSTACK_BLOG_SEND_MAX_BATCHES = config("SMALLSTACK_BLOG_SEND_MAX_BATCHES", default=20, cast=int)
+
+# A claimed delivery older than this is assumed orphaned by a dead worker and
+# returned to `pending`. Must exceed the time one batch can take.
+SMALLSTACK_BLOG_CLAIM_TIMEOUT_MINUTES = config(
+    "SMALLSTACK_BLOG_CLAIM_TIMEOUT_MINUTES", default=15, cast=int
+)
+
+# Per-delivery send attempts before giving up on a *soft* failure. Soft
+# failures never suppress the address — only hard bounces do.
+SMALLSTACK_BLOG_SEND_MAX_ATTEMPTS = config(
+    "SMALLSTACK_BLOG_SEND_MAX_ATTEMPTS", default=3, cast=int
+)
+
+# Consecutive soft failures, counted across issues and reset on any success,
+# before an address is suppressed. The prior art suppressed on the FIRST
+# exception, so one transient SMTP hiccup silently and permanently dropped a
+# good reader.
+SMALLSTACK_BLOG_SOFT_FAIL_LIMIT = config("SMALLSTACK_BLOG_SOFT_FAIL_LIMIT", default=5, cast=int)
+
+# Refuse to queue a send when the site URL resolves to localhost. A blast whose
+# unsubscribe links point at http://localhost:8000 cannot be recalled, and the
+# recipients are real people. Set False only for a deliberate local test.
+SMALLSTACK_BLOG_REQUIRE_PUBLIC_URL = config(
+    "SMALLSTACK_BLOG_REQUIRE_PUBLIC_URL", default=True, cast=bool
+)
+
+# How long an emailed confirmation link stays valid (double opt-in). The
+# unsubscribe link deliberately has NO expiry: an RFC 8058 one-click header in
+# a two-year-old email must still work.
+SMALLSTACK_BLOG_CONFIRM_MAX_AGE_DAYS = config(
+    "SMALLSTACK_BLOG_CONFIRM_MAX_AGE_DAYS", default=7, cast=int
+)
+

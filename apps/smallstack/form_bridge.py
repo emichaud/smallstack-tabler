@@ -30,15 +30,17 @@ payload and hand the dict to the form.
 
 from __future__ import annotations
 
+import inspect
 import json
-from typing import Any, Mapping
+from typing import Any, Mapping, TypeVar
 
 from django import forms
 from django.forms.models import model_to_dict
 from django.http import QueryDict
 
+F = TypeVar("F", bound=forms.BaseForm)
 
-def _native(value: Any, form_field=None) -> Any:
+def _native(value: Any, form_field: Any = None) -> Any:
     """Normalize one incoming value for bound-form consumption.
 
     JSONField-destined non-string values are JSON-encoded: empty containers
@@ -59,7 +61,7 @@ def _native(value: Any, form_field=None) -> Any:
 
 
 def merge_form_payload(
-    form_class,
+    form_class: type[Any],  # a ModelForm class; base_fields / _meta are metaclass-provided
     incoming: Mapping[str, Any],
     *,
     instance=None,
@@ -107,3 +109,104 @@ def merge_form_payload(
             data[key] = _native(value, base_fields.get(key))
 
     return data
+
+
+def build_form(form_class: type[F], *args: Any, user: Any = None, **kwargs: Any) -> F:
+    """Instantiate *form_class*, passing ``user=`` when the form accepts it.
+
+    ``CRUDView`` builds its HTML forms through ``get_form_kwargs``, which is the
+    documented seam a view uses to inject ``request.user`` so the form can scope
+    its own ``ModelChoiceField`` querysets (see ``apps/blog/forms.py``). The
+    scripted surfaces — REST, MCP, the ``sc`` CLI — do not go through a view and
+    historically constructed the form directly, with no user:
+
+        form = form_class(merge_form_payload(form_class, raw))   # no user=
+
+    For a form whose choices are scoped per user that is an **authorization
+    hole, not a cosmetic one**, because narrowing a ``ModelChoiceField``'s
+    queryset *is* the validation: the field validates the submitted pk against
+    its own queryset, so an unscoped queryset accepts any pk in the table. A
+    create has no object for ``check_object_permission`` to inspect, and
+    ``get_list_queryset`` only scopes reads — so on a create the form is the
+    only gate there is, and it was being built disarmed.
+
+    Measured consequence before this existed: any authenticated account could
+    ``POST /smallstack/api/blog/posts/`` with another user's ``blog`` id and
+    have the row committed into a blog it cannot even read — including a
+    private one — and the same through the generated MCP ``create_*`` tools.
+    Session auth is accepted on these surfaces and signup is on by default, so
+    the floor for that was a self-registered account holding no API token.
+
+    Forms that don't take ``user`` are constructed unchanged, so this is safe to
+    use at every scripted call site regardless of the form class. Introspection
+    is on the signature rather than a ``try/except TypeError``, because a
+    ``TypeError`` raised *inside* a form's own ``__init__`` would otherwise be
+    silently swallowed and retried without the user — reopening the hole for
+    exactly the forms that care about it.
+    """
+    if user is not None and _accepts_user(form_class):
+        kwargs["user"] = user
+    return form_class(*args, **kwargs)
+
+
+def _accepts_user(form_class: type[Any]) -> bool:
+    """Whether *form_class* takes a ``user`` keyword, anywhere in its MRO.
+
+    Checking only ``form_class.__init__`` is not enough, and getting this wrong
+    fails **open**. The shipped pattern is a base that declares the keyword and
+    subclasses that override ``__init__`` for unrelated reasons::
+
+        class _UserScopedForm(forms.ModelForm):
+            def __init__(self, *args, user=None, **kwargs):   # declares it
+                ...
+
+        class PostForm(_UserScopedForm):
+            def __init__(self, *args, **kwargs):              # hides it
+                super().__init__(*args, **kwargs)
+
+    ``inspect.signature(PostForm.__init__)`` shows no ``user``, so a direct
+    check skips the user and leaves the queryset unscoped — which is the whole
+    vulnerability. Three of ``apps/blog``'s four scoped forms have exactly this
+    shape (``PostForm``, ``BlogForm``, ``TagForm``); only ``IssueForm`` declares
+    nothing and inherits the base signature. The first version of this helper
+    checked ``__init__`` alone and consequently fixed one form in four — caught
+    by the integration harness re-running its cross-tenant probe, not by the
+    unit tests, whose fixture form declared ``user=`` directly.
+
+    So: walk the MRO and accept if **any** ``__init__`` declares ``user``
+    explicitly. A VAR_KEYWORD is still not treated as consent on its own —
+    plain ModelForms declare ``(*args, **kwargs)`` and forward to
+    ``ModelForm.__init__``, which has no ``user`` argument, so that would raise
+    TypeError on most forms in the codebase. The combination (a declaring base +
+    kwargs-forwarding subclasses) is what works, and it is the pattern in use.
+    """
+    # `__dict__`, not getattr: a cached answer on a *base* class must not be
+    # inherited by a subclass that hides the parameter — that would make the
+    # verdict depend on which class happened to be probed first.
+    cached = form_class.__dict__.get("_accepts_user_kwarg")
+    if cached is not None:
+        return bool(cached)
+
+    accepts = False
+    for klass in getattr(form_class, "__mro__", (form_class,)):
+        init = klass.__dict__.get("__init__")
+        if init is None:
+            continue
+        try:
+            params = inspect.signature(init).parameters
+        except (TypeError, ValueError):  # pragma: no cover - exotic callables
+            continue
+        if any(
+            name == "user"
+            and p.kind
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+            for name, p in params.items()
+        ):
+            accepts = True
+            break
+
+    try:
+        form_class._accepts_user_kwarg = accepts
+    except Exception:  # pragma: no cover - immutable class
+        pass
+    return accepts

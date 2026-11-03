@@ -16,6 +16,27 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
+EXAMPLE_ARTICLE_HIT: dict[str, Any] = {
+    "display": "Shipping a search result that looks like the thing it found",
+    "subtitle": (
+        "A SearchBuilder lets one model return more than a title and a line of "
+        "context. Here it carries the blog, the date, a reading time and tags."
+    ),
+    "snippet": "",
+    "url": "#",
+    "extra": {
+        "card": "article",
+        "blog": "Field Notes",
+        "blog_url": "#",
+        "published_at": "2026-10-11T09:00:00+00:00",
+        "reading_minutes": 4,
+        "tags": ["search", "crudview", "example"],
+        "cover_url": "",
+        "cover_alt": "",
+        "is_featured": True,
+    },
+}
+
 
 def search_view(request: HttpRequest) -> HttpResponse:
     """Public-site search.
@@ -48,6 +69,11 @@ def search_view(request: HttpRequest) -> HttpResponse:
         "query": query,
         "registered_models": view_count(),
         "indexed_sources": get_indexed_sources(user=request.user),
+        # The "Shape a result" panel on the empty page renders one static
+        # example of a SearchBuilder-shaped hit so the card is visible even on
+        # an install with no published posts yet. Real hits carry the same
+        # keys — see ``apps.blog.views.search_hit_for_post``.
+        "example_article_hit": EXAMPLE_ARTICLE_HIT,
     }
     if query:
         hits = search_all(query, limit_per_model=limit_per_model, user=request.user)
@@ -124,3 +150,24 @@ def starter_forms_view(request):
 def components_view(request):
     """Redirect to the components section in SmallStack docs."""
     return redirect(reverse("help:section_detail", kwargs={"section": "smallstack", "slug": "components"}))
+
+
+# ---------------------------------------------------------------------------
+# Platform pages — what the framework gives your app, and how to ask an agent
+# ---------------------------------------------------------------------------
+
+
+def platform_datasets_calendars_view(request: HttpRequest) -> HttpResponse:
+    """Datasets and calendars: how they work, ready for your own apps."""
+    return render(request, "website/platform_datasets_calendars.html")
+
+
+def platform_blogs_newsletters_view(request: HttpRequest) -> HttpResponse:
+    """Blogs and newsletters: the built-in publishing surface."""
+    return render(request, "website/platform_blogs_newsletters.html")
+
+
+def prompts_view(request: HttpRequest) -> HttpResponse:
+    """Copy-ready prompts for coding agents, by task."""
+    return render(request, "website/prompts.html")
+

@@ -14,6 +14,7 @@ from apps.heartbeat.views import (
     heartbeat_ping,
     status_json,
 )
+from apps.help.views import llms_full_txt, llms_txt
 from apps.mcp.urls import oauth_wellknown_urlpatterns
 from apps.smallstack.api import (
     api_auth_logout,
@@ -76,12 +77,28 @@ urlpatterns = [
     # by external systems; the tick is IP-gated to localhost.
     path("webhooks/in/<slug:slug>/", incoming_webhook, name="webhooks_incoming"),
     path("webhooks/tick/", webhooks_tick, name="webhooks_tick"),
+    # Blog: PUBLIC reading surface at /blog/ (index, per-blog pages, permalinks,
+    # and an anonymous JSON read API). The authoring console is separate, under
+    # /smallstack/blog/. Gated per-view by public_surface_enabled() — which
+    # honours BOTH SMALLSTACK_BLOG_ENABLED and SMALLSTACK_BLOG_PUBLIC_ENABLED —
+    # so a disabled surface 404s rather than breaking every {% url %} that names
+    # it. Mounting unconditionally and gating in the view is deliberate; it used
+    # to mean the master switch never reached these routes, which is a bug the
+    # gate function now owns rather than the URLConf.
+    path("blog/", include("apps.blog.public_urls")),
+    # The author's own studio — login-gated, owner-scoped. Separate from the
+    # system blog manager under /smallstack/blog/.
+    path("my/blogs/", include("apps.blog.studio_urls")),
     # Feeds: PUBLIC RSS/Atom publish surface at /feed/<slug>.rss (+ .atom).
     # Per-feed access is enforced in the view (anonymous feeds are public;
     # authenticated/staff feeds accept a session or an API token).
     path("feed/", include("apps.feeds.urls")),
     # Utility routes
     path("health/", health_check, name="health_check"),
+    # Agent-readable documentation index (https://llmstxt.org): what the help
+    # system publishes, as Markdown links, plus the full concatenation.
+    path("llms.txt", llms_txt, name="llms_txt"),
+    path("llms-full.txt", llms_full_txt, name="llms_full_txt"),
     path(
         "robots.txt",
         RedirectView.as_view(url=f"{settings.STATIC_URL}robots.txt", permanent=True),

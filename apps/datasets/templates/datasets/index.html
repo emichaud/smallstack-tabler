@@ -1,0 +1,90 @@
+{% extends "smallstack/base.html" %}
+{% load theme_tags %}
+
+{% block title %}Datasets{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ds-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .ds-table th { text-align: left; padding: 10px 16px; white-space: nowrap; }
+    .ds-table td { padding: 10px 16px; vertical-align: top; }
+    .ds-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ds-key {
+        font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        font-size: 0.78rem;
+        color: var(--body-quiet-color);
+    }
+    .ds-desc { color: var(--body-quiet-color); font-size: 0.8rem; margin-top: 2px; }
+    .ds-pill {
+        display: inline-block; padding: 1px 7px; border-radius: 999px;
+        font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em;
+        border: 1px solid var(--card-border); color: var(--body-quiet-color);
+        margin-right: 4px; white-space: nowrap;
+    }
+    .ds-pill.on { border-color: var(--primary); color: var(--primary); }
+    .ds-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .ds-card-head h2 { margin: 0; }
+    .ds-count { color: var(--body-quiet-color); font-size: 0.8rem; font-weight: 400; margin-left: 8px; }
+    .ds-per-page { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--body-quiet-color); }
+    .ds-per-page select {
+        background: var(--input-bg); border: 1px solid var(--input-border); color: var(--body-fg);
+        border-radius: 6px; padding: 3px 6px; font-size: 0.78rem; width: auto; margin: 0;
+    }
+    .paginator { padding: 10px 14px; }
+    @media (max-width: 720px) { .ds-hide-sm { display: none; } }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-bleed page-header-with-actions" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+    <div class="page-header-content">
+        <h1>Datasets</h1>
+        <p class="page-subtitle">{{ total }} registered dataset{{ total|pluralize }} — read-only, filterable tables for browsing and reporting.</p>
+        <nav style="margin-top: 0.5rem; font-size: 0.8rem;" aria-label="Breadcrumb">
+            <a href="{% url 'website:home' %}" style="color: var(--body-quiet-color); text-decoration: none;">Home</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
+            <span style="color: var(--body-fg);">Datasets</span>
+        </nav>
+    </div>
+    <p class="ds-meta" style="margin: 0; max-width: 22rem; color: var(--body-quiet-color); font-size: 0.8rem;">
+        Declare your own in any app's <code>datasets.py</code> with <code>@dataset</code>;
+        it appears here automatically. See <code>docs/skills/datasets.md</code>.
+    </p>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="ds-per-page" style="margin-bottom: 12px; justify-content: flex-end;">
+    {% for k, v in keep_params.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <label for="ds-per-page">Per page</label>
+    <select id="ds-per-page" name="per_page" onchange="this.form.submit()">
+        {% for n in page_sizes %}<option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+    <noscript><button type="submit" class="btn-outline btn-sm">Go</button></noscript>
+</form>
+
+{% if project_datasets %}
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header ds-card-head"><h2>Project datasets<span class="ds-count">{{ project_datasets|length }}</span></h2></div>
+    <div class="card-body" style="padding: 0;">
+        {% include "datasets/_index_table.html" with rows=project_pager.page_obj.object_list %}
+        {% include "datasets/_index_pager.html" with pager=project_pager label="Project datasets" %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header ds-card-head"><h2>Framework datasets<span class="ds-count">{{ framework_datasets|length }}</span></h2></div>
+    <div class="card-body" style="padding: 0;">
+        {% if framework_datasets %}
+            {% include "datasets/_index_table.html" with rows=framework_pager.page_obj.object_list %}
+            {% include "datasets/_index_pager.html" with pager=framework_pager label="Framework datasets" %}
+        {% else %}
+            <p style="padding: 16px; color: var(--body-quiet-color); margin: 0;">
+                The bundled datasets are switched off (<code>SMALLSTACK_FRAMEWORK_DATASETS_ENABLED</code>).
+            </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

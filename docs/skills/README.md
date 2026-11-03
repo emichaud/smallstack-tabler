@@ -11,51 +11,49 @@ When an AI agent is asked to modify or extend this project, these files help it:
 - Make changes that integrate properly with the codebase
 - Avoid common mistakes
 
-## Tabler UI Skills (comprehensive)
+> **SmallStack-Tabler:** this fork's UI is Tabler, and its own skills are registered in [`local.md`](local.md). For any page, component or theming work start at [`tabler-ui.md`](tabler-ui.md), not the base-theme skills below. For merges and releases read [`upstream-workflow.md`](upstream-workflow.md).
 
-For Tabler-themed page work, this project ships a full skill set under [`tabler/`](tabler/). Start at the router:
+## Available Skills
 
-| File | Description |
-|------|-------------|
-| [tabler-ui.md](tabler-ui.md) | **Start here.** Top-level orientation, which-skill-for-which-job, and project rules every Tabler page must follow. |
-| [tabler/README.md](tabler/README.md) | Detailed router and glossary across all Tabler skills |
-| [tabler/foundations.md](tabler/foundations.md) | Page architecture, base.html, asset loading, navbar/breadcrumbs wiring, context processors, template tags |
-| [tabler/theming.md](tabler/theming.md) | 5 theme axes, 11 accent colors, dark mode, settings panel engine, theme persistence + profile sync |
-| [tabler/layouts.md](tabler/layouts.md) | All 10 layout variants (horizontal, vertical, boxed, condensed, fluid, sticky, overlap, RTL) — when to pick which |
-| [tabler/components.md](tabler/components.md) | Comprehensive reference: cards, buttons, modals, alerts, dropdowns, tabs, timelines, ribbons, status, etc. |
-| [tabler/icons-typography.md](tabler/icons-typography.md) | Tabler Icons (5000+), typography scale, code blocks with Prism, markdown rendering |
-| [tabler/forms.md](tabler/forms.md) | Form basics + advanced plugins (Flatpickr, Choices, tom-select, Imask, Dropzone, Signature, Star, Slider, Wizard) |
-| [tabler/tables.md](tabler/tables.md) | Sortable, paginated, datatables, List.js, htmx-driven tables, SmallStack CRUD integration |
-| [tabler/charts.md](tabler/charts.md) | ApexCharts patterns (line, area, bar, donut, radial, sparkline, heatmap), theme-aware colors, live updates |
-| [tabler/maps-calendar.md](tabler/maps-calendar.md) | jsVectorMap, FullCalendar, Sortable.js (drag-drop, kanban) |
-| [tabler/htmx-patterns.md](tabler/htmx-patterns.md) | HTMX + Tabler: lazy tabs, modal load, table refresh, toasts, JS re-init after swap |
-| [tabler/page-dashboards.md](tabler/page-dashboards.md) | **Page recipe** — admin dashboards with KPI cards, charts, recent-activity tables, live updates |
-| [tabler/page-landing.md](tabler/page-landing.md) | **Page recipe** — marketing/landing: hero, pricing, features, testimonials, FAQ, CTAs |
-| [tabler/page-content.md](tabler/page-content.md) | **Page recipe** — blog/docs/articles: TOC, markdown, slide viewer, search, related posts |
-| [tabler/page-api-explorer.md](tabler/page-api-explorer.md) | **Page recipe** — API documentation with endpoint browser, try-it panel, code examples |
-| [tabler/page-auth.md](tabler/page-auth.md) | **Page recipe** — login, signup, lock screen, password reset (uses `tabler_auth_base.html`) |
-| [tabler/page-utility.md](tabler/page-utility.md) | **Page recipe** — kanban, todos, calendar UI, file manager, email-style inbox |
-| [tabler/customization.md](tabler/customization.md) | Overrides: CSS variables, base.html extensions, new plugins, local Tabler build, CSP, new theme axes |
-| [tabler/troubleshooting.md](tabler/troubleshooting.md) | Symptom-indexed fixes: FOUC, theme persistence, chart dark mode, htmx + Tabler JS, settings sync |
+**This table is the source of truth.** `index.json` is generated from it — run `make skills-index` after adding or renaming a skill file. Every file in this directory needs a row here; `make lint` fails on an unregistered file, a row pointing at a missing file, or a stale `index.json`.
 
-## Other Skills
+Rows marked **(upstream repo only)** describe the ritual for the `django-smallstack` repo itself and don't apply to a fork; rows marked **(forks / downstream)** are for projects built on top of it.
+
+**Building on SmallStack?** Register *your own* skill files in `docs/skills/local.md` (same table format) instead of adding rows here. Upstream never ships that file, so your registrations don't conflict on the next `git pull upstream main`, and `make skills-index` folds them into `index.json` tagged `"origin": "fork-local"`.
 
 | File | Description |
 |------|-------------|
+| [from-zero-to-running.md](from-zero-to-running.md) | **New project? Start here** — clone → local setup → first app → production, each phase with its verification command |
 | [cli-tools.md](cli-tools.md) | **Start here for "is there a tool for X?"** — task → tool / failure → tool / tool → docs lookup tables |
-| [modern-dark-theme.md](modern-dark-theme.md) | **Read before building any page** — canonical patterns, anti-patterns, variable list for the v0.9.x modern-dark theme |
-| [modify-palettes.md](modify-palettes.md) | Add a new color palette or tune an existing one — file map, color-science gotchas, verification |
-| [django-apps.md](django-apps.md) | Creating apps, CRUDView + tables2 management pages, title bar pattern |
+| [modern-dark-theme.md](modern-dark-theme.md) | **Upstream base theme, NOT used by this Tabler fork; see `tabler-ui.md`.** Read before building any page — canonical patterns, anti-patterns, variable list for the v0.9.x modern-dark theme |
+| [accessibility.md](accessibility.md) | **Read before building any page/form/modal** — a11y primitives (`.sr-only`, `.skip-link`, `:focus-visible`, `trapFocus`), the rules, and the pre-"done" checklist (WCAG 2.1 AA) |
+| [modify-palettes.md](modify-palettes.md) | **Upstream base theme, NOT used by this Tabler fork; see `tabler-ui.md`.** Change accent colors — add a brand palette or tune one. The 4 wiring points (yaml/CSS/model+migration/`VALID_PALETTES`), color-science gotchas, verification |
+| [branding.md](branding.md) | Brand assets — the `BRAND_*` logo/icon/favicon settings, sizes and formats, where upstream defaults vs. a downstream's own files live |
+| [add-gold-theme.md](add-gold-theme.md) | Worked example of adding one palette (Gold) end to end — read `modify-palettes.md` first; this is the concrete walk-through, not the canonical guide |
+| [search.md](search.md) | Add keyword search + MCP tool to a CRUDView (`enable_search = True`) — FTS5/PG-FTS backend dispatch, RAG via Claude Desktop |
+| [datasets.md](datasets.md) | **Build a dashboard/report/chart UI** — the `@dataset` primitive: a named queryset surfaced as typed rows/columns (`schema()` → dimension/measure + filter widgets), `rows()`/`series()`, opt-in REST + MCP. Read before building anything that inspects a dataset to render pickers/charts |
+| [calendar.md](calendar.md) | **Put anything with a date on a calendar** — the calendar protocol over `@dataset` (`@calendar_dataset` / `register_calendar`: start/end columns, title/status resolvers, access), the merged `/smallstack/calendar/` grid with saved views, the events + `.ics` API, MCP tools, and the eleven bundled calendars |
+| [django-apps.md](django-apps.md) | Creating apps, CRUDView management pages, title bar pattern |
+| [crud-views.md](crud-views.md) | **The CRUDView reference** — the declarative class behind list/create/detail/update/delete: actions, config attributes, display protocol, related tabs, `get_list_queryset` |
+| [explorer.md](explorer.md) | Model Explorer — the zero-code CRUD browser generated from existing `ModelAdmin` registrations; `explorer_displays`, dashboard widgets |
+| [filtering-export.md](filtering-export.md) | Declarative search, filtering, and CSV/JSON export on a CRUDView + its REST layer |
+| [building-a-user-facing-site.md](building-a-user-facing-site.md) | **Read for any non-staff user-facing surface** — LoginRequiredMixin + tenancy scoping + SearchAccess for end-user dashboards, "my X" lists, public catalogues |
 | [templates.md](templates.md) | Template inheritance, blocks, includes, common patterns |
+| [navigation.md](navigation.md) | The nav registry that drives both sidebar and topbar — zones, ordering, INSTALLED_APPS-driven entries |
 | [admin-page-styling.md](admin-page-styling.md) | **Definitive UI reference**: buttons, cards, tables, stat cards, action cards, tabs, filter toggles, forms, modals, starter template |
+| [components.md](components.md) | Quick-reference component catalog — the short form of `admin-page-styling.md` |
 | [theming-system.md](theming-system.md) | CSS variables, palettes, dark mode |
-| [building-themed-pages.md](building-themed-pages.md) | Recipe guide: color-mix scale, building pages that fit all modes and palettes |
-| [adding-your-own-theme.md](adding-your-own-theme.md) | Adding a custom CSS framework alongside SmallStack's built-in theme |
+| [adding-your-own-theme.md](adding-your-own-theme.md) | **Bring your own look** — mount Bootstrap / Tailwind / a bespoke base template *alongside* SmallStack's theme (for teams with an existing design system). Not for changing colors — that's `modify-palettes.md` |
 | [theme-scenarios.md](theme-scenarios.md) | Three theme integration scenarios: public-only, user login, or build on SmallStack |
 | [authentication.md](authentication.md) | Custom user model, auth views, protecting views |
+| [user-management.md](user-management.md) | The staff-only User Manager — search, profiles, activity stats, timezone dashboard, email/password-reset configuration |
+| [testing.md](testing.md) | **Read before writing tests** — pytest/locmem stack, patterns for email + multi-step auth flows + CRUDView + guardrails, regression guards, and the `form.is_valid()`/`DeleteView` gotchas |
 | [manage-api-tokens.md](manage-api-tokens.md) | Pick the right token surface (/smallstack/tokens/, CLI, OAuth) by question; permissions matrix; reveal-once flow |
 | [htmx-patterns.md](htmx-patterns.md) | htmx setup, CSRF, partials, dual-response views, OOB messages |
 | [help-documentation.md](help-documentation.md) | Help system, sections, bundled SmallStack docs |
+| [runbook-documents.md](runbook-documents.md) | **Read before writing to runbook docs any way but the UI** — versioned markdown documents via web, `service`, MCP, REST, CLI; FTS search, locking, retention, ownership, anti-patterns |
+| [runbook-cli.md](runbook-cli.md) | The `manage.py runbook` / `rb` unix-style CLI for runbook pages — verbs, stdin piping, JSON, provenance, locking |
+| [sc-cli.md](sc-cli.md) | The `manage.py sc` / `sc` framework CLI — generic CRUD over any CRUDView (`ls/get/describe/new/set/rm`) + ops verbs (`doctor/backup/token/status/index/commands`); same validation + audit as REST/MCP |
 | [settings.md](settings.md) | Split settings, environment variables, feature flags |
 | [timezones.md](timezones.md) | Timezone middleware, per-user timezone, localtime_tooltip tag |
 | [background-tasks.md](background-tasks.md) | Django Tasks framework with django-tasks-db backend |
@@ -63,20 +61,27 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [approvals.md](approvals.md) | **Human-in-the-loop approval gate** — `@approval_kind` + `request_approval()`, the decision console, eligibility rules (assignees/self-approval/staff), the callback + signal + webhook + poll reaction paths, expiry sweep |
 | [notifications.md](notifications.md) | **In-app notifications** — the never-raising `notify()` service, the topbar bell + unread badge, the inbox, per-user REST, daily prune |
 | [webhooks.md](webhooks.md) | **Webhooks** — a foundational integration surface: outbound event delivery (`enable_webhooks = True`) + inbound receivers (`@webhook_handler`), plus **four extension seams** (`@webhook_transform`/`@webhook_auth`/`@webhook_verifier`/`@webhook_challenge`) that make Zapier/n8n/Stripe/Slack/Event Grid plug-ins, first-class **SmallStack↔SmallStack** pairing (`sc webhook pair`, loop-safe), stable `event_id` dedupe, `Retry-After` + bulk dead-letter replay |
-| [rss.md](rss.md) | **RSS/Atom feeds** — symmetric publish + consume surface. Publish a model with `enable_rss = True` (or a curated `Feed`); the enclosure/podcast seam is `rss_item_extra`. Consume external feeds into a model with `register_feed_source` + the collector (`@scheduled` + `manage.py collect_feeds`). Status-page feed is the reference |
+| [blog.md](blog.md) | **Blogs + newsletters** — per-user blog channels of markdown posts, a three-tier visibility ladder, per-blog RSS/Atom/JSON feeds, a double-opt-in newsletter with durable batched sending and RFC 8058 one-click unsubscribe, and runbook→blog publishing. Read before touching posts, subscribers or the send pipeline |
+| [rss.md](rss.md) | **RSS/Atom feeds** — a *publishing* surface: subclass `Feed` over your own scoped queryset and `register_feed()` it (per-runtime-object feeds render through `render_feed` in your own view); enclosures/podcasts via `FeedItem(extra_kwargs=…)`. `enable_rss` was removed in v0.25.1 (migration recipe inside). Collect external feeds into a model with `register_feed_source` + the collector (`@scheduled` + `manage.py collect_feeds`). The blog and the status page are the references |
 | [activity-tracking.md](activity-tracking.md) | HTTP request logging middleware and configuration |
 | [logging-audit.md](logging-audit.md) | Logging configuration, audit trail, and **reading logs from a deployment you can't shell into** — JSON output with `request_id` correlation, DB-backed capture, the `/smallstack/logs/` staff viewer, time-boxed capture windows |
 | [screenshot-workflow.md](screenshot-workflow.md) | Visual verification with shot-scraper and screenshot_auth |
 | [docker-deployment.md](docker-deployment.md) | Docker Compose setup, services, volumes |
 | [kamal-deployment.md](kamal-deployment.md) | Kamal deployment configuration, VPS setup, SSL, commands |
 | [development-workflow.md](development-workflow.md) | Branching, testing, coverage, documentation, commit style |
-| [upstream-workflow.md](upstream-workflow.md) | **This repo's fork workflow.** Merging upstream without losing the Tabler chrome, and how THIS downstream versions + releases (`vX.Y.Z-tabler.N`, `CHANGELOG-tabler.md`) |
-| [release-process.md](release-process.md) | Versioning, release checklist, GitHub releases — **upstream's process; does NOT apply to this fork**, see `upstream-workflow.md` |
-| [integration-workflow.md](integration-workflow.md) | Pulling upstream into downstream projects, deploying |
+| [release-process.md](release-process.md) | **(upstream repo only)** Versioning, release checklist, GitHub releases — the ritual for cutting a SmallStack release from *this* repo. A fork that cuts its own releases should keep its own release doc and read `integration-workflow.md` instead |
+| [integration-workflow.md](integration-workflow.md) | **(forks / downstream)** Pulling upstream SmallStack into a fork and redeploying — remote setup, the conflict-resolution table, post-merge verification |
+| [adopting-smallstack.md](adopting-smallstack.md) | **(forks / downstream)** Adopting SmallStack into an *existing* Django project — overlay into the current repo vs fresh clone + app migration |
+| [downstream-release-migration.md](downstream-release-migration.md) | **(forks / downstream)** Migrating a fork onto a new release — additive vs breaking changes, the false-test-result + removed-symbol traps, this release's actions |
+| [merge-0.12.0.md](merge-0.12.0.md) | **(forks / downstream)** **Merging the v0.12.0 release** into an older base — the `django-tables2` removal (BREAKING) plus the status-monitoring subsystem's integration points (surface toggles, route gating, the `views` autodiscover that moved to the core, INSTALLED_APPS, migrations) |
 | [api-discovery.md](api-discovery.md) | API discovery endpoints: schema introspection, OpenAPI spec, OPTIONS metadata |
+| [api.md](api.md) | **The REST API reference** — token auth, CRUD endpoints, FK expansion, date filtering, aggregation, serialization |
+| [frontend-integration.md](frontend-integration.md) | SmallStack as a headless backend for React/Vue/Next/Svelte — token architecture, CORS, the full user lifecycle |
 | [custom-api-endpoints.md](custom-api-endpoints.md) | Building non-CRUD API endpoints with the `@api_view` decorator |
 | [api-doctor.md](api-doctor.md) | Debug API setup + threat signals via `/smallstack/api/` (Health + Activity) and `python manage.py api_doctor` |
+| [dashboard-cards.md](dashboard-cards.md) | **The stat-card standard**: the `{% stat_card %}` tag, the global drill-down modal, and the `render_stat_list` helper for the metric tiles atop dashboard pages |
 | [dashboard-widgets.md](dashboard-widgets.md) | Dashboard widget protocol: `DashboardWidget` class, Explorer vs standalone registration, data layer, REST API |
+| [status-monitors.md](status-monitors.md) | **The status/uptime monitoring standard**: register a `Service` + `Monitor` (cheap `check()`), the 3-tier taxonomy (Site / Site Monitors / External), the branded public `/status/` page (90-day timelines + maintenance calendar), per-monitor public flag + independent SLA/maintenance, the no-code Add-monitor wizard, and pluggable `Visualization` panels |
 | [card-displays.md](card-displays.md) | Card grid displays: `CardDisplay` (key-value), `AvatarCardDisplay`, authoring new card variants |
 | [calendar-displays.md](calendar-displays.md) | Month-grid calendar display: `CalendarDisplay` config, ranged vs single-date events, month navigation |
 | [update-docs-and-skills.md](update-docs-and-skills.md) | File group map for updating docs/skills after code changes |
@@ -86,6 +91,7 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | File | Description |
 |------|-------------|
 | [mcp/enable-mcp-for-a-model.md](mcp/enable-mcp-for-a-model.md) | Opt a CRUDView into MCP via `enable_mcp = True` |
+| [mcp/end-user-tools.md](mcp/end-user-tools.md) | **Read for non-staff MCP** — `LoginRequiredMixin` + `get_list_queryset` tenancy + `search_access`/`search_visibility` so Alice's token sees only Alice's data |
 | [mcp/write-a-custom-tool.md](mcp/write-a-custom-tool.md) | Add cross-cutting tools with the `@tool` decorator + `current_context()` |
 | [mcp/add-a-write-tool.md](mcp/add-a-write-tool.md) | Expose create/update/delete via factory vs custom write tools |
 | [mcp/connect-claude-desktop.md](mcp/connect-claude-desktop.md) | Connect Claude Desktop / Claude.ai Connectors UI to the server |
@@ -97,17 +103,32 @@ For Tabler-themed page work, this project ships a full skill set under [`tabler/
 | [mcp/verify-mcp.md](mcp/verify-mcp.md) | Consolidated verify checklist: doctor, --explain, make mcp-test, admin pages, dashboard widget, Claude Desktop — picks the right path per question |
 | [mcp/configure-mcp.md](mcp/configure-mcp.md) | Scenario → `MCP_*` setting map: turn off OAuth, custom theme, kamal-proxy, multi-tenant, verbose logging, autodiscover |
 
+### Database & PostgreSQL
+
+| File | Description |
+|------|-------------|
+| [database.md](database.md) | Database overview — SQLite default + tuning (WAL/IMMEDIATE), backups, when to switch, SQLite→Postgres data migration |
+| [postgres/setup-local.md](postgres/setup-local.md) | Switch a project to Postgres locally — Docker server, `psycopg` extra, `DATABASES` config, FTS auto-provision on migrate |
+| [postgres/production.md](postgres/production.md) | Postgres in production — driver in the image, `DATABASE_URL`, `CONN_MAX_AGE`/PgBouncer, Kamal accessory, managed services, deploy-time search backfill, `pg_dump` backups (NOT `make backup`) |
+| [postgres/testing.md](postgres/testing.md) | Run the suite on Postgres — `TEST_DB=postgres` switch, the `--extra postgres` gotcha (`make test` can't), expected skip deltas, CI matrix |
+| [postgres/sqlite-vs-postgres.md](postgres/sqlite-vs-postgres.md) | **Read before search/migration/SQL work** — FTS self-provisioning, hyphen tokenization, `varchar` enforcement, query ordering, the "green on SQLite, red on Postgres" checklist |
+
 ## Usage
 
 AI agents should read relevant skill files before making changes to the corresponding parts of the codebase. For example:
 
-- **Before building any Tabler-themed page → read `tabler-ui.md` first** (it routes you to the right specialized skill under `tabler/`). This downstream uses the Tabler UI framework, NOT the upstream modern-dark theme — `tabler-ui.md` supersedes `modern-dark-theme.md` here
 - **Before running ANY operational command** (diagnose, smoke-test, mint token, backup, screenshot, deploy) → read `cli-tools.md` first
 - Before creating a new app → read `django-apps.md`
 - Before creating templates → read `templates.md`
-- Before building any admin/management page → read `admin-page-styling.md` for the SmallStack-base reference, OR `tabler-ui.md` for the Tabler-specific patterns this downstream actually uses
-- Before modifying CSS/theming → read `tabler/theming.md` (for the Tabler engine + accent palette) — `theming-system.md` and `modern-dark-theme.md` document the upstream SmallStack theme, which is NOT in use here
-- Before adding a new color palette to the upstream theme → read `modify-palettes.md` (rarely needed downstream — our accent palette lives in `tabler/theming.md`)
+- Before building any admin/management page → read `admin-page-styling.md` (buttons, cards, tables, forms, etc.)
+- **Before building ANY new page or component → read `modern-dark-theme.md` first** (the v0.9.x canonical patterns supersede earlier guides)
+- Before adding a new color palette → read `modify-palettes.md`
+- Before building a blog, a newsletter, or anything that publishes content to the public internet → read `blog.md`
+- Before adding `enable_search = True` to a CRUDView (or building any search-shaped feature) → read `search.md`
+- Before switching a project to PostgreSQL (local, production, or testing) → read `postgres/setup-local.md`, `postgres/production.md`, or `postgres/testing.md`
+- **Before search / data-migration / raw-SQL work that must run on both engines → read `postgres/sqlite-vs-postgres.md`** (the SQLite-passes-Postgres-fails gotchas)
+- Before modifying CSS/theming → read `theming-system.md` for the variable cascade, then `modern-dark-theme.md` for current patterns
+- Before building a new page that should fit the SmallStack theme → read `modern-dark-theme.md` (the canonical patterns)
 - Before adding a custom theme (Bootstrap, Tailwind, etc.) → read `adding-your-own-theme.md`
 - Before deciding which theme approach to take → read `theme-scenarios.md`
 - Before working with auth → read `authentication.md`
@@ -124,14 +145,18 @@ AI agents should read relevant skill files before making changes to the correspo
 - Before deploying with Docker → read `docker-deployment.md`
 - Before deploying with Kamal → read `kamal-deployment.md`
 - Before developing features → read `development-workflow.md`
-- **Before releasing a version or merging upstream in THIS repo → read `upstream-workflow.md`** (not `release-process.md`, which is upstream's own process and would have you bump a version line this fork never bumps)
+- Before cutting a release **of this repo** → read `release-process.md` (upstream-only — if you're working in a fork, follow your own release doc)
 - Before pulling upstream into downstream → read `integration-workflow.md`
+- Before migrating a downstream across one or more releases → read `downstream-release-migration.md`
 - Before integrating with the SmallStack API → read `api-discovery.md`
 - Before building custom (non-CRUD) API endpoints → read `custom-api-endpoints.md`
 - Before debugging an API setup, an empty Swagger, or a "weird traffic" report → read `api-doctor.md`
-- Before adding dashboard widgets → read `dashboard-widgets.md`
+- Before adding stat cards / metric tiles + drill-down modals to a dashboard page → read `dashboard-cards.md`
+- Before adding dashboard widgets (the `/smallstack/` central dashboard data protocol) → read `dashboard-widgets.md`
+- Before monitoring a subsystem's uptime/health (a `Service` + `Monitor`), exposing a health check on `/smallstack/status/`, or adding a status visualization → read `status-monitors.md`
 - Before configuring or building card-grid list displays → read `card-displays.md`
 - Before adding a month-grid calendar to a model → read `calendar-displays.md`
+- Before putting due dates / expiries / windows on the shared calendar, or saving a calendar view → read `calendar.md`
 - Before updating docs after code changes → read `update-docs-and-skills.md`
 - **Before designing any MCP feature** → read `mcp/build-mcp-solution.md` (decision tree + patterns)
 - Before exposing a CRUDView to AI clients → read `mcp/enable-mcp-for-a-model.md`
@@ -148,15 +173,16 @@ Multi-skill recipes for the headline use cases. Each row is "pick this combinati
 |---|---|
 | **Model → web admin + REST + MCP + Search in one class** (the headline pipeline) | `crud-views.md` → `enable-mcp-for-a-model.md` → `search.md` → `api-discovery.md` |
 | **End-user CRUD** (Alice signs in and sees only her stuff, on web + REST + MCP) | `building-a-user-facing-site.md` → `mcp/end-user-tools.md` → `crud-views.md` (for `get_list_queryset` + `can_update`/`can_delete`) |
+| **Publish content to the internet** (a blog, a changelog, a newsletter — with feeds and an anonymous read API) | `blog.md` → `modern-dark-theme.md` → `rss.md` |
 | **Public catalogue** (anonymous visitors can browse + search published rows) | `building-a-user-facing-site.md` (Recipe 4) → `search.md` (Inventory walkthrough, "Recipe 4") |
 | **AI/RAG over a custom model** (Claude searches your tickets, finds rows, answers with citations) | `search.md` → `mcp/build-mcp-solution.md` → `mcp/enable-mcp-for-a-model.md` → `mcp/connect-claude-desktop.md` |
 | **Both staff + end-user views of the same model** (operator console + customer portal on `Invoice`) | `crud-views.md` (two CRUDView classes on one model, different `url_base`) → `building-a-user-facing-site.md` (the user-facing class) → `search.md` ("Walkthrough: building an Inventory app") |
 | **Custom non-CRUD tool** (a "send-email" or "regenerate-report" MCP/REST action) | `custom-api-endpoints.md` (for REST) → `mcp/write-a-custom-tool.md` (for MCP) → `mcp/enable-mcp-for-a-model.md` (for the auth model) |
 | **OAuth-issued tokens via the Connectors UI** (Claude Desktop calling your CRUDView) | `mcp/connect-claude-desktop.md` → `mcp/enable-mcp-for-a-model.md` → `mcp/verify-mcp.md` |
-| **Theme-correct page across every accent + dark/light combination** (your custom landing page that doesn't break when the accent changes) | `tabler-ui.md` → `tabler/theming.md` → `screenshot-workflow.md` (for the theme-cycle verification) |
+| **Theme-correct page across all six palettes** (your custom landing page that doesn't break on `orange`) | `modern-dark-theme.md` → `screenshot-workflow.md` (for the palette-cycle verification) |
 | **Add clickable metric tiles + drill-down modals** (the stat cards atop an app's own dashboard page) | `dashboard-cards.md` → `htmx-patterns.md` (for the partial-response endpoint) |
 | **Add a per-model dashboard widget** (a tile on the central `/smallstack/` dashboard that summarises your data) | `dashboard-widgets.md` → `crud-views.md` (for `get_list_queryset` if the widget should respect tenancy) |
-| **Monitor a subsystem's uptime/health** (a `Service` + `Monitor` on `/smallstack/status/`, or a new status chart) | `status-monitors.md` → `tabler-ui.md` (for visualization partial colors) |
+| **Monitor a subsystem's uptime/health** (a `Service` + `Monitor` on `/smallstack/status/`, or a new status chart) | `status-monitors.md` → `modern-dark-theme.md` (for visualization partial colors) |
 | **Recurring/scheduled job** (`@scheduled` decorator or the scheduler UI; cron/interval/once) | `scheduler.md` |
 | **Human approval before an action** (publish gate, refund sign-off, AI agent files → human decides → app reacts) | `approvals.md` → `notifications.md` (how approvers hear about it) → `webhooks.md` (remote reaction) |
 | **Notify an external system when data changes** (outbound webhook — Slack/Zapier/a microservice on model create/update/delete; shape the payload with `@webhook_transform`) | `webhooks.md` → `crud-views.md` (for `enable_webhooks` alongside the other flags) |
@@ -175,7 +201,15 @@ These files are also useful for developers new to the project. They provide quic
 
 ## Contributing
 
-When adding significant new features or systems to the project, consider creating a corresponding skill file to document:
+When adding a skill file, register it in the same commit:
+
+1. Add it to the table above — or to `local.md` if this is a fork's own skill rather than an upstream one (file + one-line description).
+2. Run `make skills-index` to regenerate `index.json`.
+3. If it only applies upstream or only to forks, prefix the description with **(upstream repo only)** or **(forks / downstream)** — the generator turns that into a `scope` field agents can read.
+
+`make lint` enforces steps 1–2, so an unregistered skill can't quietly go missing from the index agents consult.
+
+A skill file documents:
 
 - File locations and structure
 - Key concepts and patterns

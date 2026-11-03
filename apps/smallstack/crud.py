@@ -28,7 +28,7 @@ from typing import Any
 from django import forms
 from django.contrib import messages
 from django.contrib.admin.models import LogEntry
-from django.core.exceptions import FieldDoesNotExist, PermissionDenied
+from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured, PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
 from django.db.models import Model, ProtectedError, QuerySet, RestrictedError
@@ -380,7 +380,7 @@ def _has_active_filters(request: HttpRequest, crud_config) -> bool:
     return False
 
 
-def _build_toolbar_context(request: HttpRequest, crud_config) -> dict[str, Any]:
+def _build_toolbar_context(request: HttpRequest, crud_config, scoped_qs=None) -> dict[str, Any]:
     """Build context dict for the list toolbar template.
 
     The toolbar shows when search_fields or filter_fields are configured.
@@ -393,7 +393,7 @@ def _build_toolbar_context(request: HttpRequest, crud_config) -> dict[str, Any]:
     # Build filter metadata for the template
     filters = []
     for field_name in filter_fields:
-        meta = _build_filter_meta(crud_config.model, field_name)
+        meta = _build_filter_meta(crud_config.model, field_name, queryset=scoped_qs)
         if meta:
             meta["current_value"] = request.GET.get(field_name, "")
             filters.append(meta)
@@ -419,8 +419,18 @@ def _build_toolbar_context(request: HttpRequest, crud_config) -> dict[str, Any]:
     }
 
 
-def _build_filter_meta(model, field_name: str) -> dict[str, Any] | None:
-    """Build filter widget metadata for a single field."""
+def _build_filter_meta(model, field_name: str, *, queryset=None) -> dict[str, Any] | None:
+    """Build filter widget metadata for a single field.
+
+    ``queryset`` must be the **tenancy-scoped** list queryset *before* the
+    request's own filters are applied. It bounds the choices offered for a
+    ForeignKey (and for a low-cardinality plain column) to values reachable
+    from rows this viewer may see. Passing it is what keeps the filter bar from
+    enumerating other tenants' rows; passing a queryset that already has the
+    GET filters applied would instead collapse each dropdown to the value
+    currently selected. ``None`` means "no row context" and yields an
+    All-only FK dropdown rather than the whole related table.
+    """
     from django.db import models as _m
 
     try:
@@ -465,12 +475,27 @@ def _build_filter_meta(model, field_name: str) -> dict[str, Any] | None:
     # ForeignKey → dropdown of related objects (capped at 100)
     if isinstance(field, _m.ForeignKey):
         related_model = field.related_model
+        meta["type"] = "choice"
         try:
-            objects = related_model._default_manager.all()[:100]
+            # Derived from the rows the viewer can actually see, NOT from
+            # `related_model.objects.all()`. The unscoped version rendered
+            # every related row's __str__ to anyone who could load the list:
+            # on a tenancy-scoped CRUDView (the documented pattern in
+            # building-a-user-facing-site.md) that is a cross-tenant
+            # disclosure — a "User" filter on a per-user list enumerated every
+            # username on the installation. It is also simply more useful this
+            # way: the dropdown offers the values present in your data.
+            if queryset is None:
+                meta["choices"] = [("", "All")]
+                return meta
+            ids = list(
+                queryset.exclude(**{f"{field_name}__isnull": True})
+                .values_list(field_name, flat=True)
+                .distinct()[:100]
+            )
             choices = [("", "All")]
-            for obj in objects:
+            for obj in related_model._default_manager.filter(pk__in=ids):
                 choices.append((str(obj.pk), str(obj)))
-            meta["type"] = "choice"
             meta["choices"] = choices
             return meta
         except Exception:
@@ -478,9 +503,12 @@ def _build_filter_meta(model, field_name: str) -> dict[str, Any] | None:
 
     # Integer/text fields with limited distinct values → dropdown
     try:
-        distinct_count = model.objects.values(field_name).distinct().count()
+        # Same reasoning as the ForeignKey branch: distinct values of a column
+        # across the WHOLE table leak the shape of other tenants' rows.
+        source = model.objects.all() if queryset is None else queryset
+        distinct_count = source.values(field_name).distinct().count()
         if distinct_count <= 30:
-            values = model.objects.values_list(field_name, flat=True).distinct().order_by(field_name)[:30]
+            values = source.values_list(field_name, flat=True).distinct().order_by(field_name)[:30]
             choices = [("", "All")]
             for val in values:
                 if val is not None:
@@ -621,8 +649,16 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
         context = super().get_context_data(**kwargs)
         cfg = self.crud_config
 
-        # Toolbar context (search + filters)
-        context.update(_build_toolbar_context(self.request, cfg))
+        # Toolbar context (search + filters). The queryset handed over is
+        # scoped by `get_list_queryset` but deliberately NOT narrowed by this
+        # request's own filters: the filter choices must stay switchable.
+        context.update(
+            _build_toolbar_context(
+                self.request,
+                cfg,
+                cfg.get_list_queryset(cfg._get_queryset(), self.request),
+            )
+        )
 
         # Empty-state branch selector. The empty state is lower-cased mid-sentence
         # and says what to do next: an empty list *after a search* means "widen
@@ -1448,6 +1484,24 @@ def _resolve_transform_spec(spec) -> tuple[Any, dict]:
 # ---------------------------------------------------------------------------
 
 
+# The CRUDView attributes of the removed one-flag model feed. Declaring any of
+# them raises ImproperlyConfigured in CRUDView.__init_subclass__ (see there).
+_REMOVED_RSS_ATTRS: tuple[str, ...] = (
+    "enable_rss",
+    "rss_slug",
+    "rss_title_field",
+    "rss_description_field",
+    "rss_date_field",
+    "rss_author_field",
+    "rss_ordering",
+    "rss_access",
+    "rss_limit",
+    "rss_feed_title",
+    "rss_feed_description",
+    "rss_item_extra",
+)
+
+
 class CRUDView:
     """Configuration class that generates CRUD views and URL patterns.
 
@@ -1499,6 +1553,15 @@ class CRUDView:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        stale = [name for name in _REMOVED_RSS_ATTRS if name in cls.__dict__]
+        if stale:
+            raise ImproperlyConfigured(
+                f"{cls.__module__}.{cls.__name__} declares {', '.join(stale)}: the one-flag "
+                "model feed (enable_rss) was removed in SmallStack 0.25.1 because it published "
+                "model.objects.all() with no tenancy or visibility hook. Publish a curated "
+                "apps.feeds.Feed over your own scoped queryset and register_feed() it — "
+                "see UPGRADING.md (v0.25.1) and docs/skills/rss.md for the 10-line migration."
+            )
         model = getattr(cls, "model", None)
         if model is not None:
             CRUDView._registry.setdefault(model, cls)
@@ -1547,20 +1610,12 @@ class CRUDView:
     # Bulk operations
     bulk_actions: list[Any] = []  # Opt-in: [BulkAction.DELETE, BulkAction.UPDATE]
 
-    # RSS/Atom feeds (apps.feeds). Opt-in: publish this model as a feed at
-    # /feed/<slug>.rss (+ .atom). Item fields fall back to the search
-    # declarations, so a single flag usually suffices.
-    enable_rss = False
-    rss_slug = None            # feed slug; defaults to url_base (slashes → dashes)
-    rss_title_field = None     # <item> title; defaults to search_display, else str(obj)
-    rss_description_field = None  # <item> description; defaults to search_subtitle
-    rss_date_field = None      # <pubDate> source; defaults to a detected timestamp field
-    rss_author_field = None    # optional <author>, e.g. "owner__username"
-    rss_ordering = None        # defaults to ["-<date_field>"] (else ["-pk"])
-    rss_access = None          # SearchAccess level; defaults to search_access
-    rss_limit = 50             # max items in the feed
-    rss_feed_title = None      # channel <title>; defaults to the model's plural name
-    rss_feed_description = None  # channel <description>
+    # RSS/Atom feeds are NOT a CRUDView flag. The one-flag model feed
+    # (`enable_rss`) was removed in 0.25.1 because it published
+    # model.objects.all() with no tenancy or visibility hook. Publish a curated
+    # apps.feeds.Feed over your own scoped queryset instead (see
+    # docs/skills/rss.md); declaring any of the old attributes raises at import
+    # in __init_subclass__ so a stale copy fails at startup.
 
     # API
     enable_api = False  # Opt-in: generate JSON API endpoints alongside HTML views
@@ -1904,16 +1959,6 @@ class CRUDView:
         """Return True if the user can delete this object. Override for row-level perms."""
         return True
 
-    def rss_item_extra(self, obj: Any) -> dict[str, Any]:
-        """Extra ``<item>`` fields for the RSS/Atom feed (when ``enable_rss``).
-
-        Returns a dict merged into Django ``feedgenerator.add_item`` kwargs, so
-        override it to attach an ``enclosure`` (podcasts/media), ``categories``,
-        or a computed ``author_name``. Default: nothing extra. This is the seam
-        that lets a downstream build media feeds without changing the core.
-        """
-        return {}
-
     @classmethod
     def row_actions(cls, obj, request, default_actions):
         """Per-row hook to filter the actions rendered for ``obj`` in the
@@ -2006,8 +2051,36 @@ class CRUDView:
         Prefer :meth:`get_detail_queryset` when "not yours" should read as 404
         (existence is a secret). Use this hook when it should read as 403, or
         when the rule is not expressible as a queryset filter.
+
+        **The default enforces ``can_update`` / ``can_delete`` on write
+        surfaces.** Those two hooks used to decide only which buttons render:
+        REST, MCP and the bulk views consulted them, but the HTML edit and
+        delete views did not, so a CRUDView that implemented ``can_update``
+        and stopped there still accepted a non-owner's POST to ``…/edit/``.
+        Now a request on the edit or delete route (any method — a form you
+        cannot submit must not render either) or any non-GET method is
+        refused with 403 unless the matching hook says yes. Override this
+        method to replace the rule (call ``super()`` to keep it).
         """
-        return None
+        cls.enforce_write_hooks(obj, request)
+
+    @classmethod
+    def enforce_write_hooks(cls, obj, request) -> None:
+        """Raise 403 on a write surface the ``can_update`` / ``can_delete``
+        hooks refuse. The default body of :meth:`check_object_permission`;
+        split out so an override can keep it with one call."""
+        from django.core.exceptions import PermissionDenied
+
+        method = (getattr(request, "method", "GET") or "GET").upper()
+        tail = (getattr(request, "path", "") or "").rstrip("/").rsplit("/", 1)[-1]
+        if tail == "bulk":
+            return  # the bulk views check the hooks per object themselves
+        if tail == "delete" or method == "DELETE":
+            if not cls.can_delete(obj, request):
+                raise PermissionDenied("You may not delete this record.")
+        elif tail == "edit" or method in ("POST", "PUT", "PATCH"):
+            if not cls.can_update(obj, request):
+                raise PermissionDenied("You may not change this record.")
 
     @classmethod
     def on_form_valid(cls, request, form, obj, is_create=False):

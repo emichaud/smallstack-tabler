@@ -1,0 +1,155 @@
+{% extends "smallstack/base.html" %}
+{% load static theme_tags %}
+
+{% block title %}Calendar · {{ period_label }}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'calendar/css/calendar.css' %}">
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-bleed page-header-with-actions" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+    <div class="page-header-content">
+        <h1>Calendar</h1>
+        <p class="page-subtitle">Every dataset with a date axis, on one grid. Add calendars from the list, then save the mix as a view.</p>
+        <nav style="margin-top: 0.5rem; font-size: 0.8rem;" aria-label="Breadcrumb">
+            <a href="{% url 'website:home' %}" style="color: var(--body-quiet-color); text-decoration: none;">Home</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
+            <span style="color: var(--body-fg);">Calendar</span>
+        </nav>
+    </div>
+    <div class="action-cards">
+        <a href="{% url 'calendar/events-create' %}" class="action-card">
+            <div class="action-card-body">
+                <svg viewBox="0 0 24 24" class="action-card-icon" aria-hidden="true"><path fill="currentColor" d="M19 3h-1V1h-2v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V8h14v11zm-8-9h2v3h3v2h-3v3h-2v-3H8v-2h3v-3z"/></svg>
+                <div style="text-align: left;">
+                    <div class="action-card-title">Add event</div>
+                    <div class="action-card-subtitle">On the shared Events calendar</div>
+                </div>
+            </div>
+        </a>
+        <a href="{{ views_url }}" class="action-card">
+            <div class="action-card-body">
+                <svg viewBox="0 0 24 24" class="action-card-icon" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>
+                <div style="text-align: left;">
+                    <div class="action-card-title">Saved views</div>
+                    <div class="action-card-subtitle">{{ saved_views|length }} of yours</div>
+                </div>
+            </div>
+        </a>
+        {% if selected_count %}
+        <a href="{{ save_url }}" class="action-card">
+            <div class="action-card-body">
+                <svg viewBox="0 0 24 24" class="action-card-icon" aria-hidden="true"><path fill="currentColor" d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm3-10H5V5h10v4z"/></svg>
+                <div style="text-align: left;">
+                    <div class="action-card-title">Save this view</div>
+                    <div class="action-card-subtitle">{{ selected_count }} calendar{{ selected_count|pluralize }} selected</div>
+                </div>
+            </div>
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="cal-layout">
+
+    <aside class="cal-side">
+        <div class="card cal-card">
+            <div class="card-header cal-card-header">
+                <h2>Calendars</h2>
+                {% if has_calendars %}
+                <span class="cal-side-actions">
+                    <a href="{{ all_url }}">All</a>
+                    <span aria-hidden="true">·</span>
+                    <a href="{{ none_url }}">None</a>
+                </span>
+                {% endif %}
+            </div>
+            {% if saved_views %}
+            <div class="cal-viewpick">
+                <label for="cal-view-select" class="sr-only">Saved view</label>
+                <select id="cal-view-select" class="cal-view-select" aria-label="Open a saved view">
+                    <option value="">{% if current_view %}{{ current_view.name }}{% else %}Open a saved view…{% endif %}</option>
+                    {% for v in saved_views %}{% if not v.active %}
+                    <option value="{{ v.url }}">{{ v.obj.name }}{% if v.obj.is_default %} (default){% endif %}</option>
+                    {% endif %}{% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="card-body cal-picker">
+                {% for c in picker %}
+                <a href="{{ c.toggle_url }}" class="cal-pick{% if c.selected %} is-on{% endif %} cal-series-{{ c.series }}"
+                   role="checkbox" aria-checked="{% if c.selected %}true{% else %}false{% endif %}" title="{{ c.description }}">
+                    <span class="cal-swatch" aria-hidden="true"></span>
+                    <span class="cal-pick-body">
+                        <span class="cal-pick-label">{{ c.label }}</span>
+                        <span class="cal-pick-meta">
+                            {% if c.selected %}{{ c.count }}{% if c.capped %}+{% endif %} in view{% elif c.ranged %}ranges{% elif c.provider %}events{% else %}dates{% endif %}
+                        </span>
+                    </span>
+                </a>
+                {% empty %}
+                <p class="cal-empty">No calendar datasets are visible to you.{% if not request.user.is_staff %} The bundled calendars are staff-only; a project calendar declared with <code>access="authenticated"</code> appears here.{% endif %}</p>
+                {% endfor %}
+            </div>
+            {% if ics_url %}
+            <p class="cal-side-foot">
+                <a href="{{ ics_url }}">Subscribe (.ics)</a> · <a href="{% url 'calendar_api_events' %}?{% for k in selected_keys %}ds={{ k }}{% if not forloop.last %}&amp;{% endif %}{% endfor %}">JSON</a>
+            </p>
+            {% endif %}
+        </div>
+    </aside>
+
+    <section class="cal-main" data-cal-region="main">
+        <div class="cal-toolbar">
+            <nav class="cal-seg" aria-label="Calendar range">
+                {% for r in range_choices %}
+                <a href="{{ r.url }}" class="cal-seg-btn{% if r.active %} is-active{% endif %}" {% if r.active %}aria-current="page"{% endif %}>{{ r.label }}</a>
+                {% endfor %}
+            </nav>
+            <span class="cal-toolbar-right">
+                {% if weekend_hidden %}<span class="cal-weekend-note" role="status">{{ weekend_hidden }} entr{{ weekend_hidden|pluralize:"y,ies" }} fall{{ weekend_hidden|pluralize:"s," }} at the weekend — turn on Weekends to see</span>{% endif %}
+                <a href="{{ weekends_url }}" class="cal-check{% if weekends %} is-on{% endif %}" role="checkbox" aria-checked="{% if weekends %}true{% else %}false{% endif %}">
+                    <span class="cal-check-box" aria-hidden="true">{% if weekends %}✓{% endif %}</span> Weekends
+                </a>
+            </span>
+        </div>
+
+        <div class="calendar-display cal-grid-card">
+            <div class="calendar-header">
+                <div class="calendar-nav">
+                    <a href="{{ prev_url }}" class="calendar-nav-btn" aria-label="Previous {% if range_days %}{{ range_days }} days{% else %}month{% endif %}">&lsaquo;</a>
+                    <h3 class="calendar-title">{{ period_label }}</h3>
+                    <a href="{{ next_url }}" class="calendar-nav-btn" aria-label="Next {% if range_days %}{{ range_days }} days{% else %}month{% endif %}">&rsaquo;</a>
+                    {% if not is_now %}<a href="{{ today_url }}" class="calendar-today-btn">Today</a>{% endif %}
+                </div>
+                <div class="calendar-count" title="{% if capped %}Capped: {{ capped|join:', ' }}{% endif %}">
+                    <span class="calendar-count-value">{{ event_count }}{% if capped %}+{% endif %}</span>
+                    <span class="calendar-count-label">event{{ event_count|pluralize }}{% if range_days %} across {{ board_weeks }} week{{ board_weeks|pluralize }}{% endif %} · {{ selected_count }} calendar{{ selected_count|pluralize }}</span>
+                </div>
+            </div>
+
+            {% if range_days %}
+            {% include "calendar/components/range_board.html" %}
+            {% else %}
+            {% include "calendar/components/month_grid.html" %}
+            {% endif %}
+        </div>
+
+        {% if not selected_count and has_calendars %}
+        <p class="cal-hint">Nothing selected. Add a calendar from the list on the left — they stack, so pick as many as you like.</p>
+        {% endif %}
+    </section>
+
+    <aside class="cal-right" data-cal-region="day" aria-live="polite">
+        {% include "calendar/components/day_column.html" with close_url=close_day_url explicit=selected_day hint=day_hint empty_text=day_empty_text %}
+    </aside>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'calendar/js/calendar.js' %}" defer></script>
+{% endblock %}

@@ -105,6 +105,15 @@ class SmallStackConfig(AppConfig):
 
 The app's `docs/` directory must contain a `_config.yaml` and `.md` files.
 
+> **The `_config.yaml` is not optional, and omitting it fails quietly.**
+> `get_section_pages()` builds the section index from that file's `pages:`
+> list — not from what is on disk. With no config the section page renders
+> **empty** while every `.md` file still resolves at its own URL, so the pages
+> exist, work, and are linked from nowhere. Nothing errors and no test
+> catches it. `apps/blog/content/_config.yaml` is a minimal example;
+> `apps/runbook/content/` is currently missing one, which is why
+> `/help/runbook/` lists nothing despite shipping six pages.
+
 ## Creating a New Help Page
 
 ### Step 1: Create the Markdown File
@@ -502,3 +511,17 @@ sections:
 - Order in `_config.yaml` `pages:` list determines order
 - Move entries up/down in the list
 - Category grouping does not change prev/next order — that always follows the flat page list
+
+## Agent-readable surfaces (v0.28+)
+
+Every help page is also served as Markdown at the same URL with `.md`
+appended (`/smallstack/help/smallstack/getting-started.md`), advertised from
+the HTML page with `<link rel="alternate" type="text/markdown">`. The site
+root publishes **`/llms.txt`** — an H1, a one-line blockquote
+(`SMALLSTACK_LLMS_DESCRIPTION`, or a generic one), one H2 per help section
+listing the `.md` links, and an Optional section for the OpenAPI schema, the
+MCP endpoint and `/llms-full.txt` (every page concatenated). All of it is
+built from the same config the help pages use (`get_all_sections`,
+`get_help_page_markdown`), so a new page or app section appears there with
+no extra work. Views live in `apps/help/views.py`.
+

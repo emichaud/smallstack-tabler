@@ -7,6 +7,8 @@ description: Using AI assistants to accelerate development
 
 {{ project_name }} was jointly developed with the help of **Claude**, an AI assistant by Anthropic. The project includes structured "skill files" in `docs/skills/` that teach AI agents how the codebase works — its patterns, conventions, and the right way to add features. When you ask an AI to build something, it reads the relevant skill and produces code that fits naturally into the existing project.
 
+> **Not sure what to type?** [Prompting a coding agent](/smallstack/help/smallstack/prompting-coding-agents/) has copy-ready prompts for the common first tasks — a new app on SmallStack, a model with pages + REST + MCP, a themed page, a scheduled job, a deploy — each naming the skill files to read and the gate that counts as done.
+
 ## AI Skills Reference
 
 Skills are markdown files in `docs/skills/`. An AI agent reads the relevant skill before making changes to that part of the codebase.
@@ -40,8 +42,10 @@ Skills are markdown files in `docs/skills/`. An AI agent reads the relevant skil
 | **Docker** | `docker-deployment.md` | Docker Compose setup, services, volumes, local development |
 | **Kamal** | `kamal-deployment.md` | Zero-downtime VPS deployment, SSL, server configuration |
 | **Development Workflow** | `development-workflow.md` | Branching, testing, coverage, commit style |
-| **Release Process** | `release-process.md` | Versioning, release checklist, GitHub releases |
+| **Release Process** | `release-process.md` | Versioning, release checklist, GitHub releases — *for the upstream `django-smallstack` repo only; a project built on SmallStack follows its own release doc* |
 | **Integration** | `integration-workflow.md` | Pulling upstream changes into downstream projects, deploying |
+
+This page lists the highlights. The **authoritative** skill index is `docs/skills/README.md` (and the generated `docs/skills/index.json`) — check there before concluding a skill doesn't exist.
 
 ## The CRUD Management Page Pattern
 

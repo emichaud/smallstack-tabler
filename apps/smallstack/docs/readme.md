@@ -5,11 +5,11 @@ description: Project overview and quick start guide
 
 # Django SmallStack
 
-*One small backend. Many roles.*
+*A platform to build apps on.*
 
-A modern, batteries-included Django foundation that plays many roles in your stack — an admin app, a REST backend for your React/Svelte/Solid frontend, an MCP server, a search engine, an integration hub, and a task runner — all from a single model definition. Production-ready with SQLite, Docker, and zero-downtime Kamal deployment. Clone it, customize it, ship it.
+SmallStack is the layer under your application. The admin shell, auth, CRUD pages, REST, MCP, search, webhooks, feeds, a scheduler, human-in-the-loop approvals, notifications and publishing (runbooks, blogs, newsletters) are already built, tested and themed — so your project starts at the business logic. From a single model definition it plays many roles at once: an admin app, a REST backend for your React/Svelte/Solid frontend, an MCP server, a search engine, an integration hub, a task runner, a workflow engine and a publishing platform. Production-ready with SQLite or Postgres, Docker, and zero-downtime Kamal deployment.
 
-SmallStack is not a theme you have to implement — it's a production-ready system with clear patterns for you to extend with your own ideas and creativity. You focus on what makes your app unique, and SmallStack handles the platform.
+SmallStack is not a theme you have to implement and not a starter you grow out of — it's a production-ready system whose built-in apps register through the same seams your app does (`nav.register()`, `dashboard.register()`, status monitors, `@scheduled`, `@approval_kind`, `notify()`, `@webhook_handler`, `@dataset`, `help_content_dir`). You focus on what makes your app unique, and SmallStack handles the platform.
 
 📖 **Full docs & the full story → [www.smallstack.site](https://www.smallstack.site/)**
 
@@ -28,7 +28,7 @@ A first-class Model Context Protocol server (OAuth + JSON-RPC) exposes your mode
 Real ranked search — SQLite FTS5 or Postgres SearchVector — with a Ctrl-K omnibar, a search page, an MCP retrieval tool (RAG), and custom variants via SearchBuilder.
 
 ### Webhooks & feeds
-Signed outbound webhooks on model change and verified inbound receivers (seams for Zapier/n8n/Stripe/Slack), plus RSS/Atom feeds you can publish from any model or consume on a schedule.
+Signed outbound webhooks on model change and verified inbound receivers (seams for Zapier/n8n/Stripe/Slack), plus RSS/Atom feeds for publishing — curated `Feed`s over your own scoped querysets, as the blog and the status page do — and a collector that consume on a schedule.
 
 ### Background tasks & scheduler
 Django's Tasks framework is pre-configured with a database backend, plus a `@scheduled` recurring-job scheduler with a themed UI. Send emails, process data, and run jobs — no Redis or Celery to operate.

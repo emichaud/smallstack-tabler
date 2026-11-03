@@ -41,6 +41,12 @@ pages:
     icon: "rocket"
     category: "Getting Started"
 
+  - slug: prompting-coding-agents
+    title: "Prompting a coding agent"
+    description: "Copy-ready prompts for the common getting-started tasks — phrased so the agent uses what SmallStack already provides"
+    icon: "ai"
+    category: "Getting Started"
+
   - slug: tldr
     title: "TL;DR — Clone to Deploy"
     description: "The shortest path from zero to a running site"
@@ -277,7 +283,7 @@ pages:
 
   - slug: feeds
     title: "RSS / Atom Feeds"
-    description: "Publish any model as an RSS/Atom feed with one flag, or consume external feeds on a schedule into a model"
+    description: "Publish a blog, podcast or changelog as a curated RSS/Atom feed, or collect external feeds into a model on a schedule"
     icon: "api"
     category: "Development"
 

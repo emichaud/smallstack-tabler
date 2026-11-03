@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from django import template
+from django.db import models
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 
@@ -72,6 +73,48 @@ def _get_field_label(model, field_name: str) -> str:
         return field_name.replace("_", " ").capitalize()
 
 
+# Default column widths by field type. `.crud-table` uses `table-layout: fixed`,
+# so every column without a width gets an equal share of the row — which is
+# why a ✓/— boolean column used to be as wide as an email column and the
+# email got clipped. Compact types take a fixed pixel width; everything else
+# stays unset and shares the remaining space. Pixel values (not %) so the
+# mix never sums past the table width whatever the column count.
+_COMPACT_WIDTHS: tuple[tuple[tuple[type, ...], str], ...] = (
+    ((models.BooleanField,), "110px"),
+    # DateTimeField before DateField — it is a subclass.
+    ((models.DateTimeField,), "170px"),
+    ((models.DateField,), "120px"),
+    ((models.TimeField,), "100px"),
+    ((models.DurationField,), "110px"),
+    ((models.AutoField, models.IntegerField, models.FloatField, models.DecimalField), "100px"),
+)
+
+
+def _default_column_width(model, field_name: str) -> str | None:
+    """Return a CSS width for a column whose field type is naturally compact, else None.
+
+    Only concrete model fields get a default; properties and methods are left
+    to share the free space. A CharField with `choices` renders a short label
+    (status badges, kinds), so it is treated as compact too.
+    """
+    if model is None:
+        return None
+    try:
+        field = model._meta.get_field(field_name)
+    except Exception:
+        return None
+    if getattr(field, "is_relation", False) or getattr(field, "primary_key", False):
+        # FK/M2M render as str(obj) — unknown width. The pk is usually short
+        # but is a common link column, so leave it free too.
+        return None
+    if getattr(field, "choices", None):
+        return "130px"
+    for classes, width in _COMPACT_WIDTHS:
+        if isinstance(field, classes):
+            return width
+    return None
+
+
 def _ns_reverse(url_name: str, namespace: str | None = None, **kwargs) -> str:
     """Reverse a URL name, prepending namespace if set."""
     if namespace:
@@ -86,7 +129,8 @@ def _build_sort_headers(
 
     Returns a list of dicts with keys: label, field_name, sortable,
     direction (asc/desc/None), next_ordering (the ?ordering= value to toggle to),
-    width (optional CSS width from column_widths).
+    width (optional CSS width: an explicit `column_widths` entry wins, else a
+    type-derived default for compact fields — see `_default_column_width`).
     """
     current_ordering = request.GET.get("ordering", "").strip() if request else ""
     current_field = current_ordering.lstrip("-")
@@ -123,6 +167,10 @@ def _build_sort_headers(
         }
         if column_widths and field_name in column_widths:
             header["width"] = column_widths[field_name]
+        else:
+            default_width = _default_column_width(model, field_name)
+            if default_width:
+                header["width"] = default_width
         headers.append(header)
     return headers
 
@@ -252,21 +300,28 @@ def crud_table(context):
         "rows": rows,
         "show_actions": show_actions,
         "enable_bulk": enable_bulk,
+        # localStorage key for user-resized column widths (table-resize.js).
+        # The field list is part of the key so a reordered/changed list_fields
+        # never replays stale widths onto the wrong columns.
+        "table_key": f"{url_base}:{','.join(list_fields)}",
     }
 
 
 @register.inclusion_tag("smallstack/crud/includes/sortable_th.html", takes_context=True)
-def sortable_th(context, field_name, label, target="#tab-content", include_selector="", align="left"):
+def sortable_th(context, field_name, label, target="#tab-content", include_selector="", align="", width=""):
     """Render a sortable <th> header for manual tables.
 
     Usage in templates:
         {% load crud_tags %}
         {% sortable_th "timestamp" "Time" target="#tab-content" %}
-        {% sortable_th "response_time_ms" "Time (ms)" align="right" %}
+        {% sortable_th "hits" "Hits" align="right" width="90px" %}
+
+    ``align="right"`` right-justifies the label to match a numeric column;
+    ``width`` sets the column width (the table is ``table-layout: fixed``,
+    so header widths are column widths).
 
     Reads ?ordering= from the current request to show sort direction.
-    Clicking toggles asc ↔ desc (two-state). Pass align="right" to match a
-    column whose cells are right-aligned (e.g. numeric values).
+    Clicking toggles asc ↔ desc (two-state).
     """
     request = context.get("request")
     current_ordering = request.GET.get("ordering", "").strip() if request else ""
@@ -288,12 +343,14 @@ def sortable_th(context, field_name, label, target="#tab-content", include_selec
 
     return {
         "label": label,
+        "field_name": field_name,
         "direction": direction,
         "next_ordering": next_ordering,
         "hx_target": target,
         "hx_include": include_selector,
         "query_string": params.urlencode(),
-        "align": "right" if align == "right" else "left",
+        "align": align,
+        "width": width,
     }
 
 

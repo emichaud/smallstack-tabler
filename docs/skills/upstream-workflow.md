@@ -41,6 +41,21 @@ git push origin main
 | `uv.lock` | Accept upstream's version, then run `uv lock` to reconcile |
 | `config/settings/base.py` | Accept upstream structural changes; tabler-specific settings live in `apps/tabler/` |
 | `config/deploy.yml` | Accept upstream docs/comments; keep tabler deploy config |
+| `AGENTS.md` / `CLAUDE.md` | `AGENTS.md` holds this fork's orientation; keep the Tabler guidance and take upstream's new rows. `CLAUDE.md` stays upstream's thin `@AGENTS.md` import |
+| `docs/skills/README.md` | Take upstream's, keep the short Tabler note and the two base-theme row labels. Fork skills go in `docs/skills/local.md` |
+| `docs/skills/index.json`, `.agents/skills/`, `.claude/skills/` | Generated: take upstream's, then run `make skills-index` |
+
+### After Merging: Check the Tabler Side
+
+A clean merge can still leave the UI behind, because `apps/tabler/` shadows upstream's templates and `tabler/base.html` does not load `components.css`. After each merge, list the overridden templates upstream changed, and port any new `components.css` rules and CSS variables into `tabler_overrides.css`:
+
+```bash
+BASE=$(git merge-base HEAD~1 upstream/main)   # run after committing the merge, or use the old upstream tag
+(cd apps/tabler/templates && find . -type f | sed 's|^\./||') | while read -r f; do
+  git diff --name-only "$BASE" upstream/main | grep -E "(^|/)templates/$f$"
+done
+git diff "$BASE" upstream/main -- apps/smallstack/static/smallstack/css/components.css
+```
 
 ## Releasing This Downstream
 

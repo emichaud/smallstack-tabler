@@ -102,6 +102,35 @@
             </div>
         </div>
     </div>
+    {% url 'myblogs:dashboard' as myblogs_url %}
+    {% if blogs or user == profile.user and myblogs_url %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Blogs</h3>
+                {% if user == profile.user and myblogs_url %}
+                <div class="card-actions"><a href="{{ myblogs_url }}" class="btn btn-sm btn-outline-secondary">My blogs</a></div>
+                {% endif %}
+            </div>
+            {% if blogs %}
+            <div class="list-group list-group-flush">
+                {% for blog in blogs %}
+                <div class="list-group-item d-flex justify-content-between gap-3">
+                    <div>
+                        {% if blog.visibility == "public" %}<a href="{{ blog.get_absolute_url }}" class="fw-bold">{{ blog.name }}</a>
+                        {% else %}<span class="fw-bold">{{ blog.name }}</span>{% endif %}
+                        {% if blog.tagline %}<div class="text-secondary small">{{ blog.tagline }}</div>{% endif %}
+                    </div>
+                    <span class="text-secondary small text-nowrap">{{ blog.get_visibility_display }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card-body text-secondary">No blogs yet. <a href="{{ myblogs_url }}">Start one</a>.</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% endblock %}

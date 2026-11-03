@@ -16,6 +16,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
+from apps.calendar.displays import RangeBoardDisplay
 from apps.smallstack.crud import Action, CRUDView
 from apps.smallstack.displays import CalendarDisplay, FormDisplay, TableDisplay
 from apps.smallstack.mixins import StaffRequiredMixin
@@ -192,14 +193,21 @@ class ScheduledJobCRUDView(CRUDView):
     # Custom control page: read-only definition + schedule/enabled overrides.
     form_displays = [ScheduledJobFormDisplay()]
 
-    # Table ⇄ calendar toggle in the display palette. The calendar plots each
-    # schedule on its next fire (next_run_at) and tints the chip by the last
-    # run's health (see ScheduledJob.calendar_status).
+    # Table ⇄ calendar ⇄ board toggle in the display palette. Both plot each
+    # schedule on its next fire (next_run_at) and tint the chip by the last
+    # run's health (see ScheduledJob.calendar_status); the board lists the
+    # next 30/60/90 days of fires as week columns, cadence as the subtitle.
     displays = [
         TableDisplay,
         CalendarDisplay(
             date_field="next_run_at",
             title_field="name",
+            status_field="calendar_status",
+        ),
+        RangeBoardDisplay(
+            date_field="next_run_at",
+            title_field="name",
+            subtitle_field="cadence_display",
             status_field="calendar_status",
         ),
     ]
@@ -238,12 +246,19 @@ class ScheduledJobRunCRUDView(CRUDView):
     mixins = [StaffRequiredMixin]
     actions = [Action.LIST, Action.DETAIL]
 
-    # Table ⇄ calendar toggle. The calendar is the run-history view.
+    # Table ⇄ calendar ⇄ board toggle. The calendar is the run-history view;
+    # the board lists the next 30/60/90 days of runs as week columns.
     displays = [
         TableDisplay,
         CalendarDisplay(
             date_field="scheduled_for",
             title_field="job_name",
+            status_field="calendar_status",
+        ),
+        RangeBoardDisplay(
+            date_field="scheduled_for",
+            title_field="job_name",
+            subtitle_field="message",
             status_field="calendar_status",
         ),
     ]

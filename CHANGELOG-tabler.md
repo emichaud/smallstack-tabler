@@ -32,6 +32,57 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+## [0.29.0-tabler.1] - 2026-11-02
+
+Carries upstream **v0.29.0**, up from v0.23.1: blogs and newsletters, the
+calendar app, bundled datasets, activity drilldowns, resizable table columns
+and agent discovery. See [`CHANGELOG.md`](CHANGELOG.md) for those features.
+
+### Changed
+- **`AGENTS.md` now holds this fork's orientation.** Upstream moved its agent
+  guidance there, pointing at the modern-dark theme, so the Tabler guidance was
+  merged three-way with upstream's text. `CLAUDE.md` takes upstream's thin
+  `@AGENTS.md` shape.
+- **Fork skills are registered in `docs/skills/local.md`**, upstream's registry
+  for forks, so those rows no longer conflict on a merge. `README.md` is
+  upstream's plus a Tabler note and "not used here" labels on
+  `modern-dark-theme.md` and `modify-palettes.md`.
+- **Activity pages use upstream's templates.** All 13 overrides in
+  `apps/tabler/templates/activity/` were removed: upstream rewrote the views and
+  templates, and the overrides hid the drilldowns and the window picker.
+- `upstream-workflow.md` gains the new conflict rules and a post-merge check for
+  stale template overrides and unported `components.css` rules.
+
+### Added
+- "My blogs" in the navbar user menu, a Blogs card on the profile page, and the
+  markdown alternate and `llms.txt` links on help pages, in their Tabler templates.
+- `tabler_overrides.css`: upstream's new `components.css` rules (column resize,
+  wrap mode, activity drilldowns), the `--series-*` colours, and aliases for the
+  variables the blog and calendar styles use.
+- `tabler/base.html` loads `table-resize.js`.
+
+### Fixed
+- The Tabler CRUD list template had no `#crud-list-content`, the target of the
+  sort buttons in `table.html`.
+- The calendar Events page showed the display palette twice.
+
+### Upstream merges adapted
+- **v0.29.0** (this release) — conflicts in `CLAUDE.md`, `sortable_th.html`,
+  `crud_tags.py`, `docs/skills/README.md` and `docs/skills/index.json`. Took
+  upstream's `sortable_th` markup and its `th-right` class, and regenerated the
+  skill index. Three blog tests now assert on `<option value=…>`, because a bare
+  `value="2"` also matched a radius radio in the Tabler settings panel.
+
+### Known gaps
+- Public blog pages (`/blog/`) use upstream's standalone theme, not Tabler.
+- The Tabler CRUD list template has no filter toolbar or bulk-action bar.
+- The activity header buttons lose their border in light mode.
+
+### Verified at this release
+3601 passed / 11 skipped under `config.settings.test`; `ruff` and `mypy` clean
+across 433 source files; `manage.py check` clean; `api_doctor` 11 ✓ / 0 ⚠ / 0 ✗;
+`mcp_doctor` 6 ✓ / 0 ⚠ / 0 ✗.
+
 ## [0.23.1-tabler.1] - 2026-10-11
 
 Carries upstream **v0.23.1**. First tagged Tabler build since `v0.10.3`
@@ -117,7 +168,8 @@ Releases below predate the `-tabler.N` scheme.
 - `docs/skills/upstream-workflow.md` — how to merge upstream `django-smallstack`
   without losing the Tabler customizations.
 
-[Unreleased]: https://github.com/emichaud/smallstack-tabler/compare/v0.23.1-tabler.1...HEAD
+[Unreleased]: https://github.com/emichaud/smallstack-tabler/compare/v0.29.0-tabler.1...HEAD
+[0.29.0-tabler.1]: https://github.com/emichaud/smallstack-tabler/compare/v0.23.1-tabler.1...v0.29.0-tabler.1
 [0.23.1-tabler.1]: https://github.com/emichaud/smallstack-tabler/compare/v0.10.3...v0.23.1-tabler.1
 [0.10.3]: https://github.com/emichaud/smallstack-tabler/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/emichaud/smallstack-tabler/compare/v0.10.1...v0.10.2

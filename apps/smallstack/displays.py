@@ -273,7 +273,7 @@ class TableDisplay(ListDisplay):
 
     def get_context(self, queryset: Any, crud_config: Any, request: HttpRequest) -> dict[str, Any]:
         """Paginate the queryset for the basic table display."""
-        return paginate_queryset(queryset, crud_config._resolve_paginate_by(), request)
+        return paginate_queryset(queryset, crud_config.page_size_for(request), request)
 
 
 def _resolve_field(obj: Any, path: Any) -> Any:
@@ -364,7 +364,7 @@ class CardDisplay(ListDisplay):
         """Orchestrate pagination, per-card URLs, and item-template dispatch."""
         from apps.smallstack.crud import Action
 
-        paginate_by = crud_config._resolve_paginate_by()
+        paginate_by = crud_config.page_size_for(request)
         page_context = paginate_queryset(queryset, paginate_by, request)
         items = page_context.pop("object_list", queryset)
 
@@ -979,6 +979,12 @@ class DashboardWidget:
     url_kwargs: dict | None = None
     group: str | None = None
     on_dashboard: bool = True
+
+    def visible_to(self, user: Any) -> bool:
+        """Whether ``user`` sees this widget (asked when a caller passes the
+        user, as the dashboards do). Default: everyone the page admits.
+        Override for a widget whose numbers need a permission to read."""
+        return True
 
     def get_data(self, model_class: type | None = None) -> dict:
         """Return widget data. Shape depends on widget_type.

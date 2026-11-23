@@ -10,11 +10,15 @@ from typing import Any
 
 from django import template
 from django.conf import settings
+from django.template.loader import render_to_string
+from django.templatetags.static import static
 from django.urls import NoReverseMatch, reverse
 from django.utils import dateformat
+from django.utils.html import format_html
+from django.utils.text import slugify
 
 register = template.Library()
-logger = logging.getLogger("smallstack")
+logger = logging.getLogger(__name__)
 
 
 class BreadcrumbNode(template.Node):
@@ -174,19 +178,62 @@ def querystring(context, **kwargs) -> str:
 
 
 @register.inclusion_tag("smallstack/includes/paginator.html", takes_context=True)
-def render_paginator(context, page_obj, hx_target="#tab-content", hx_swap="innerHTML swap:150ms"):
+def render_paginator(
+    context,
+    page_obj,
+    hx_target="#tab-content",
+    hx_swap="innerHTML swap:150ms",
+    hx_select="",
+    push_url=False,
+    page_param="page",
+    reset="",
+    label="Pagination",
+):
     """Render paginator controls for a Page object.
 
     Usage:
         {% render_paginator page_obj %}
         {% render_paginator page_obj hx_target="#my-div" %}
+
+    With ``page_sizes`` / ``per_page`` in the context (a CRUDView that sets
+    ``page_sizes`` puts them there) it adds a "Rows per page" choice; a new
+    size drops ``page_param`` and any params named in ``reset`` (space-
+    separated), so every list it resizes starts again at page 1.
+
+    A page that answers paging with its full HTML (not a fragment) passes
+    ``hx_select`` — the element to take from the response, usually the same as
+    ``hx_target`` with ``hx_swap="outerHTML"`` — and ``push_url=True`` so the
+    address follows: ``{% render_paginator page_obj "#rows" hx_swap="outerHTML"
+    hx_select="#rows" push_url=True %}`` (the dataset browser does). Several
+    lists on one page each page with their own ``page_param`` (the datasets
+    index: ``fpage`` / ``ppage``) and name their nav with ``label``.
     """
     request = context.get("request")
+
+    def link(number):
+        return querystring(context, **{page_param: number})
+
+    has_prev, has_next = page_obj.has_previous(), page_obj.has_next()
+    dropped = {page_param, "per_page", *reset.split()}
     return {
         "page_obj": page_obj,
         "request": request,
         "hx_target": hx_target,
         "hx_swap": hx_swap,
+        "hx_select": hx_select,
+        "push_url": push_url,
+        "label": label,
+        "control_id": f"paginator-per-page-{slugify(hx_target)}-{page_param}",
+        "first_url": link(1) if has_prev else "",
+        "previous_url": link(page_obj.previous_page_number()) if has_prev else "",
+        "next_url": link(page_obj.next_page_number()) if has_next else "",
+        "last_url": link(page_obj.paginator.num_pages) if has_next else "",
+        # "Rows per page" — set by a CRUDView with page_sizes (see crud.py).
+        "page_sizes": context.get("page_sizes") or (),
+        "per_page": context.get("per_page"),
+        # The path is spelled out: an empty hx-get would mean "this URL", page and all.
+        "size_url": (request.path if request else "") + querystring(context, **{k: None for k in dropped}),
+        "keep_params": [(k, v) for k, v in (request.GET.items() if request else []) if k not in dropped],
     }
 
 
@@ -354,6 +401,40 @@ def stat_card(
 
 
 @register.simple_tag
+def smallstack_assets() -> str:
+    """SmallStack's shared styles for a page on a project's own theme.
+
+    Put ``{% smallstack_assets %}`` in the ``<head>`` of a base template that
+    doesn't extend ``smallstack/base.html``. It links ``smallstack/css/embed.css``:
+    the design tokens, palettes and components the embeds draw with
+    (``{% dashboard %}``, ``{% metric_card %}``, ``{% calendar_card %}``,
+    ``{% stat_card %}``, ``{% help_bubble %}``), in a ``smallstack`` cascade layer
+    so the host theme's own rules win wherever both style the same class. The
+    scripts are the base template's (``theme-init.js``, ``config.js``, htmx,
+    ``theme.js``); see ``docs/skills/adding-your-own-theme.md``.
+    """
+    return format_html('<link rel="stylesheet" href="{}">', static("smallstack/css/embed.css"))
+
+
+@register.simple_tag(takes_context=True)
+def smallstack_modal(context: template.Context) -> str:
+    """The drill-down modal, rendered once per request.
+
+    Every stat card, metric card, report value and help bubble opens
+    ``#stat-modal``. ``smallstack/base.html`` renders it; a project's own base
+    template puts ``{% smallstack_modal %}`` near the end of ``<body>``. A second
+    call in the same request (an include that adds it too) renders nothing, so
+    the page never carries two ``#stat-modal`` elements.
+    """
+    request = context.get("request")
+    if request is not None:
+        if getattr(request, "_smallstack_modal_rendered", False):
+            return ""
+        request._smallstack_modal_rendered = True
+    return render_to_string("smallstack/includes/stat_modal.html")
+
+
+@register.simple_tag
 def status_badge(label, variant=None):
     """Render a consistent status pill.
 
@@ -372,3 +453,25 @@ def status_badge(label, variant=None):
     if variant not in _BADGE_VARIANTS:
         variant = "neutral"
     return format_html('<span class="badge badge-{}">{}</span>', variant, label)
+
+
+@register.filter
+def ago(value: Any) -> str:
+    """A short relative time for a table cell: ``just now``, ``4m ago``,
+    ``9h ago``, ``6d ago``, ``3w ago``, ``5mo ago``, ``2y ago``.
+
+    ``timesince`` gives two units ("9 hours, 24 minutes ago"), which is more
+    than a list column can carry; put the exact time in the cell's ``title``
+    (``localtime_tooltip``) for anyone who needs it. Empty for a missing value.
+    """
+    if not value:
+        return ""
+    from django.utils import timezone
+
+    now = timezone.now() if timezone.is_aware(value) else datetime.datetime.now()
+    seconds = max(int((now - value).total_seconds()), 0)
+    for limit, unit, label in ((60, 1, None), (3600, 60, "m"), (86400, 3600, "h"), (604800, 86400, "d"),
+                               (2629800, 604800, "w"), (31557600, 2629800, "mo")):
+        if seconds < limit:
+            return "just now" if label is None else f"{seconds // unit}{label} ago"
+    return f"{seconds // 31557600}y ago"

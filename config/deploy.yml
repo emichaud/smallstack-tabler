@@ -31,6 +31,16 @@ servers:
   #   proxy: false
   #   options:
   #     health-cmd: "true"
+  #
+  # Optional: give outbound webhooks their own role so slow endpoints can't
+  # delay email. Then use --queue-name "*" --exclude-queues webhooks above.
+  # webhook-worker:
+  #   hosts:
+  #     - 123.45.67.89
+  #   cmd: python manage.py db_worker --queue-name webhooks --worker-id webhooks
+  #   proxy: false
+  #   options:
+  #     health-cmd: "true"
 
 # SSH configuration
 ssh:

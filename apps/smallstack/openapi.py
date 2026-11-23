@@ -80,6 +80,9 @@ def _build_crud_schema(crud_config) -> dict:
             prop["minimum"] = field_info["min_value"]
         if field_info.get("max_value") is not None:
             prop["maximum"] = field_info["max_value"]
+        if form_field.help_text and "description" not in prop:
+            # The form's own help: for a JSON field it is the only word on its shape.
+            prop["description"] = str(form_field.help_text)
         properties[name] = prop
         if field_info.get("required"):
             required.append(name)
@@ -206,12 +209,14 @@ def _build_crud_paths(crud_config, list_url_name: str) -> dict[str, dict]:
         ]
         search_fields = crud_config._resolve_search_fields()
         if search_fields:
+            from .crud import split_search_field
+
             parameters.append(
                 {
                     "name": "q",
                     "in": "query",
                     "schema": {"type": "string"},
-                    "description": f"Search {', '.join(search_fields)}",
+                    "description": f"Search {', '.join(split_search_field(f)[0] for f in search_fields)}",
                 },
             )
 
@@ -302,7 +307,8 @@ def _build_crud_paths(crud_config, list_url_name: str) -> dict[str, dict]:
         {"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}},
     ]
 
-    if Action.DETAIL in actions:
+    # The REST detail route answers GET whenever it exists, HTML detail page or not.
+    if actions & {Action.DETAIL, Action.UPDATE, Action.DELETE}:
         detail_ops["get"] = {
             "tags": [tag],
             "summary": f"Get a {model_name}",

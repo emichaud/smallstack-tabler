@@ -69,6 +69,8 @@
         }
         document.documentElement.setAttribute('data-bs-theme', theme);
         document.documentElement.dataset.stkTheme = theme;
+        // Upstream's per-page CSS keys its dark rules on data-theme; keep it in step.
+        document.documentElement.setAttribute('data-theme', theme);
 
         // Update profile edit hidden input if present
         var themeInput = document.getElementById('id_theme_preference');

@@ -91,7 +91,7 @@ PASSWORD_RESET_TIMEOUT = config("PASSWORD_RESET_TIMEOUT", default=86400, cast=in
 # Feature Flags & UI
 # ---------------------------------------------------------------------------
 # SmallStack Help Documentation
-# Set to False to hide SmallStack reference docs from /help/
+# Set to False to hide SmallStack reference docs from /smallstack/help/
 SMALLSTACK_DOCS_ENABLED = config("SMALLSTACK_DOCS_ENABLED", default=True, cast=bool)
 # The one-line summary at the top of /llms.txt (https://llmstxt.org) — the
 # agent-readable index of this site's documentation. Blank uses a generic
@@ -111,6 +111,14 @@ SMALLSTACK_SIGNUP_ENABLED = config("SMALLSTACK_SIGNUP_ENABLED", default=True, ca
 # Passwordless ("email me a code") login. When True the login page offers a
 # code-based sign-in: enter email -> 6-digit code emailed -> enter code -> in.
 SMALLSTACK_PASSWORDLESS_LOGIN = config("SMALLSTACK_PASSWORDLESS_LOGIN", default=False, cast=bool)
+# Send invites and sign-in codes in the request instead of on the ``email``
+# queue. Unset (or empty) follows DEBUG; set it True on a deployment with no
+# worker draining that queue (apps/accounts/emails.py:account_emails_inline).
+SMALLSTACK_ACCOUNTS_EMAILS_INLINE = config(
+    "SMALLSTACK_ACCOUNTS_EMAILS_INLINE",
+    default="",
+    cast=lambda v: None if str(v).strip() == "" else str(v).strip().lower() in ("1", "true", "yes", "on"),
+)
 # Validity window for a passwordless sign-in code, in seconds (default 10 min).
 SMALLSTACK_LOGIN_CODE_TTL = config("SMALLSTACK_LOGIN_CODE_TTL", default=600, cast=int)
 # Most passwordless codes one account can be sent per hour (each allows 5 guesses).
@@ -218,6 +226,14 @@ BACKUP_DOWNLOAD_ENABLED = config("BACKUP_DOWNLOAD_ENABLED", default=True, cast=b
 # ---------------------------------------------------------------------------
 HEARTBEAT_RETENTION_DAYS = config("HEARTBEAT_RETENTION_DAYS", default=7, cast=int)
 HEARTBEAT_EXPECTED_INTERVAL = config("HEARTBEAT_EXPECTED_INTERVAL", default=60, cast=int)
+# The per-minute run probes network-bound monitors (MonitoredEndpoint HTTP
+# checks) on a thread pool of at most this many threads, so N slow endpoints
+# cost one timeout, not N. 1 runs them one after another, as before.
+HEARTBEAT_MAX_CONCURRENT_CHECKS = config("HEARTBEAT_MAX_CONCURRENT_CHECKS", default=8, cast=int)
+# A pooled probe still running this many seconds into the run is recorded as a
+# fail and abandoned. Keep it under a minute (the run's cadence) and under
+# gunicorn's 120s timeout — the run is a request to /heartbeat/ping/.
+HEARTBEAT_RUN_DEADLINE_SECONDS = config("HEARTBEAT_RUN_DEADLINE_SECONDS", default=50, cast=int)
 # A monitor younger than this shows a "warming up" pill instead of a not-yet-
 # representative uptime % on the status overview / public board.
 HEARTBEAT_WARMUP_MINUTES = config("HEARTBEAT_WARMUP_MINUTES", default=60, cast=int)
@@ -233,6 +249,29 @@ SMALLSTACK_PUBLIC_STATUS_ENABLED = config("SMALLSTACK_PUBLIC_STATUS_ENABLED", de
 # also lets an anonymous visitor probe whether a username exists (200 vs 404).
 # Off: sign-in required. Default on (historical behaviour).
 SMALLSTACK_PUBLIC_PROFILES = config("SMALLSTACK_PUBLIC_PROFILES", default=True, cast=bool)
+
+# ---------------------------------------------------------------------------
+# Access (/smallstack/access/)
+# ---------------------------------------------------------------------------
+# An account that hasn't signed in for this many days is reported as dormant
+# on the Access overview and in `manage.py access_report`.
+SMALLSTACK_ACCESS_DORMANT_DAYS = config("SMALLSTACK_ACCESS_DORMANT_DAYS", default=90, cast=int)
+# Whether an AI client may *propose* a group-membership change over MCP
+# (the access_request_membership tool). A proposal files an approval request
+# that a person holding accounts.change_user decides; the agent never writes
+# membership itself. False removes the tool; the read tools stay.
+SMALLSTACK_ACCESS_MCP_WRITES = config("SMALLSTACK_ACCESS_MCP_WRITES", default=True, cast=bool)
+
+# ---------------------------------------------------------------------------
+# Explorer
+# ---------------------------------------------------------------------------
+# On: Explorer checks Django model permissions (view / add / change / delete,
+# as Django admin does) on its pages, REST and MCP, and hides models a user may
+# not view. Off (default): any staff account may do everything in Explorer.
+# A ModelAdmin's ``explorer_model_permissions = True/False`` overrides it.
+SMALLSTACK_EXPLORER_MODEL_PERMISSIONS = config(
+    "SMALLSTACK_EXPLORER_MODEL_PERMISSIONS", default=False, cast=bool
+)
 
 # ---------------------------------------------------------------------------
 # REST API surface
@@ -443,6 +482,8 @@ SMALLSTACK_WEBHOOKS_ENABLED = config("SMALLSTACK_WEBHOOKS_ENABLED", default=True
 # Feeds: publish curated RSS/Atom feeds (register_feed) and consume external feeds
 # into a model (the collector). Off ⇒ /feed/ 404s and the collector no-ops.
 SMALLSTACK_FEEDS_ENABLED = config("SMALLSTACK_FEEDS_ENABLED", default=True, cast=bool)
+# Feed sources fetched at once per collection run (1 = one after another).
+SMALLSTACK_FEEDS_MAX_CONCURRENT_FETCHES = config("SMALLSTACK_FEEDS_MAX_CONCURRENT_FETCHES", default=6, cast=int)
 
 # Independent toggles for each direction (both gated by the master switch above).
 SMALLSTACK_WEBHOOKS_OUTBOUND = config("SMALLSTACK_WEBHOOKS_OUTBOUND", default=True, cast=bool)
@@ -454,6 +495,9 @@ SMALLSTACK_WEBHOOK_MAX_ATTEMPTS = config("SMALLSTACK_WEBHOOK_MAX_ATTEMPTS", defa
 
 # Per-request HTTP timeout (seconds) when POSTing an outbound webhook.
 SMALLSTACK_WEBHOOK_TIMEOUT = config("SMALLSTACK_WEBHOOK_TIMEOUT", default=10, cast=int)
+# Task queue for outbound deliveries. Used only when TASKS lists it (else they
+# run on "default"); the container gives it a worker of its own (WORKER_WEBHOOKS).
+SMALLSTACK_WEBHOOK_QUEUE = config("SMALLSTACK_WEBHOOK_QUEUE", default="webhooks")
 
 # Consecutive delivery failures before an endpoint auto-disables itself (a proxy
 # for "this URL is dead"). 0 ⇒ never auto-disable.
@@ -521,7 +565,7 @@ SMALLSTACK_NOTIFICATIONS_RETENTION_DAYS = config(
 # Master switch. Off ⇒ the URLs are never mounted (console, REST, decide POST),
 # no kind autodiscovery, no receivers, no nav/dashboard/monitor, no sweep job,
 # and services.request_approval/decide/cancel raise ApprovalsDisabled. It used
-# to leave every endpoint live and only kill the fan-out. (F-11.)
+# to leave every endpoint live and only kill the fan-out.
 SMALLSTACK_APPROVALS_ENABLED = config("SMALLSTACK_APPROVALS_ENABLED", default=True, cast=bool)
 # May the requester decide their own request? Off by default — a human gate
 # you can wave yourself through isn't a gate.
@@ -552,7 +596,7 @@ SMALLSTACK_APPROVALS_NOTIFY_EMAILS = config(
 # Send approval mail in the request path instead of queueing it on the `email`
 # task queue. Defaults to DEBUG: a `make run` demo or a test run delivers with no
 # worker, while production keeps the queue (and then NEEDS a db_worker on the
-# `email` queue — the approvals status monitor trips if nothing drains it). (F-07.)
+# `email` queue — the approvals status monitor trips if nothing drains it).
 # Unset (the default) means "follow DEBUG", resolved at call time in
 # apps/approvals/receivers.py — DEBUG isn't defined yet in this module.
 _approvals_inline = config("SMALLSTACK_APPROVALS_EMAILS_INLINE", default="")
@@ -580,7 +624,7 @@ SMALLSTACK_APPROVALS_LAZY_EXPIRE_LIMIT = config(
 # Cap on a single requester's outstanding pending requests per kind (0 = no cap).
 # The abuse model is an agent token in a loop: one identity filed 60 requests and
 # generated 600 notification rows unimpeded, which defeats the gate by alert
-# fatigue. Exceeding it raises TooManyPending → 429 on REST/MCP. (F-18.)
+# fatigue. Exceeding it raises TooManyPending → 429 on REST/MCP.
 SMALLSTACK_APPROVALS_MAX_PENDING_PER_REQUESTER = config(
     "SMALLSTACK_APPROVALS_MAX_PENDING_PER_REQUESTER", default=50, cast=int
 )
@@ -593,7 +637,7 @@ SMALLSTACK_APPROVALS_MAX_PENDING_PER_REQUESTER = config(
 # no actor are attributed to this reserved account, created on first use as
 # is_active=False with an unusable password — a label, not a credential (nothing
 # can authenticate as an inactive user on any surface). Blank ⇒ system writes are
-# logged to the application log only. (F-15.)
+# logged to the application log only.
 SMALLSTACK_AUDIT_SYSTEM_USERNAME = config("SMALLSTACK_AUDIT_SYSTEM_USERNAME", default="system")
 
 
@@ -677,3 +721,23 @@ SMALLSTACK_BLOG_CONFIRM_MAX_AGE_DAYS = config(
     "SMALLSTACK_BLOG_CONFIRM_MAX_AGE_DAYS", default=7, cast=int
 )
 
+
+
+# ---------------------------------------------------------------------------
+# Dashboards (apps.dashboards) — metrics, grid dashboards and KPI reports
+# ---------------------------------------------------------------------------
+# Master switch. Off ⇒ no nav item, no /smallstack/dashboards/ routes (pages,
+# CRUD, JSON API), no MCP tools. The app stays installed (migrations apply) so
+# turning it back on never needs a schema change; in-process
+# ``apps.dashboards.metrics.evaluate`` and the {% metric_card %} tag keep working.
+SMALLSTACK_DASHBOARDS_ENABLED = config("SMALLSTACK_DASHBOARDS_ENABLED", default=True, cast=bool)
+# Create and update the metrics, dashboards and goal lists apps ship
+# (dashboard_defaults.py) after every migrate. Off: only `manage.py
+# dashboard_defaults` does it. Off in test settings. docs/skills/app-defaults.md.
+SMALLSTACK_DASHBOARD_DEFAULTS_SYNC = config("SMALLSTACK_DASHBOARD_DEFAULTS_SYNC", default=True, cast=bool)
+# What a new goal list tracks until someone changes it on its History page: any of
+# hourly, daily, weekly, monthly, quarterly. Empty makes tracking entirely opt-in.
+SMALLSTACK_SNAPSHOT_DEFAULT_CADENCES = ["weekly"]
+# Days to keep captures, per cadence. One not listed is kept for good. An hourly list
+# adds about 8,760 captures a year.
+SMALLSTACK_SNAPSHOT_KEEP_DAYS = {"hourly": 90, "daily": 730}

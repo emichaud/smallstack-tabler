@@ -58,8 +58,16 @@ ds = get_dataset("open_tickets")
 ds.schema()                           # typed columns + filter widgets  ← build the UI from this
 ds.rows(filters={"status": "open"})   # reduced rows: [ {col: val, ...}, ... ]
 ds.series("assignee", measure="hours_spent", agg="sum")   # [{label, value}] for bar/pie
+ds.series("created_at", grain="week")                      # a trend: [{label, value, lo, hi}], oldest first
+ds.series("assignee", sort={"by": "value", "dir": "desc"}, limit=5)   # top 5 by volume
+ds.cells("weekday", "hour")                                # heatmap: complete [{x, x_label, y, y_label, value}]
 ds.scalar(measure="hours_spent", agg="sum")               # one number for a KPI tile (no GROUP BY)
 ```
+
+`agg` is `count`, `sum`, `avg`, `min`, `max`, `distinct` or `median`. A median is computed in the
+database, grouped or not: `percentile_cont(0.5)` on Postgres, a `MEDIAN` aggregate the app
+registers on each SQLite connection, Oracle's own. On any other backend it's refused with a
+ValueError, and `schema()["aggs"]` leaves it out. Like `avg`, it has no value over no rows.
 
 Over HTTP the same operations are:
 
@@ -69,7 +77,9 @@ GET /smallstack/datasets/<key>/schema/          → schema
 GET /smallstack/datasets/<key>/?<field>=<val>   → rows (query params are filters)
 GET /smallstack/datasets/<key>/?format=csv      → rows as a CSV download (text/csv attachment)
 GET /smallstack/datasets/<key>/series/?dimension=assignee&measure=hours_spent&agg=sum
+GET /smallstack/datasets/<key>/series/?dimension=assignee&sort=-value&limit=5   → a top 5
 GET /smallstack/datasets/<key>/scalar/?measure=hours_spent&agg=sum   → {value} for a KPI tile
+GET /smallstack/datasets/<key>/cells/?dimension=weekday&dimension2=hour  → {cells: [...]}
 ```
 
 `scalar()` (and the `/scalar/` route, or `/series/` with no `dimension`) is an ungrouped `qs.aggregate()` — one DB round-trip, one number. `agg="count"` or no `measure` counts rows; an empty set yields `0`.
@@ -101,15 +111,134 @@ def surveys(request=None):
 
 `series(dimension, measure="csat_pct")` and `scalar(measure="csat_pct")` compute `sum(numerator) / sum(denominator)` **in the database** per group (`× 100` for `percent`), returning **`None`** (not 0) for an empty denominator — never the average of per-row ratios. Declared measures appear in `schema()["columns"]` with `role: "measure", computed: true`, and the MCP tool advertises them as valid `measure` values. `agg` is ignored for a declared measure (the ratio defines its own aggregation).
 
-### Explicit date ranges
+### Explicit lookups — ranges, comparisons, "is not", "contains", periods
 
-Any date/datetime column accepts half-open bounds — `<col>__gte` / `<col>__lt` (ISO date or datetime) — anywhere filters are accepted (rows/series/scalar, in-process and REST/MCP), alongside the `today/week/month/year` presets. Explicit bounds **win** if both are sent for the same column; unparseable values are ignored. `schema()`'s filter entry for a date column carries `"range": true` so a UI can offer a date-range picker.
+A flat filter key can carry a lookup suffix, anywhere filters are accepted (rows/series/scalar/cells,
+in-process and REST/MCP). Each is still one `{name: scalar}` key, so a dashboard link or an agent
+call carries it in a query string:
+
+| Column type | Suffixes | Value |
+|---|---|---|
+| `date`, `datetime` | `__gte` `__gt` `__lte` `__lt` | ISO date or datetime (`__gte`/`__lt` make a half-open range) |
+| `date`, `datetime` | `__period` | a period key (`mtd`, `last_30`, … — see Filter trees below), resolved at query time |
+| `integer`, `float`, `decimal` | `__gte` `__gt` `__lte` `__lt` | a number (an integer column takes whole numbers only) |
+| `string` | `__ne` (is not; rows without a value are kept), `__icontains` | text |
 
 ```python
 ds.rows(filters={"created_at__gte": "2026-07-01", "created_at__lt": "2026-07-08"})  # one week
+ds.scalar(filters={"created_at__period": "mtd", "status__ne": "closed", "hours_spent__gt": "8"})
 ```
 
+A lookup on a column **wins** over its bare key if both are sent. A blank value is absent. A value
+that won't parse (`2026-13-45`, an unknown period, `fast` for a number) raises ValueError, a 400
+over REST: ignoring it would drop the narrowing and return more rows than asked for.
+`ds.filter_problems(filters)` says the same thing without querying, for a page that shows the
+problem instead (the dataset browser does). `schema()`'s filter entry lists each column's
+`lookups`, and a date column also carries `"range": true` for a range picker.
+
+### Filter trees — nested AND/OR, stored
+
+The flat `filters` map is AND-only and URL-shaped. A **filter tree** is the
+*stored* form — the JSON a builder UI, an agent or a person writes, saved on a
+metric (see [`dashboards.md`](dashboards.md)) and compiled to a `Q` each time.
+Every read path takes it as `filter_tree=` (rows / count / series / scalar /
+queryset), AND-ed with any flat filters; REST takes `?filter_tree=<json>`, the
+`query_dataset_<key>` MCP tool a `filter_tree` object.
+
+```python
+ds.scalar(filter_tree={"and": [
+    {"field": "status", "op": "=", "value": "open"},
+    {"or": [
+        {"field": "priority", "op": "in", "value": ["high", "urgent"]},
+        {"field": "age_days", "op": ">", "value": 30},
+    ]},
+    {"not": {"field": "assignee", "op": "isnull"}},
+    {"field": "created_at", "op": "period", "value": "mtd"},
+]})
+```
+
+| op | value | applies to |
+|---|---|---|
+| `=` `!=` | one value (`!=` keeps NULLs) | all |
+| `>` `>=` `<` `<=` | number / ISO date | numbers, dates |
+| `between` | `value` + `value2` (dates half-open `[lo, hi)`, numbers inclusive) | numbers, dates |
+| `in` | non-empty list | text, numbers, FKs |
+| `contains` | substring, case-insensitive | text |
+| `isnull` | `true` (default) / `false` | all |
+| `period` | a relative period key | dates |
+
+Word aliases are accepted (`eq`, `ne`, `is`, `is not`, `gt`, `gte`, `lt`,
+`lte`, `before`, `after`, `icontains`, `relative`). `schema()["filters"][*]`
+carries each field's `ops` and `column_type`, and date fields their `periods`.
+
+**Periods** (`apps/datasets/dateranges.py`) resolve *at query time*, so a saved
+"Month to date" stays current: `today`, `yesterday`, `wtd`, `pwtd`, `mtd`,
+`pmtd`, `qtd`, `pqtr`, `ytd`, `prev_year`, and generic `last_<N>` / `next_<N>`
+(days, today inclusive). Bounds are local midnights, half-open; "to date"
+periods run through the end of today. A key an earlier vocabulary used still
+resolves through `PERIOD_ALIASES` (`previous` → `yesterday`) but isn't offered.
+The module docstring lists how each period differs from the call_stats original
+it was ported from.
+
+**Strict, unlike flat filters.** An unknown field, a non-filterable field, an
+op the column's type doesn't take, an unparseable value or an unknown period
+raises `FilterTreeError` (a `ValueError` → REST 400) listing **every** problem
+with its path (`and[1].or[0].op: …`). It never drops a condition, because a
+dropped condition on a stored KPI makes the number silently *bigger*.
+Validate before saving with `ds.validate_filter_tree(tree)` (→ list of
+problems); `describe_filter_tree(tree, labels)` gives the one-line reading
+("Status = open AND (Priority in high, urgent OR Age > 30) AND Created: Month
+to date"); `and_trees(...)` combines trees without nesting.
+
+**The editor.** One visual editor draws a tree for people, shared by every
+page that filters a dataset: `datasets/js/filter-tree.js` +
+`datasets/css/filter-tree.css` (the metric builder mounts it; so does the
+dataset browser). Give it a mount element, the hidden input the form posts,
+and the dataset's `schema()`:
+
+```html
+<div id="my-tree"></div>
+<input type="hidden" name="filter_tree" value="{{ tree_json }}">
+<script src="{% static 'datasets/js/filter-tree.js' %}" defer></script>
+```
+
+```js
+var editor = SmallStackFilterTree.create({
+    mount: document.getElementById("my-tree"),
+    input: form.querySelector('[name="filter_tree"]'),
+    onChange: function (tree) { /* re-run a preview */ },
+});
+editor.setSchema(schema);   // from the schema endpoint or a json_script
+```
+
+It builds its field list from `schema()["filters"]` (so `ops`, `choices` and
+`periods` drive the controls), writes the JSON back on every edit, and keeps a
+tree it can't draw (a `not`, written over the API) as it is, offering to
+start over. Theme tokens only, no inline JS, so it is CSP-clean.
+
 ### Bucketed grouping (bands, categories, top-N + Other)
+
+**Time grains.** On a date/datetime dimension, `grain=` (`day`/`week`/`month`/`quarter`/`year`)
+groups by the calendar bucket, so a bar or line reads as a time series. It returns the most recent
+`limit` buckets oldest first, and each row's `lo`/`hi` ISO bounds select exactly that bucket's rows
+(`[lo, hi)`). Weeks start Monday, and labels look like "Wk of Mar 3, 2026". Empty buckets are
+absent; `apps.dashboards.trends.metric_trend` fills them in. A grain on a non-date column is
+ignored. It's the call_stats grammar, lifted verbatim, so extend it here rather than forking it.
+
+**Order.** `sort={"by": "category"|"value", "dir": "asc"|"desc"}` orders a grouped series. The
+default, category ascending, is the dimension's order (chronological for a grain). `by: "value"`
+ranks by the aggregate, and the database applies it before `limit`, so value-descending with
+`limit=N` is a top N, not the first N alphabetically. Ties read in the dimension's order; a group
+with no value sorts last. A grain keeps its window either way: the most recent `limit` periods,
+then sorted for display. REST: `?sort=value`, `-value`, `category` or `-category`.
+
+**Two dimensions — `cells()`.** `ds.cells(x, y, measure=…, agg=…)` groups by both at once for a
+heatmap or punch card. The grid is **complete**: every x × every y that occurs, row-major by y
+then x, so a chart can index marks by position. A combination with no rows carries 0 for
+count/distinct/sum and `None` for the rest. Each cell has the raw value and its label (`x`,
+`x_label`): drill down on the raw value (an FK's pk), show the label. More than 30 distinct values
+on either axis (`axis_limit=`) raises ValueError naming the field, rather than leaving part of the
+grid out. The `dimension2` capability says a dataset has two columns to cross.
 
 Raw-value grouping is fine until you need "wait time in bands," "top-N queues + Other," or a histogram. Pass `series()` a **dict** dimension instead of a column name — the buckets are the wire grammar (don't invent a second spelling):
 
@@ -156,7 +285,7 @@ This is the section that matters for a builder. **`schema()` is your entire sour
     {"name": "status",       "label": "Status",   "type": "string",   "role": "dimension"},
     {"name": "created_at",   "label": "Created",   "type": "datetime", "role": "dimension"},
     {"name": "assignee",     "label": "Assignee",  "type": "fk",       "role": "dimension"},
-    {"name": "hours_spent",  "label": "Hours",     "type": "float",    "role": "measure"}
+    {"name": "hours_spent",  "label": "Hours",     "type": "float",    "role": "measure", "unit": "hours"}
   ],
   "filters": [
     {"name": "status",   "label": "Status",  "type": "choice",  "choices": [["","All"],["open","Open"],["blocked","Blocked"]]},
@@ -165,6 +294,12 @@ This is the section that matters for a builder. **`schema()` is your entire sour
   ]
 }
 ```
+
+Every column carries a `unit`: what `@dataset(units={"hours_spent": "hours", "fee": "currency"})`
+declares, else a guess from the name (`*_seconds` → `seconds`, `*_minutes` → `minutes`), else
+`null`. A declared `percent` ratio's unit is `percent`. A builder offers formats from it rather
+than guessing from the column name. Every filter entry also lists its `lookups` (see Explicit
+lookups).
 
 ### Trick 1 — split pickers by `role`
 
@@ -304,7 +439,7 @@ The bundled datasets lean on the CRUDView fallback (every explorer-registered mo
 
 ## Exposing to agents (MCP)
 
-Set `enable_mcp=True` and the dataset becomes a `query_dataset_<key>` tool: the agent passes filter args, gets rows — or passes `group_by` (+ optional `measure`/`agg`) for a `[{label, value}]` series, or `scalar=true` (+ `measure`/`agg`, no `group_by`) for a single KPI number. The filter args apply in **all three** modes (rows, series, scalar), so a grouped or aggregated answer respects the same filters. FK columns come back expanded (`{id, name}`) so the agent reads names, not pks. A site-level `list_datasets` tool lets the agent discover what's queryable. Secure default is `mcp_access="staff"`; widen deliberately. This is the same "declare once, surface everywhere" pattern as `enable_api`/`enable_mcp` on a CRUDView.
+Set `enable_mcp=True` and the dataset becomes a `query_dataset_<key>` tool: the agent passes filter args, gets rows — or passes `group_by` (+ optional `measure`/`agg`) for a `[{label, value}]` series, or `scalar=true` (+ `measure`/`agg`, no `group_by`) for a single KPI number. The filter args apply in **all three** modes (rows, series, scalar), so a grouped or aggregated answer respects the same filters. FK columns come back expanded (`{id, name}`) so the agent reads names, not pks. A site-level `list_datasets` tool lists every dataset the caller may read (`query_tool` names its `query_dataset_<key>` tool, or is null when it has none, as the bundled ones don't by default, though metrics can still be built on them), and `describe_dataset {key}` returns the `schema()` (filterable fields with their filter-tree ops and periods) on the same terms. Every mode also takes a `filter_tree` object. Secure default is `mcp_access="staff"`; widen deliberately. This is the same "declare once, surface everywhere" pattern as `enable_api`/`enable_mcp` on a CRUDView.
 
 ## Composing on a dataset — the `queryset()` seam
 
@@ -316,7 +451,7 @@ qs = ds.queryset(request, filters={"status": "unanswered"})   # → a plain Quer
 # you own everything from here: qs.aggregate(...), your own paging, etc.
 ```
 
-`queryset(request=None, filters=None)` returns the dataset's queryset with the standard filter pipeline applied and **nothing else** — no serialization, limit, ordering, or expand. Same filter contract as `rows()` (unknown keys ignored); per-user scoping via the dataset function's `request` arg happens inside. Guaranteed: `ds.queryset(r, f).count() == len(ds.rows(request=r, filters=f))` for the same filters (unlimited). This is the supported seam for a reporter/BI layer that treats datasets as its source of blessed, filterable scopes.
+`queryset(request=None, filters=None, *, filter_tree=None)` returns the dataset's queryset with the standard filter pipeline applied and **nothing else** — no serialization, limit, ordering, or expand. Same filter contract as `rows()` (unknown keys ignored); per-user scoping via the dataset function's `request` arg happens inside. Guaranteed: `ds.queryset(r, f).count() == len(ds.rows(request=r, filters=f))` for the same filters (unlimited). This is the supported seam for a reporter/BI layer that treats datasets as its source of blessed, filterable scopes.
 
 ## Bundled framework datasets
 
@@ -325,6 +460,7 @@ Every framework module that creates data ships a lightweight, read-only dataset 
 - **Namespaced keys** — every key is `smallstack_<thing>` (the registry is first-wins, so a bare `notifications` key would shadow yours; the prefix is reserved for the framework).
 - **Explicit column allow-lists** — rows project onto the declared columns, so credential hashes, webhook secrets, OAuth codes, raw payloads/bodies, post bodies and task kwargs are never columns.
 - **Uniform exposure** — REST is always on (staff-gated, `?format=csv` works); MCP tools follow `SMALLSTACK_FRAMEWORK_DATASETS_MCP` (default **off** — two dozen `query_dataset_*` tools crowd an agent's list). `SMALLSTACK_FRAMEWORK_DATASETS_ENABLED=False` registers none of them.
+- **Model permissions apply** — a dataset over a model that checks Django model permissions (accounts, API tokens and the other access models always do; any model whose CRUDView sets `model_permissions`) needs that model's `view` permission on every surface (browse page, index, REST, MCP, metrics and dashboards), staff included, so `smallstack_users` and `smallstack_api_tokens` need `accounts.view_user` / `smallstack.view_apitoken`. Over REST such a dataset answers 404, as if absent. `apps.datasets.registry.user_may_view_model(dfn, user)` is the check.
 
 | Module | Keys |
 |---|---|
@@ -345,7 +481,7 @@ Every framework module that creates data ships a lightweight, read-only dataset 
 
 Not covered on purpose: `LoginCode` and `OAuthAuthorizationCode` (credential tables), blog `Subscriber` (email addresses — reach subscribers through `smallstack_blog_subscriptions` by FK), and the modules with no models of their own (api, explorer, help, search, tokenmgr, datasets). `framework_dataset_keys()` lists what is registered at runtime.
 
-**The staff browser** — `/smallstack/datasets/browse/` ("Datasets" in the admin nav) lists every registered dataset (project ones first, then the bundled set) and opens each at `browse/<key>/`: a filter bar built from `schema()["filters"]` (choice/boolean dropdowns, text boxes, date presets + a from/before range), a sortable, paged table built from `schema()["columns"]`, a one-dimension roll-up (group by any column, optional measure + aggregate, declared ratios included) via `series()`, and a **Download CSV** card that deep-links the REST export with the active filters (hidden when the dataset doesn't publish REST). It is the reference consumer of the schema contract: it hard-codes no model, so a downstream `@dataset` appears there with zero extra work. Views live in `apps/datasets/views.py`.
+**The staff browser** — `/smallstack/datasets/browse/` ("Datasets" in the admin nav) lists every registered dataset (project ones first, then the bundled set) and opens each at `browse/<key>/`: a filter bar built from `schema()["filters"]` (choice/boolean dropdowns, text boxes, date presets + a from/before range), a sortable, paged table built from `schema()["columns"]`, a **More conditions** section (the shared filter-tree editor, travelling as `?filter_tree=<json>` — the parameter REST takes — and AND-ed with the quick filters; a tree that can't be applied shows its problem and no rows), a one-dimension roll-up (group by any column, optional measure + aggregate, declared ratios included) via `series()`, and a **Download CSV** card that deep-links the REST export with the active filters and tree (hidden when the dataset doesn't publish REST). The filters apply as they change: the form hx-gets the page, takes the rows card from it and swaps in the roll-up, the live row count and the CSV link (`hx-select-oob`), so the form and the tree editor stay put; `browse.js` raises `ds-change` for the tree editor, typing in a search box and the roll-up selects; Apply remains for a browser without scripts. At the filters' right edge, the row count and **Make a metric**: a modal (`dashboards_metric_quick`, `MetricQuickView`) with the dataset, every condition on screen as one filter tree (quick filters become leaves: a text box `contains`, a choice `=`, a date preset a `period`, explicit bounds `>=`/`<`) and the roll-up's aggregate — a metric *is* the filtered table reduced to one number. The modal asks for the name, how the rows become a number, the period column, the format and who sees it, shows the value as the choices change, saves through `MetricForm`, and then offers to open the metric, make a card, or make another from the same rows, so several metrics come from one filtered table without leaving it; **Open the full form instead** is the metric page prefilled (`browse_prefill`). A grouped roll-up also offers **keep this roll-up as a card** (Grouped stat, Ranked bars, Pie chart for a count or sum): the same modal with `then=card`, whose saved state leads to the component builder on that card. Both are absent when the dashboards app isn't installed or the conditions can't be applied. **Start from a metric** (above the filters, when this dataset has saved metrics the viewer can see, `DatasetBrowseView._saved_metrics`) loads one: its tree under More conditions and its roll-up, marked `?metric=<key>` and kept in the form as the filters change (a bare `?metric=<key>`, the no-JS pick, redirects to that address). Make a metric is then a copy: the modal gets `from=<key>` with the name "… (copy)", the period column and the format, and its save carries the source's thresholds, unit, description and tags; the full form (`MetricCreateMixin`) lays the browser's conditions over the same copy. The source never changes. It is the reference consumer of the schema contract: it hard-codes no model, so a downstream `@dataset` appears there with zero extra work. Views live in `apps/datasets/views.py`.
 
 A downstream reporting tool consumes them exactly like any dataset:
 
@@ -369,6 +505,11 @@ a dataset declared elsewhere (how the bundled `smallstack_*` calendars are
 done). The calendar reads rows through `queryset()`, so scoping and `link=`
 apply unchanged. See [`calendar.md`](calendar.md).
 
+Coming from call_stats' `Dataset.day_entries()` (a day's entries, ranges spread over each day
+they span, "+N more"): that's the calendar protocol. Its `day_counts()` (one number per day) is
+`ds.series(date_field, grain="day", filters={f"{date_field}__gte": start, f"{date_field}__lt": end})`,
+which returns each day's `lo`/`hi` too.
+
 ## When to reach for a dataset vs. a CRUDView
 
 - **Dataset** — read-only, analytical: "a filtered table to slice, chart, or export." No edit/detail pages. Can join/annotate/aggregate; source is any queryset.
@@ -384,6 +525,7 @@ They compose: a dataset can return a queryset over the same model a CRUDView man
 - `series()`/`scalar()` validate `dimension`/`measure` against the dataset's columns: an unknown name raises `ValueError` in-process and returns a JSON **400** over REST (not a 500). `rows()` still silently ignores unknown ordering/filter/expand keys.
 - **CSV export**: the rows route honours `?format=csv` — same rows + filters, streamed as a `text/csv` attachment (`<key>.csv`) with the schema columns as the header (expanded FK cells render as the name). That's the "export screen" path; no extra config.
 - `filterable` defaults to **all columns**. Numeric columns filter by exact match; text columns with many distinct values fall back to substring (`icontains`); low-cardinality columns become dropdowns.
+- `access=` (`"staff"` default, or `"auth"`) says who may read the dataset through **in-app** surfaces that evaluate it for a user — metrics, dashboards, reports (`apps.datasets.registry.user_may_read`). It is independent of `enable_api` (REST, staff-only) and `mcp_access` (the MCP tool tier). `schema()` also reports `aggs` (now including `distinct`) and `capabilities` (`measure`, `dimension`, `dimension2`, `date` — `apps/datasets/capabilities.py`), so a builder can grey out what a dataset can't do.
 - The bundled `smallstack_*` datasets are governed by `SMALLSTACK_FRAMEWORK_DATASETS_ENABLED` (default on) and `SMALLSTACK_FRAMEWORK_DATASETS_MCP` (default off). Declare your own in an app's `datasets.py`; never reuse the `smallstack_` prefix.
 
 ## Anti-patterns

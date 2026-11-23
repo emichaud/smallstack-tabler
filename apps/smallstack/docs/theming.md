@@ -27,7 +27,8 @@ Everything below is the **reference** for that built-in theme — its colors, va
 
 | File | Purpose |
 |------|---------|
-| `static/smallstack/css/theme.css` | Main theme CSS with all custom properties |
+| `static/smallstack/css/core.css` | All the custom properties (design tokens), imported by `theme.css` |
+| `static/smallstack/css/theme.css` | Main theme CSS: layout and the page shell |
 | `static/smallstack/css/palettes.css` | Color palette overrides (per-palette variables) |
 | `static/smallstack/js/theme.js` | Dark mode toggle, palette switching, UI interactions |
 | `apps/smallstack/palettes.yaml` | Palette registry (metadata for the palette selector UI) |
@@ -46,11 +47,41 @@ BRAND_NAME = "My Project"
 BRAND_LOGO_TEXT = "brand/my-logo-text.svg"  # Topbar (32px height)
 ```
 
-For complete branding documentation including logo specifications and asset creation, see the [Customization Guide](/help/smallstack/customization/#customizing-branding).
+For complete branding documentation including logo specifications and asset creation, see the [Customization Guide](/smallstack/help/smallstack/customization/#customizing-branding).
+
+## The Logo Follows the Palette
+
+The stock SmallStack logo is drawn from the theme, so it changes with the palette and with
+dark or light mode: the four-square mark and the word *SmallStack* take the palette's accent.
+You see it in the top bar and on the sign-in pages. Switch palette from the user menu and the
+logo changes with everything else.
+
+A project that sets its own `BRAND_LOGO_TEXT` (or `BRAND_LOGO` and `BRAND_LOGO_DARK`) keeps its
+own image, in its own colours.
+
+For anywhere outside the app (a README, a slide, an email) the same logo ships as files, one set
+for each palette, in `static/smallstack/brand/palettes/`:
+
+<table>
+<thead><tr><th scope="col">Palette</th><th scope="col">On a dark background</th><th scope="col">On a light background</th></tr></thead>
+<tbody>
+<tr><th scope="row">Django</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-django-dark.svg" alt="Django logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-django-light.svg" alt="Django logo for a light background" height="34"></td></tr>
+<tr><th scope="row">Blue</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-dark-blue-dark.svg" alt="Blue logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-dark-blue-light.svg" alt="Blue logo for a light background" height="34"></td></tr>
+<tr><th scope="row">Purple</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-purple-dark.svg" alt="Purple logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-purple-light.svg" alt="Purple logo for a light background" height="34"></td></tr>
+<tr><th scope="row">Orange</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-orange-dark.svg" alt="Orange logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-orange-light.svg" alt="Orange logo for a light background" height="34"></td></tr>
+<tr><th scope="row">Contrast</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-high-contrast-dark.svg" alt="Contrast logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-high-contrast-light.svg" alt="Contrast logo for a light background" height="34"></td></tr>
+<tr><th scope="row">Gold</th><td style="background:#0d1117;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-gold-dark.svg" alt="Gold logo for a dark background" height="34"></td><td style="background:#ffffff;padding:10px 14px;"><img src="/static/smallstack/brand/palettes/logo-gold-light.svg" alt="Gold logo for a light background" height="34"></td></tr>
+</tbody>
+</table>
+
+Each palette has four files: `logo-<palette>-dark.svg` and `logo-<palette>-light.svg` (the mark
+and the name), and `icon-<palette>-dark.svg` and `icon-<palette>-light.svg` (the mark alone).
+After adding or retuning a palette, `uv run python manage.py brand_logos` writes them again from
+the palette's colours.
 
 ## Changing Colors
 
-All colors are defined as CSS custom properties in `static/smallstack/css/theme.css`. To customize:
+All colors are defined as CSS custom properties in `static/smallstack/css/core.css`. To customize:
 
 ### Edit Light Mode Colors
 
@@ -157,7 +188,7 @@ The effective palette is resolved in this order (first match wins):
 
 For authenticated users, the profile choice is synced to localStorage automatically, so these stay aligned. After changing the system default, anonymous users (or users without a profile override) may still see the old palette until their browser localStorage is cleared.
 
-The Profile Edit page also lets users set their **timezone**, which controls how dates and times are displayed throughout the site. See [Working with Timezones](/help/smallstack/timezones/) for details.
+The Profile Edit page also lets users set their **timezone**, which controls how dates and times are displayed throughout the site. See [Working with Timezones](/smallstack/help/smallstack/timezones/) for details.
 
 ### How It Works
 
@@ -247,24 +278,30 @@ The theme respects the user's system preference (`prefers-color-scheme`) when no
 
 ### Sidebar Links
 
-Edit `templates/smallstack/includes/sidebar.html`:
+Register it from your app's `AppConfig.ready()`; don't edit `sidebar.html`, which is SmallStack's and is replaced on every upgrade. The registry orders the link, hides it from people who can't open the page, and puts it in the sidebar and the topbar:
 
-```html
-<li class="nav-item">
-    <a href="{% url 'your_url_name' %}" class="nav-link {% nav_active 'your_url_name' %}">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <!-- SVG icon path -->
-        </svg>
-        <span>Your Link</span>
-    </a>
-</li>
+```python
+# apps/myapp/apps.py
+from django.apps import AppConfig
+
+
+class MyAppConfig(AppConfig):
+    name = "apps.myapp"
+
+    def ready(self):
+        from apps.smallstack.navigation import nav
+
+        nav.register(
+            section="main",            # or "resources", "admin"
+            label="Your Page",
+            url_name="myapp:index",
+            icon_svg='<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="..."/></svg>',
+            order=20,
+            auth_required=True,        # staff_required=True for staff-only pages
+        )
 ```
 
-### Section Titles
-
-```html
-<li class="nav-section-title">Section Name</li>
-```
+Sections and submenus: [Navigation](/smallstack/help/smallstack/navigation/).
 
 ### Active State
 
@@ -340,7 +377,7 @@ Use `{% nav_active 'url_name' %}` to highlight the current page:
 
 ## Creating a Parallel Theme
 
-> **Step-by-step guide:** See [Adding Your Own Theme](/help/smallstack/adding-your-own-theme/) for a complete tutorial with code examples, including how to preserve access to SmallStack admin apps from your custom navbar.
+> **Step-by-step guide:** See [Adding Your Own Theme](/smallstack/help/smallstack/adding-your-own-theme/) for a complete tutorial with code examples, including how to preserve access to SmallStack admin apps from your custom navbar.
 
 SmallStack ships with a Django admin-based CSS theme, but you can add a second CSS framework (Bootstrap, Tailwind, Tabler, etc.) **alongside** the default without removing it. This lets you build new pages with the new framework while existing pages continue to work.
 
@@ -458,7 +495,7 @@ The Profile Edit page groups three user-level preferences that affect the entire
 
 All three follow the same pattern: system default → user override → persisted on profile. Theme and palette are applied via `data-theme` and `data-palette` attributes on `<html>`. Timezone is activated per-request by `TimezoneMiddleware`.
 
-When a user's timezone differs from the server timezone, dates display with a dotted underline and a hover tooltip showing the server time and UTC. See [Working with Timezones](/help/smallstack/timezones/) for the full architecture.
+When a user's timezone differs from the server timezone, dates display with a dotted underline and a hover tooltip showing the server time and UTC. See [Working with Timezones](/smallstack/help/smallstack/timezones/) for the full architecture.
 
 ## Best Practices
 

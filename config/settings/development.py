@@ -38,7 +38,7 @@ SITE_DOMAIN = config("SITE_DOMAIN", default="localhost:8007")
 
 # Database
 # SQLite is the default - simple, zero-config, perfect for development
-# See /help/database-sqlite/ for why SQLite works great in production too
+# See /smallstack/help/smallstack/database-sqlite/ for why SQLite works great in production too
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
@@ -51,7 +51,7 @@ DATABASES = {
 # 1. Start PostgreSQL: docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
 # 2. Install driver: uv add psycopg[binary]
 # 3. Uncomment below and comment out SQLite config above
-# See /help/database-postgresql/ for full setup guide
+# See /smallstack/help/smallstack/database-postgresql/ for full setup guide
 #
 # DATABASES = {
 #     "default": {
@@ -136,11 +136,19 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
-        # MCP gets its own namespace so production tuning can be precise
-        # without touching the wider apps.* tree. Do NOT register a
-        # top-level "mcp" logger — it conflicts with the mcp package's
-        # internal logger.
-        "smallstack.mcp": {
+        # SmallStack's apps log under __name__ (apps.dashboards.metrics, …), so
+        # "apps" covers them. "smallstack" is kept for code written to the old
+        # convention (getLogger("smallstack.<app>")), which would otherwise fall
+        # through to root and lose its INFO lines in production.
+        "smallstack": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        # MCP at INFO on its own: at DEBUG it logs every tool it registers
+        # (100+ lines on each manage.py command). Do NOT register a top-level
+        # "mcp" logger — it conflicts with the mcp package's internal logger.
+        "apps.mcp": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

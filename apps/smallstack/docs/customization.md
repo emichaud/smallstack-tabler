@@ -39,24 +39,25 @@ The `apps/website/` app is your project's home. Customize it freely without worr
 
 ### How It Works
 
-SmallStack uses a **thin wrapper + include pattern** to prevent merge conflicts:
+Your pages and SmallStack's are kept in different places, so pulling upstream doesn't conflict
+with what you've written:
 
 ```
+apps/
+├── website/               # YOURS: the home view and urls, your own pages, chart card types
+└── showcase/              # SmallStack's demo pages (about, getting started, starter, search…): delete it
 templates/
 ├── website/
-│   ├── home.html          # Thin wrapper (YOU OWN THIS)
-│   └── about.html         # Thin wrapper (YOU OWN THIS)
-├── starter.html           # Thin wrapper (YOU OWN THIS)
-└── smallstack/
-    └── pages/             # SmallStack marketing content (UPSTREAM)
-        ├── home_content.html
-        ├── about_content.html
-        ├── starter_content.html
-        ├── starter_css.html
-        └── starter_js.html
+│   ├── base.html          # The public site's base (YOURS)
+│   └── home.html          # Thin wrapper → smallstack/pages/home_content.html (YOURS)
+└── 404.html               # Optional: YOUR error page (the defaults are in apps/smallstack/templates/)
 ```
 
-The wrapper templates use `{% include %}` to pull in SmallStack's default marketing content. When you're ready to customize, **replace the wrapper's content block with your own markup** — the SmallStack marketing fragments stay untouched, so upstream updates never conflict with your pages.
+`home.html` uses `{% include %}` to pull in SmallStack's default home content. When you're ready
+to customize, **replace the include with your own markup**: the fragment in
+`smallstack/pages/` stays untouched, so upstream updates never conflict with your page. The error
+pages work the same way from the other side: SmallStack's 400/403/404/500 are app templates, and
+a `templates/404.html` of your own takes precedence without upstream ever touching it.
 
 ### Edit the Homepage
 
@@ -99,7 +100,12 @@ Replace the `{% include %}` with your own content:
 {% endblock %}
 ```
 
-Do the same for `templates/website/about.html` and `templates/starter.html` when you're ready.
+SmallStack's other public pages (about, getting started, prompts, the two platform pages, the
+starter pages, the public search) live in **`apps/showcase/`**, which isn't yours to edit: delete it
+when you don't want them. That's three steps: the `apps/showcase/` directory, `"apps.showcase"` in
+`INSTALLED_APPS` and its `include()` in `config/urls.py`. Nothing outside it links to it
+unguarded (the public topbar and the home page reverse its URLs with `{% url … as x %}`, so the
+links just go).
 
 **Tip:** Use `{% block breadcrumbs %}{% endblock %}` to hide breadcrumbs on landing pages.
 
@@ -190,13 +196,13 @@ Create the files:
 ```
 apps/help/content/
 ├── _config.yaml
-├── index.md           # /help/index/
-├── user-guide.md      # /help/user-guide/
+├── index.md           # /smallstack/help/index/
+├── user-guide.md      # /smallstack/help/user-guide/
 └── dev/
-    └── api.md         # /help/dev/api/
+    └── api.md         # /smallstack/help/dev/api/
 ```
 
-SmallStack docs automatically appear at `/help/smallstack/*` when enabled.
+SmallStack docs automatically appear at `/smallstack/help/smallstack/*` when enabled.
 
 ### Writing Documentation Pages
 
@@ -213,7 +219,7 @@ description: A brief description for navigation
 Your markdown content here. You can use:
 
 - **Variables**: {{ project_name }} renders from _config.yaml
-- **Links**: [Getting Started](/help/smallstack/getting-started/)
+- **Links**: [Getting Started](/smallstack/help/smallstack/getting-started/)
 - **Code blocks**: With syntax highlighting
 - **Tables**: Standard markdown tables
 ```
@@ -229,9 +235,9 @@ Your project documentation lives here.
 
 ## Quick Links
 
-- [User Guide](/help/user-guide/) - Learn how to use the app
-- [API Reference](/help/dev/api/) - Developer documentation
-- [SmallStack Docs](/help/smallstack/readme/) - Framework reference
+- [User Guide](/smallstack/help/user-guide/) - Learn how to use the app
+- [API Reference](/smallstack/help/dev/api/) - Developer documentation
+- [SmallStack Docs](/smallstack/help/smallstack/readme/) - Framework reference
 ```
 
 ## Customizing Branding
@@ -283,7 +289,7 @@ The topbar displays `BRAND_LOGO_TEXT` at **32px height**. Design your logos acco
 
 **Changing Logo Display Size:**
 
-The logo size is controlled by CSS, not the SVG dimensions. To change the topbar logo height, add a CSS override file (e.g., `static/css/project.css`) or edit `static/smallstack/css/theme.css`:
+The logo size is controlled by CSS, not the SVG dimensions. SmallStack has no project-wide stylesheet hook: a `static/css/project.css` of your own applies only on pages that load it in `{% block extra_css %}`, which SmallStack's own pages don't. So for the topbar on every page, the rule below goes in `static/smallstack/css/theme.css` (and is yours to carry across upgrades):
 
 ```css
 .site-logo .logo-img {
@@ -382,7 +388,7 @@ SMALLSTACK_COLOR_PALETTE = "purple"  # Options: django, light-blue, dark-blue, o
 
 Individual users can override the system palette from their **Profile Edit** page using the palette swatch selector. Their choice persists across sessions and overrides the system default.
 
-For full details on adding custom palettes, see [Theming & Customization](/help/smallstack/theming/#color-palettes).
+For full details on adding custom palettes, see [Theming & Customization](/smallstack/help/smallstack/theming/#color-palettes).
 
 ### Adding Topbar Navigation
 
@@ -398,7 +404,7 @@ SMALLSTACK_TOPBAR_NAV_ITEMS = [
 ]
 ```
 
-Pairs well with `SMALLSTACK_SIDEBAR_OPEN = False` or `SMALLSTACK_SIDEBAR_ENABLED = False` for a hero-style website layout. See [Topbar Navigation](/help/smallstack/topbar-navigation/) for submenus, conditional visibility, and the full item format.
+Pairs well with `SMALLSTACK_SIDEBAR_OPEN = False` or `SMALLSTACK_SIDEBAR_ENABLED = False` for a hero-style website layout. See [Topbar Navigation](/smallstack/help/smallstack/topbar-navigation/) for submenus, conditional visibility, and the full item format.
 
 ### Controlling Auth Visibility
 
@@ -410,7 +416,7 @@ SMALLSTACK_SIGNUP_ENABLED=False   # Hide Sign Up, 404 the signup URL
 SMALLSTACK_LOGIN_ENABLED=False    # Hide Login button too (admin still works)
 ```
 
-See [Authentication](/help/smallstack/authentication/) for all options.
+See [Authentication](/smallstack/help/smallstack/authentication/) for all options.
 
 > **Note:** With settings-based branding, most template files won't create merge conflicts on upstream pulls.
 
@@ -443,24 +449,23 @@ When merging upstream, you may see conflicts in:
 | File | Resolution |
 |------|------------|
 | `uv.lock` | Take upstream version: `git checkout --theirs uv.lock` |
-| `templates/smallstack/base.html` | Keep your branding changes |
-| `templates/smallstack/includes/topbar.html` | Keep your logo |
-| `templates/registration/*.html` | Keep your branding |
 | `config/deploy.yml` | Keep your deployment config |
 
-**Note:** `templates/website/home.html`, `about.html`, and `templates/starter.html` are thin wrappers. Once you've replaced the `{% include %}` with your own content, upstream changes to SmallStack's marketing pages land in `templates/smallstack/pages/` — a directory you don't touch — so no conflicts.
+Branding and navigation don't need SmallStack's templates edited, so they don't conflict: the name, logo, icons and footer links are `BRAND_*` settings, and sidebar links are `nav.register()` calls in your own app. If you did edit `smallstack/base.html` or `includes/topbar.html`, move the change to those, then take upstream's template.
+
+**Note:** `templates/website/home.html` is a thin wrapper. Once you've replaced the `{% include %}` with your own content, upstream changes to SmallStack's home content land in `smallstack/pages/`, which you don't touch, so no conflicts. SmallStack's demo pages are in `apps/showcase/`: delete it, or take upstream's version on a merge.
 
 ### Conflict-Free Zones
 
 These areas are designed for customization and won't conflict:
 
 - `apps/website/` - Your project pages and views
-- `templates/website/` - Your page templates (thin wrappers you replace)
-- `templates/starter.html` - Starter page wrapper (replace with your own)
+- `templates/website/` - Your page templates
+- `templates/400.html` … `500.html` - Your own error pages, if you want them (they override SmallStack's)
 - `apps/help/content/` - Your documentation (entire folder is yours)
 - `.kamal/secrets` - Your secrets (gitignored)
 
-SmallStack's marketing content lives in `templates/smallstack/pages/` and updates automatically from upstream without touching your customized wrappers.
+SmallStack's home content lives in `smallstack/pages/` and its demo pages in `apps/showcase/`; both update from upstream without touching your pages.
 
 ## Kamal Deployment Configuration
 
@@ -502,26 +507,29 @@ CSRF_TRUSTED_ORIGINS=https://myproject.com,https://www.myproject.com
 
 | What to Customize | Where |
 |------------------|-------|
-| Homepage & pages | `templates/website/home.html`, `about.html` — replace the `{% include %}` with your own content |
-| Starter page | `templates/starter.html` — same pattern |
+| Homepage & pages | `templates/website/home.html` — replace the `{% include %}` with your own content; add pages in `apps/website/` |
+| Error pages | `templates/404.html` (etc.) — yours override SmallStack's defaults |
+| SmallStack's demo pages | `apps/showcase/` — delete the app (and its two lines) |
 | Your documentation | `apps/help/content/` (entire folder is yours) |
 | Deployment config | `config/deploy.yml`, `.kamal/secrets` |
 | User profile fields | `apps/profile/models.py` |
 | Background tasks | `apps/tasks/` |
 
-### Will Conflict on Upstream Merge (Expected)
+### Customizing Without Touching SmallStack's Files
 
-| What to Customize | Where |
+| What to Customize | Where (no merge conflict) |
 |------------------|-------|
-| Site title & footer | `templates/smallstack/base.html` |
-| Header logo | `templates/smallstack/includes/topbar.html` |
-| Auth page titles | `templates/registration/*.html` |
-| Sidebar navigation | `templates/smallstack/includes/sidebar.html` |
-| Theme colors | `static/smallstack/css/theme.css` (or use palette system / add overrides in `static/css/project.css`) |
+| Site name, logo, icons, tagline | `BRAND_*` in `config/settings/smallstack.py` or the environment (`BRAND_NAME`, `BRAND_LOGO`, …) |
+| Footer privacy / terms links | `BRAND_PRIVACY_URL`, `BRAND_TERMS_URL` |
+| Sidebar and topbar links | `nav.register()` in your app's `AppConfig.ready()` ([Navigation](/smallstack/help/smallstack/navigation/)) |
+| Theme colors | A palette ([Theming](/smallstack/help/smallstack/theming/)) |
+| A page's layout | Your own template in `templates/website/` (or your app), extending `smallstack/base.html` |
+
+Editing a file under `apps/smallstack/templates/` or `apps/smallstack/static/` will conflict on the next merge; reach for the rows above first.
 
 ## Next Steps
 
-- [Getting Started](/help/smallstack/getting-started/) - Quick setup guide
-- [Theming](/help/smallstack/theming/) - Customize colors and dark mode
-- [Adding Your Own Theme](/help/smallstack/adding-your-own-theme/) - Use Bootstrap, Tailwind, or any CSS framework alongside SmallStack
-- [Kamal Deployment](/help/smallstack/kamal-deployment/) - Deploy to production
+- [Getting Started](/smallstack/help/smallstack/getting-started/) - Quick setup guide
+- [Theming](/smallstack/help/smallstack/theming/) - Customize colors and dark mode
+- [Adding Your Own Theme](/smallstack/help/smallstack/adding-your-own-theme/) - Use Bootstrap, Tailwind, or any CSS framework alongside SmallStack
+- [Kamal Deployment](/smallstack/help/smallstack/kamal-deployment/) - Deploy to production

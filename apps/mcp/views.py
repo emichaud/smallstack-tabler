@@ -13,6 +13,7 @@ failure mode observed downstream — please don't "simplify" them away.
 
 from __future__ import annotations
 
+import difflib
 import inspect
 import json
 import logging
@@ -36,7 +37,7 @@ from .server import (
     set_context,
 )
 
-logger = logging.getLogger("smallstack.mcp.views")
+logger = logging.getLogger(__name__)
 
 # -32xxx error codes per JSON-RPC 2.0
 _RPC_PARSE_ERROR = -32700
@@ -146,7 +147,7 @@ class McpHttpView(View):
         # A syntactically valid but non-object body (array/string/number/null,
         # e.g. a JSON-RPC batch) must yield -32600 Invalid Request, not an
         # uncaught AttributeError → HTTP 500. This runs pre-auth, so it also
-        # closes a trivial unauthenticated way to spam 500s. (Audit L2.)
+        # closes a trivial unauthenticated way to spam 500s.
         if not isinstance(payload, dict):
             logger.warning("MCP REQ invalid_request: non-object body")
             return _rpc_error(
@@ -260,7 +261,9 @@ class McpHttpView(View):
                 tool_args = params.get("arguments") or {}
                 tdef = TOOL_REGISTRY.get(name)
                 if tdef is None:
-                    return _rpc_error(rpc_id, _RPC_METHOD_NOT_FOUND, f"Unknown tool: {name}")
+                    close = difflib.get_close_matches(str(name), TOOL_REGISTRY, n=3)
+                    hint = f"; did you mean {', '.join(close)}?" if close else "; tools/list has them all"
+                    return _rpc_error(rpc_id, _RPC_METHOD_NOT_FOUND, f"Unknown tool: {name}{hint}")
 
                 # Tool-level access check
                 deny = check_tool_access(token, tdef, mixins=None)
@@ -271,6 +274,25 @@ class McpHttpView(View):
                 handler = TOOL_HANDLERS.get(name)
                 if handler is None:
                     return _rpc_error(rpc_id, _RPC_INTERNAL_ERROR, f"Tool {name} has no handler")
+
+                # The schema says additionalProperties: false, so hold callers to it.
+                # Dropping a misspelt argument and reporting success is the worst
+                # answer a model can get: it believes the edit landed.
+                schema = tdef.input_schema or {}
+                if isinstance(tool_args, dict) and schema.get("additionalProperties") is False:
+                    accepted = schema.get("properties") or {}
+                    unknown = sorted(k for k in tool_args if k not in accepted)
+                    if unknown:
+                        refusal = {
+                            "error": {
+                                "code": "invalid_argument",
+                                "message": f"unknown argument(s) {unknown}; this tool accepts {sorted(accepted)}",
+                            }
+                        }
+                        return _rpc_result(
+                            rpc_id,
+                            {"content": [{"type": "text", "text": json.dumps(refusal)}], "isError": True},
+                        )
 
                 tool_started = time.perf_counter()
                 try:
@@ -308,8 +330,10 @@ class McpHttpView(View):
                 # isError:false made a refusal indistinguishable from success at
                 # the protocol level — a model checking isError would read
                 # "approval refused" as "approved". For an approvals gate that is
-                # the one failure you cannot have. (F-20.)
-                is_error = isinstance(result_value, dict) and "error" in result_value
+                # the one failure you cannot have. Truthy, not "in": a
+                # success that reports ``"error": null`` (metric_value's shape) is
+                # still a success.
+                is_error = isinstance(result_value, dict) and bool(result_value.get("error"))
                 logger.info(
                     "MCP TOOL tool=%s user_pk=%s duration_ms=%.2f result_len=%d is_error=%s",
                     name, getattr(user, "pk", None), duration, len(text), is_error,

@@ -16,6 +16,7 @@ an API endpoint.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from django.urls import NoReverseMatch, reverse
@@ -24,6 +25,7 @@ from django.views.generic.base import ContextMixin
 
 if TYPE_CHECKING:
     from django.db.models import Model
+    from django.http import HttpResponse
 
     from apps.explorer.registry import ModelInfo
 
@@ -51,12 +53,37 @@ def get_standalone_widgets() -> list[DashboardWidget]:
 
 
 # ---------------------------------------------------------------------------
+# The /smallstack/ page
+# ---------------------------------------------------------------------------
+
+
+_page_view: Callable[..., HttpResponse] | None = None
+
+
+def set_dashboard_page(view: Callable[..., HttpResponse] | None) -> None:
+    """Hand the ``/smallstack/`` page to another app's view.
+
+    ``apps.dashboards`` registers one in ``ready()``: the page becomes an
+    editable grid dashboard whose widget cards are the widgets registered
+    here. Without it (the app removed or disabled) the page is the fixed
+    widget grid below. Either way the route stays staff-only and the widget
+    registry is the same — this only chooses who draws it."""
+    global _page_view
+    _page_view = view
+
+
+def get_dashboard_page() -> Callable[..., HttpResponse] | None:
+    return _page_view
+
+
+# ---------------------------------------------------------------------------
 # Data layer
 # ---------------------------------------------------------------------------
 
 
-def _resolve_url(widget: DashboardWidget, model_info: ModelInfo | None) -> str | None:
-    """Resolve a widget's target URL.
+def widget_url(widget: DashboardWidget, model_info: ModelInfo | None) -> str | None:
+    """Resolve a widget's target URL — public, for apps that show widgets
+    outside the /smallstack/ dashboard (apps/dashboards' widget card).
 
     Priority: widget.url_name > Explorer list URL (if model_info) > None.
     """
@@ -74,11 +101,15 @@ def _resolve_url(widget: DashboardWidget, model_info: ModelInfo | None) -> str |
     return None
 
 
+_resolve_url = widget_url  # the name this module's callers and tests use
+
+
 def get_widget_contexts(
     group: str | None = None,
     app: str | None = None,
     model: type[Model] | None = None,
     dashboard_only: bool = False,
+    user: Any = None,
 ) -> list[dict]:
     """Return widget contexts sorted by order, optionally filtered.
 
@@ -89,6 +120,8 @@ def get_widget_contexts(
         dashboard_only: If True, drop widgets with on_dashboard=False.
                         Used by the main /smallstack/ dashboard to avoid
                         crowding; filtered views (group/app) show all.
+        user: When given, drop Explorer widgets over models this user may
+              not view (a model that checks Django model permissions).
 
     Returns:
         List of dicts with keys: widget, data, url, model_info, group,
@@ -99,7 +132,7 @@ def get_widget_contexts(
     contexts = []
 
     # Explorer-sourced widgets
-    for widget, info in explorer.get_dashboard_widgets():
+    for widget, info in explorer.get_dashboard_widgets(user=user):
         if dashboard_only and not widget.on_dashboard:
             continue
         if model is not None and info.model_class is not model:
@@ -133,6 +166,8 @@ def get_widget_contexts(
             if group is not None:
                 if not widget.group or widget.group.lower() != group.lower():
                     continue
+            if user is not None and not widget.visible_to(user):
+                continue
             try:
                 data = widget.get_data()
             except Exception:
@@ -205,7 +240,7 @@ def _build_api_view():
         group = request.GET.get("group") or None
         app = request.GET.get("app") or None
         dashboard_only = request.GET.get("dashboard_only") == "1"
-        contexts = get_widget_contexts(group=group, app=app, dashboard_only=dashboard_only)
+        contexts = get_widget_contexts(group=group, app=app, dashboard_only=dashboard_only, user=request.user)
         return {"widgets": [serialize_widget_context(c) for c in contexts]}
 
     return api_widgets
@@ -247,5 +282,6 @@ class DashboardWidgetsMixin(ContextMixin):
             app=self.widget_app,
             model=self.widget_model,
             dashboard_only=dashboard_only,
+            user=getattr(getattr(self, "request", None), "user", None),
         )
         return context

@@ -22,6 +22,15 @@ from django.db.models import Q
 from django.utils import timezone
 
 
+def summarize_error(text: str) -> str:
+    """The last non-empty line of ``text``, capped at 500 characters.
+
+    For a Python traceback that is ``ExcType: message``; for a one-line reason
+    it is the reason itself."""
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[-1][:500] if lines else ""
+
+
 class ApprovalRequestQuerySet(models.QuerySet):
     """One definition of "pending right now", shared by every reader.
 
@@ -29,7 +38,7 @@ class ApprovalRequestQuerySet(models.QuerySet):
     are not the same set: a row whose ``expires_at`` has passed is still
     ``pending`` in the database until something sweeps it. Every surface that
     counts or lists the queue must use the same definition or the numbers
-    disagree (the dashboard widget said 7 while the queue said 4 — F-19).
+    disagree (the dashboard widget said 7 while the queue said 4).
     """
 
     def pending(self) -> "ApprovalRequestQuerySet":
@@ -58,7 +67,7 @@ class ApprovalRequestQuerySet(models.QuerySet):
         lazy: an overdue row reads ``pending`` until a sweep flips it. Every
         surface that counts, lists or filters by status goes through here, so the
         stat card, the ``?status=`` filter (HTML + REST + MCP) and the row badge
-        cannot disagree — which they did, by 900 rows on one page (F-29).
+        cannot disagree — which they did, by 900 rows on one page.
 
         ``pending`` → :meth:`actionable`; ``expired`` → stored-expired **plus**
         :meth:`overdue`; anything else → the stored column.
@@ -123,8 +132,10 @@ class ApprovalRequest(models.Model):
     decision_note = models.TextField(blank=True, default="")
 
     expires_at = models.DateTimeField(null=True, blank=True)
-    # Observability: if the kind's on_decision callback raised, the traceback
-    # summary lands here (the decision itself still stands).
+    # Observability: if the kind's on_decision callback raised, a one-line
+    # reason lands here (the decision itself still stands; the traceback goes
+    # to the log). Older rows may hold a whole traceback, so
+    # pages and agents read ``callback_error_summary``.
     callback_error = models.TextField(blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -148,6 +159,12 @@ class ApprovalRequest(models.Model):
             ),
         ]
 
+    @property
+    def callback_error_summary(self) -> str:
+        """``callback_error`` as one line: a stored traceback's last line (the
+        exception and its message), never the frames and server paths."""
+        return summarize_error(self.callback_error)
+
     def __str__(self) -> str:
         return f"{self.title} [{self.get_status_display()}]"
 
@@ -168,7 +185,7 @@ class ApprovalRequest(models.Model):
 
         An overdue row's stored ``status`` still reads ``pending`` until a sweep
         flips it, so a queue badge rendered straight from the column told the
-        approver a row was theirs to decide when it was not. (F-29.)
+        approver a row was theirs to decide when it was not.
         """
         if self.is_overdue:
             return str(self.Status.EXPIRED)
@@ -199,7 +216,7 @@ class ApprovalRequest(models.Model):
         kind callback uses; it serializes to ``null`` on the wire, which left a
         client able to set a target and able to render ``target_repr`` for a
         human, but unable to link back to the row or re-derive which object it
-        was — the duplication the target pointer existed to remove. (F-35.)
+        was — the duplication the target pointer existed to remove.
         """
         ct = self.target_content_type
         if ct is None or not self.target_object_id:

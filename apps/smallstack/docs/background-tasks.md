@@ -25,7 +25,7 @@ With background tasks, the response is immediate:
 
 ```python
 # Good: Email sends in background
-from apps.accounts.tasks import send_welcome_email
+from apps.tasks.tasks import send_welcome_email
 
 def signup_view(request):
     user = create_user(request.POST)
@@ -45,13 +45,16 @@ def signup_view(request):
 {{ project_name }} uses the **DatabaseBackend** which stores tasks in SQLite/PostgreSQL. To process tasks, run the worker:
 
 ```bash
-# Start the background worker
-uv run python manage.py db_worker
+# Start the background worker, on every queue (default, email, webhooks)
+uv run python manage.py db_worker --queue-name "*"
 ```
+
+A bare `db_worker` takes only the `default` queue: invites and sign-in codes
+(`email`) and webhook deliveries (`webhooks`) would wait for a worker that never comes.
 
 In development (DEBUG=True), the worker auto-reloads when code changes. Keep it running in a separate terminal while developing.
 
-In production, the worker runs automatically inside the web container — no extra setup needed. For high-traffic sites that need independent scaling, you can run the worker as a separate container by setting `WORKER_INLINE=false`. See [Docker Deployment](/help/smallstack/docker-deployment/) for details.
+In production, the worker runs automatically inside the web container — no extra setup needed. For high-traffic sites that need independent scaling, you can run the worker as a separate container by setting `WORKER_INLINE=false`. See [Docker Deployment](/smallstack/help/smallstack/docker-deployment/) for details.
 
 ## Defining Tasks
 
@@ -94,7 +97,7 @@ def my_task(context, data):
 Call `.enqueue()` to add a task to the queue:
 
 ```python
-from apps.accounts.tasks import send_email_task
+from apps.tasks.tasks import send_email_task
 
 # Enqueue with arguments
 result = send_email_task.enqueue(
@@ -107,16 +110,24 @@ result = send_email_task.enqueue(
 print(f"Task queued: {result.id}")
 ```
 
-### Async Support
+### From async code
 
-For async views, use `aenqueue()`:
+SmallStack serves requests over WSGI and ships no async views, so `enqueue()`
+above is the call to use everywhere in a stock project: views, signals,
+management commands, MCP tools.
+
+Django also provides `aenqueue()`, the awaitable form, for code that is
+already running inside an event loop, such as an async view you add under ASGI.
+Calling the plain `enqueue()` there raises `SynchronousOnlyOperation`, because
+the database backend writes a row.
 
 ```python
-result = await send_email_task.aenqueue(
-    recipient="user@example.com",
-    subject="Hello",
-    message="Async message."
-)
+async def my_async_view(request):
+    result = await send_email_task.aenqueue(
+        recipient="user@example.com",
+        subject="Hello",
+        message="Queued from async code.",
+    )
 ```
 
 ## Checking Task Status
@@ -124,7 +135,7 @@ result = await send_email_task.aenqueue(
 Retrieve and check task results:
 
 ```python
-from apps.accounts.tasks import process_data_task
+from apps.tasks.tasks import process_data_task
 
 # Enqueue the task
 result = process_data_task.enqueue(data={"items": [1, 2, 3]})
@@ -144,21 +155,21 @@ if result.status == "SUCCESSFUL":
 
 | Status | Meaning |
 |--------|---------|
-| `PENDING` | Task is queued, waiting for a worker |
+| `READY` | Task is queued, waiting for a worker |
 | `RUNNING` | Worker is currently executing the task |
 | `SUCCESSFUL` | Task completed without errors |
 | `FAILED` | Task raised an exception |
 
 ## Built-in Example Tasks
 
-{{ project_name }} includes example tasks in `apps/smallstack/tasks.py`:
+{{ project_name }} includes example tasks in `apps/tasks/tasks.py`:
 
 ### send_email_task
 
 Send emails in the background:
 
 ```python
-from apps.accounts.tasks import send_email_task
+from apps.tasks.tasks import send_email_task
 
 result = send_email_task.enqueue(
     recipient="user@example.com",
@@ -172,7 +183,7 @@ result = send_email_task.enqueue(
 Send a welcome email to a user by ID:
 
 ```python
-from apps.accounts.tasks import send_welcome_email
+from apps.tasks.tasks import send_welcome_email
 
 # After creating a user
 send_welcome_email.enqueue(user_id=user.id)
@@ -183,7 +194,7 @@ send_welcome_email.enqueue(user_id=user.id)
 Example of data processing in background:
 
 ```python
-from apps.accounts.tasks import process_data_task
+from apps.tasks.tasks import process_data_task
 
 result = process_data_task.enqueue(
     data={"items": [1, 2, 3, 4, 5]},
@@ -342,10 +353,10 @@ Separate queues allow different workers to handle different task types:
 # Worker for all queues (recommended)
 uv run python manage.py db_worker --queue-name "*"
 
-# Worker for specific queues (comma-separated)
-uv run python manage.py db_worker --queue-name "default,email"
+# Worker for specific queues (comma-separated): name every queue some worker must drain
+uv run python manage.py db_worker --queue-name "default,email,webhooks"
 
-# Worker for default queue only
+# Worker for the default queue only (email and webhooks then need workers of their own)
 uv run python manage.py db_worker
 ```
 
@@ -457,7 +468,7 @@ servers:
 
 **Switch to separate** when worker load could starve web requests, you have heavy/long-running tasks, or you need independent scaling or monitoring.
 
-> **See also:** [Docker Deployment](/help/smallstack/docker-deployment/) and [Kamal Deployment](/help/smallstack/kamal-deployment/) for full deployment documentation.
+> **See also:** [Docker Deployment](/smallstack/help/smallstack/docker-deployment/) and [Kamal Deployment](/smallstack/help/smallstack/kamal-deployment/) for full deployment documentation.
 
 ## Troubleshooting
 

@@ -32,13 +32,14 @@
         {% if available_displays|length > 1 %}
         {% include "smallstack/crud/includes/display_palette.html" %}
         {% endif %}
+        {% if history_url %}<a href="{{ history_url }}" class="btn-outline">History</a>{% endif %}
         {% if crud_actions %}
         {% for action in crud_actions %}
         {% if action.value == "update" %}
         <a href="edit/" class="btn-primary">Edit</a>
         {% endif %}
         {% if action.value == "delete" %}
-        <button type="button" class="btn-danger" data-delete-url="delete/" onclick="crudDeleteModal(this, '{{ object }}')">Delete</button>
+        <button type="button" class="btn-danger" data-delete-url="delete/" data-ss-action="crudDeleteModal" data-ss-args='["$this", "{{ object|escapejs }}"]'>Delete</button>
         {% endif %}
         {% endfor %}
         {% endif %}
@@ -51,19 +52,20 @@
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         {% comment %}h1, not h2: this branch runs when no page_header supplied one, so
         this is the page's only top-level heading. A document whose first heading
-        is an h2 is what a screen-reader user landing here gets. (F-55){% endcomment %}
+        is an h2 is what a screen-reader user landing here gets.{% endcomment %}
         <h1 class="crud-title">{{ object }}</h1>
         <div style="display: flex; align-items: center; gap: 8px;">
             {% if available_displays|length > 1 %}
             {% include "smallstack/crud/includes/display_palette.html" %}
             {% endif %}
+            {% if history_url %}<a href="{{ history_url }}" class="btn-outline">History</a>{% endif %}
             {% if crud_actions %}
             {% for action in crud_actions %}
             {% if action.value == "update" %}
             <a href="edit/" class="btn-primary">Edit</a>
             {% endif %}
             {% if action.value == "delete" %}
-            <button type="button" class="btn-danger" data-delete-url="delete/" onclick="crudDeleteModal(this, '{{ object }}')">Delete</button>
+            <button type="button" class="btn-danger" data-delete-url="delete/" data-ss-action="crudDeleteModal" data-ss-args='["$this", "{{ object|escapejs }}"]'>Delete</button>
             {% endif %}
             {% endfor %}
             {% endif %}

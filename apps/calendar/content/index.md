@@ -23,13 +23,14 @@ own per-user scoping and links apply.
 ## Picking calendars
 
 The list on the left is additive. Click a calendar to add it; click again to
-remove it. Each has its own colour, and the swatch stays the same colour
+remove it. Each has a colour of its own while few are on (with many, some share one), and the swatch stays the same colour
 whether or not it is selected, so a saved view looks the same every time you
 open it. **All** and **None** are there for the extremes. The count under a
 selected calendar is how many of its events fall in the visible month.
 
-With nothing selected the grid is empty on purpose — the calendar does not
-guess what you want to see.
+The first time you open it the **Events** calendar is on, so anything you add
+shows up straight away. **None** clears the grid, and a saved view you've marked
+as the default opens instead.
 
 ## Month, or 30 / 60 / 90 days
 
@@ -74,9 +75,23 @@ default, with optional start and end times and an inclusive end date for a
 span. An entry is visible to everyone signed in unless you mark it *private*
 (then only you and staff see it), can be edited by its author or by staff, and
 can be marked **cancelled** to stay on the calendar struck through rather than
-disappearing. The entries page (`Calendar → Events`) lists them with its own
+disappearing. The entries page (**All events**, under the calendars on the left, or `/smallstack/calendar/events/`) lists them with its own
 Table ⇄ Calendar ⇄ Board toggle, and the same entries are available over REST
 and MCP, so an agent can file one for you.
+
+### Repeating events
+
+Choose **Repeats** on an event: every day, weekday, week, 2 weeks, month or year, and optionally
+a last date under **Until**. For a month, choose the same date or the same weekday, like the 2nd
+Tuesday. The first day sets the pattern, and each date shows on the calendar and in subscribed
+calendars. The 31st falls on the last day of a shorter month, and a 5th weekday becomes the last one.
+**Last day** is how long each one lasts, so leave it blank for a one-day event; **Until** is when the
+series ends.
+
+Editing the event changes every date. To skip one, open it from the calendar and choose **Skip this
+date**. To move one, skip it and add a separate event. Skipped dates are listed on the event, where
+you can put them back. The Events list shows a series once, under its first date, and so do its
+calendar and board tabs. The main calendar shows every date.
 
 ## Who sees what
 
@@ -86,3 +101,16 @@ project calendar can be opened to every signed-in user; such a calendar should
 scope its rows per user, which the dataset's `request` argument makes a
 one-liner. A user never sees a calendar they may not open, in the picker or
 through the API.
+
+## On a dashboard
+
+A **Calendar** card puts one or more calendars on a dashboard: the upcoming
+entries, a month, or a 30/60/90-day board. Add it with **Edit layout → Add
+card → Calendar** and tick the calendars it shows. Each viewer sees only the
+calendars they may open.
+
+A calendar card can also drive other cards. Give **Send clicks to** a name (in
+the Add card dialog, or under **Linked cards** in **Edit card**); a card whose
+**Listen to** is that name then narrows to whichever day you click, e.g. the
+requests made that day. Click the
+✕ on the narrowed card to go back.

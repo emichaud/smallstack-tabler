@@ -21,7 +21,37 @@ from typing import Any
 
 from django.http import HttpRequest, QueryDict
 
-logger = logging.getLogger("smallstack.calendar")
+logger = logging.getLogger(__name__)
+
+
+def _skip_date_handler(args: dict[str, Any]) -> dict[str, Any]:
+    from datetime import date
+
+    from apps.mcp.server import current_context
+
+    from .datasets import visible_events
+    from .recurrence import skip_problem
+
+    user = getattr(current_context(), "user", None)
+    try:
+        # calendar_events names a repeating date "<id>-<yyyymmdd>": take that too.
+        event = visible_events(user).filter(pk=int(str(args.get("id") or 0).split("-")[0])).first()
+    except (TypeError, ValueError):
+        event = None
+    if event is None:
+        return {"error": f"no event {args.get('id')!r}"}
+    if not (getattr(user, "is_staff", False) or event.created_by_id == getattr(user, "pk", None)):
+        return {"error": "only its author or staff can change this event"}
+    try:
+        day = date.fromisoformat(str(args.get("date") or ""))
+    except ValueError:
+        return {"error": "date must be YYYY-MM-DD"}
+    restore = bool(args.get("restore"))
+    problem = skip_problem(event, day, restore)
+    if problem:
+        return {"error": problem}
+    event.set_skipped(day, not restore)
+    return {"id": event.pk, "skip_dates": event.skip_dates}
 
 
 def _fake_request(user: Any) -> HttpRequest:
@@ -147,4 +177,27 @@ def register_calendar_tools() -> int:
         count += 1
     except Exception:
         logger.exception("Failed to register calendar_events MCP tool")
+
+    try:
+        tool(
+            "event_skip_date",
+            "Take one date out of a repeating event, or put it back with restore. Other dates are unchanged.",
+            {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": ["integer", "string"],
+                        "description": "The event's id, or the '<id>-<yyyymmdd>' calendar_events gives for a date.",
+                    },
+                    "date": {"type": "string", "description": "The date, YYYY-MM-DD."},
+                    "restore": {"type": "boolean", "description": "Put a skipped date back."},
+                },
+                "required": ["id", "date"],
+                "additionalProperties": False,
+            },
+            write=True,
+        )(_skip_date_handler)
+        count += 1
+    except Exception:
+        logger.exception("Failed to register event_skip_date MCP tool")
     return count

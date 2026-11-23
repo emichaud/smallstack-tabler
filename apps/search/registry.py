@@ -18,7 +18,7 @@ from typing import Any, Iterator
 from .access import SearchAccess
 from .backends.base import IndexedView, SearchHit
 
-logger = logging.getLogger("smallstack.search")
+logger = logging.getLogger(__name__)
 
 _search_registry: dict[str, IndexedView] = {}
 
@@ -132,7 +132,11 @@ def register(view_cls: type) -> IndexedView | None:
         logger.warning("Search registration skipped — %s has no model", view_cls)
         return None
 
-    fields = list(getattr(view_cls, "search_fields", None) or [])
+    from apps.smallstack.crud import split_search_field
+
+    # Django admin's prefixes (^ = @) choose a lookup for list search; the
+    # index wants the bare field path.
+    fields = [split_search_field(f)[0] for f in getattr(view_cls, "search_fields", None) or []]
     if not fields:
         logger.warning(
             "Search registration skipped — %s has enable_search=True but search_fields is empty",
@@ -238,6 +242,36 @@ def view_count() -> int:
     return len(_search_registry)
 
 
+def _view_permits(view: IndexedView, user: Any) -> bool:
+    """The CRUDView's own ``view`` check, for a view with ``model_permissions``
+    on (Explorer's views read their setting). A view that doesn't check model
+    permissions permits everyone; one whose check raises permits no one."""
+    from types import SimpleNamespace
+
+    view_cls: Any = view.view_cls
+    try:
+        if not view_cls.uses_model_permissions():
+            return True
+        return bool(view_cls.has_model_permission(SimpleNamespace(user=user), "view"))
+    except AttributeError:
+        return True  # not a CRUDView (a bare registration): nothing to ask
+    except Exception:  # noqa: BLE001 — fail closed
+        logger.exception("search: model permission check failed for %s", view.model_label)
+        return False
+
+
+def _bypasses_visibility(view: IndexedView, user: Any) -> bool:
+    """Whether ``user`` skips the view's ``search_visibility`` callback:
+    trusted internal callers (``user=None``) always, staff unless the view
+    sets ``search_visibility_applies_to_staff`` (Token Manager: a staff
+    account without ``view_apitoken`` finds only its own tokens)."""
+    if user is None:
+        return True
+    if not getattr(user, "is_staff", False):
+        return False
+    return not getattr(view.view_cls, "search_visibility_applies_to_staff", False)
+
+
 def _user_can_see(view: IndexedView, user: Any) -> bool:
     """Apply the access-level gate for one indexed view.
 
@@ -251,6 +285,10 @@ def _user_can_see(view: IndexedView, user: Any) -> bool:
     if user is None:
         # Trusted internal call (MCP server, management commands, etc.).
         return True
+    if not _view_permits(view, user):
+        # The view checks Django model permissions and this user may not
+        # view its model: no hits, no preview, staff or not.
+        return False
     if getattr(user, "is_staff", False):
         # Staff are exempt — they see everything that's indexed.
         return True
@@ -304,8 +342,7 @@ def get_indexed_sources(user: Any = None) -> list[dict]:
             # (`user=None`) callers bypass, as they do in search_all; a raising
             # callback falls through to `except` and yields no preview at all.
             qs = view.model._default_manager.all()
-            is_privileged = user is None or bool(getattr(user, "is_staff", False))
-            if not is_privileged and view.visibility is not None:
+            if not _bypasses_visibility(view, user) and view.visibility is not None:
                 qs = view.visibility(qs, user)
 
             recent = list(qs.order_by("-pk")[:5])
@@ -327,7 +364,7 @@ def get_indexed_sources(user: Any = None) -> list[dict]:
                     if get_url is not None:
                         url = get_url()
                 except Exception:
-                    pass
+                    logger.debug("get_absolute_url failed on a %s preview", type(obj).__name__, exc_info=True)
                 previews.append({
                     "display": display_val[:80],
                     "url": url,
@@ -340,7 +377,7 @@ def get_indexed_sources(user: Any = None) -> list[dict]:
                 if first_word and len(first_word) >= 2:
                     examples.append(first_word)
         except Exception:
-            pass
+            logger.debug("Couldn't build search previews for %s", view.model.__name__, exc_info=True)
 
         sources.append({
             "kind": "model",
@@ -390,7 +427,7 @@ def get_indexed_sources(user: Any = None) -> list[dict]:
                 "visibility": None,
             })
     except Exception:
-        pass
+        logger.debug("Couldn't count the help docs for the search sources", exc_info=True)
 
     return sources
 
@@ -483,8 +520,10 @@ def search_all(query: str, limit_per_model: int = 5, user: Any = None) -> list[S
          doesn't survive the filter are dropped.
 
     Staff and trusted-internal (``user=None``) callers bypass both
-    gates. Visibility filters that raise fail safe: the view's hits are
-    dropped entirely rather than leaking unfiltered rows.
+    gates, except that a view with ``model_permissions`` on never returns
+    hits to a user without its ``view`` permission, staff included.
+    Visibility filters that raise fail safe: the view's hits are dropped
+    entirely rather than leaking unfiltered rows.
 
     Used by the topbar omnibar, the admin /smallstack/search/ page,
     the public /search/ page, and the ``search_all`` MCP tool.
@@ -492,7 +531,6 @@ def search_all(query: str, limit_per_model: int = 5, user: Any = None) -> list[S
     from .backends import get_backend
 
     backend = get_backend()
-    is_privileged = user is None or bool(getattr(user, "is_staff", False))
 
     out: list[SearchHit] = []
     for view in _search_registry.values():
@@ -507,7 +545,7 @@ def search_all(query: str, limit_per_model: int = 5, user: Any = None) -> list[S
 
         # Visibility filter — scope rows per user when the view declared
         # one. Skipped for staff and trusted-internal callers.
-        if hits and not is_privileged and view.visibility is not None:
+        if hits and not _bypasses_visibility(view, user) and view.visibility is not None:
             try:
                 hit_ids = [h.object_id for h in hits]
                 visible_qs = view.visibility(view.model._default_manager.filter(pk__in=hit_ids), user)

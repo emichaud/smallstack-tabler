@@ -21,6 +21,7 @@ Usage:
 """
 
 import enum
+import json
 import logging
 import warnings
 from typing import Any
@@ -30,7 +31,7 @@ from django.contrib import messages
 from django.contrib.admin.models import LogEntry
 from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured, PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Model, ProtectedError, QuerySet, RestrictedError
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect as _redirect
@@ -44,7 +45,8 @@ from django.views.generic import (
 )
 
 from . import transforms as _transforms
-from .audit import CHANGE, DELETION
+from .audit import ADDITION, CHANGE, DELETION, log_action
+from .model_permissions import has_model_permission
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,42 @@ class BulkAction(enum.Enum):
     UPDATE = "update"
 
 
+#: The Django model permission each action needs when ``model_permissions`` is on.
+ACTION_PERMISSION = {
+    Action.LIST: "view",
+    Action.DETAIL: "view",
+    Action.CREATE: "add",
+    Action.UPDATE: "change",
+    Action.DELETE: "delete",
+}
+BULK_ACTION_PERMISSION = {BulkAction.DELETE: "delete", BulkAction.UPDATE: "change"}
+#: The single action a bulk action repeats; the view must offer it.
+BULK_ACTION_REQUIRES = {BulkAction.DELETE: Action.DELETE, BulkAction.UPDATE: Action.UPDATE}
+
+
+def _audit_web_write(request, obj, action_flag: int, message: str = "") -> None:
+    """Audit one write made through a generated HTML page. Never raises.
+
+    REST, MCP, ``sc`` and the bulk views always wrote a ``LogEntry``; the
+    create, edit and delete pages wrote none, so the commonest way to change a
+    row left no history. ``message`` uses Django admin's JSON change-message
+    format, so the entry reads the same in Django admin's own history.
+    """
+    user = getattr(request, "user", None)
+    if getattr(user, "pk", None) is None:
+        return
+    try:
+        log_action(user, obj, action_flag, message)
+    except Exception:
+        logger.exception("Audit of %s pk=%s failed", type(obj).__name__, obj.pk)
+
+
+def _change_message(form, *, add: bool) -> str:
+    from django.contrib.admin.utils import construct_change_message
+
+    return json.dumps(construct_change_message(form, [], add))
+
+
 # ---------------------------------------------------------------------------
 # Internal base view classes
 # ---------------------------------------------------------------------------
@@ -84,6 +122,24 @@ class BulkAction(enum.Enum):
 # ---------------------------------------------------------------------------
 # List search & filter helpers (shared between HTML and API views)
 # ---------------------------------------------------------------------------
+
+
+#: Django admin's ``search_fields`` prefixes and the lookup each one means.
+#: ``@`` (full-text) has no portable lookup, so it falls back to a substring
+#: match; the ranked full-text search is ``enable_search``.
+_SEARCH_PREFIX_LOOKUPS = {"^": "istartswith", "=": "iexact", "@": "icontains"}
+
+
+def split_search_field(entry: str) -> tuple[str, str]:
+    """``"^name"`` → ``("name", "istartswith")``; ``"email"`` → ``("email", "icontains")``.
+
+    ``search_fields`` takes Django admin's prefixes, so a ModelAdmin's list
+    means the same here as in Django admin.
+    """
+    lookup = _SEARCH_PREFIX_LOOKUPS.get(entry[:1])
+    if lookup:
+        return entry[1:], lookup
+    return entry, "icontains"
 
 
 def _apply_list_search(qs, request: HttpRequest, crud_config) -> QuerySet:
@@ -115,7 +171,8 @@ def _apply_list_search(qs, request: HttpRequest, crud_config) -> QuerySet:
         date_filters = {"__date": q}
 
     query = Q()
-    for field in search_fields:
+    for entry in search_fields:
+        field, lookup = split_search_field(entry)
         try:
             model_field = crud_config.model._meta.get_field(field.split("__")[0])
         except Exception:
@@ -128,7 +185,7 @@ def _apply_list_search(qs, request: HttpRequest, crud_config) -> QuerySet:
                     field_q &= Q(**{f"{field}{suffix}": val})
                 query |= field_q
         else:
-            query |= Q(**{f"{field}__icontains": q})
+            query |= Q(**{f"{field}__{lookup}": q})
 
     return qs.filter(query)
 
@@ -161,6 +218,33 @@ def _field_is_orderable(qs, field_path: str) -> bool:
     return True
 
 
+def _is_text_field(qs, field_path: str) -> bool:
+    """Whether ``field_path`` on ``qs`` holds text (a Char/Text/Slug/Email/URL
+    field, through FK hops, or a text-typed annotation) — what sorts
+    case-insensitively."""
+    from django.db.models import CharField, TextField
+
+    annotation = qs.query.annotations.get(field_path)
+    if annotation is not None:
+        try:
+            return isinstance(annotation.output_field, (CharField, TextField))
+        except Exception:  # noqa: BLE001 — an unresolvable output type sorts as before
+            return False
+    model = qs.model
+    field = None
+    for part in field_path.split("__"):
+        if model is None:
+            return False
+        try:
+            field = model._meta.pk if part == "pk" else model._meta.get_field(part)
+        except FieldDoesNotExist:
+            return False
+        model = getattr(field, "related_model", None)
+    # CharField covers SlugField, EmailField and URLField; choices fields sort by
+    # their stored value, which is what an admin list shows unless transformed.
+    return isinstance(field, (CharField, TextField)) and not getattr(field, "is_relation", False)
+
+
 def _apply_ordering_fields(qs, ordering: str, allowed: set[str]) -> QuerySet:
     """Apply comma-separated ordering fields to a queryset.
 
@@ -169,14 +253,26 @@ def _apply_ordering_fields(qs, ordering: str, allowed: set[str]) -> QuerySet:
     caller mistakenly listed in ``ordering_fields``), are silently ignored —
     matching the Django/DRF convention and keeping a bad sort from 500-ing.
 
-    This is the low-level helper used by both the HTML list view and the
-    REST API layer.
+    Text columns sort **case-insensitively** ("alpha" beside "Alpha", not after
+    "Zeta" as a byte-order sort puts it), with the raw value as a tie-break so
+    the order stays stable. Every list sorts through here: the HTML CRUD lists,
+    the REST API and MCP, and dataset rows (the browser, the drill-down modal).
     """
-    validated = []
+    from django.db.models import F
+    from django.db.models.functions import Lower
+
+    validated: list[Any] = []
     for part in ordering.split(","):
-        field = part.strip().lstrip("-")
-        if field in allowed and _field_is_orderable(qs, field):
-            validated.append(part.strip())
+        part = part.strip()
+        field = part.lstrip("-")
+        if not (field in allowed and _field_is_orderable(qs, field)):
+            continue
+        if _is_text_field(qs, field):
+            desc = part.startswith("-")
+            validated.append(Lower(field).desc() if desc else Lower(field).asc())
+            validated.append(F(field).desc() if desc else F(field).asc())
+        else:
+            validated.append(part)
     if validated:
         return qs.order_by(*validated)
     return qs
@@ -248,8 +344,8 @@ def _filter_annotated_column(qs, field_name: str, annotation, value: str) -> Que
             return qs.filter(**{prefix: today})
         if value == "yesterday":
             return qs.filter(**{prefix: today - timedelta(days=1)})
-        if value == "week":
-            return qs.filter(**{f"{prefix}__gte": today - timedelta(days=7)})
+        if value == "week":  # the 7 days ending today — the same days as the period "last_7"
+            return qs.filter(**{f"{prefix}__gte": today - timedelta(days=6), f"{prefix}__lte": today})
         if value == "month":
             return qs.filter(**{f"{prefix}__month": today.month, f"{prefix}__year": today.year})
         if value == "year":
@@ -275,7 +371,7 @@ def _apply_list_filters(qs, request: HttpRequest, crud_config) -> QuerySet:
         # Per-field override. A CRUDView whose stored column is not the value the
         # rest of the page reasons about (approvals: an overdue row's `status` is
         # still "pending" until a sweep flips it) must be able to make the filter
-        # agree with its own stat cards, or the page contradicts itself. (F-29.)
+        # agree with its own stat cards, or the page contradicts itself.
         # getattr, not a direct call: `crud_config` is duck-typed — datasets passes
         # a `_ConfigAdapter` that implements only the list-filter surface.
         _override = getattr(crud_config, "apply_filter", None)
@@ -319,8 +415,8 @@ def _apply_list_filters(qs, request: HttpRequest, crud_config) -> QuerySet:
                 qs = qs.filter(**{lookup_prefix: today})
             elif value == "yesterday":
                 qs = qs.filter(**{lookup_prefix: today - timedelta(days=1)})
-            elif value == "week":
-                qs = qs.filter(**{f"{lookup_prefix}__gte": today - timedelta(days=7)})
+            elif value == "week":  # the 7 days ending today — the same days as the period "last_7"
+                qs = qs.filter(**{f"{lookup_prefix}__gte": today - timedelta(days=6), f"{lookup_prefix}__lte": today})
             elif value == "month":
                 qs = qs.filter(**{f"{lookup_prefix}__month": today.month, f"{lookup_prefix}__year": today.year})
             elif value == "year":
@@ -338,6 +434,32 @@ def _apply_list_filters(qs, request: HttpRequest, crud_config) -> QuerySet:
     return qs
 
 
+def _admin_list_filters(request: HttpRequest, crud_config, params: dict[str, list[str]]) -> list[Any]:
+    """Instances of the ``SimpleListFilter`` classes in ``admin_class.list_filter``,
+    bound to ``params`` as Django admin binds them (a value per parameter_name)."""
+    classes = crud_config._admin_filter_classes() if hasattr(crud_config, "_admin_filter_classes") else []
+    if not classes:
+        return []
+    model_admin = crud_config._admin_instance()
+    return [f(request, dict(params), crud_config._model(), model_admin) for f in classes]
+
+
+def _apply_admin_filters(qs, request: HttpRequest, crud_config, params: dict[str, list[str]] | None = None) -> QuerySet:
+    """Narrow ``qs`` by the ModelAdmin's ``SimpleListFilter`` classes.
+
+    Each filter's ``queryset()`` runs as in Django admin: always, with its value
+    (or ``None``) from ``params`` (default: the request's query string). A
+    filter that answers ``None`` leaves the queryset as it was.
+    """
+    if params is None:
+        params = {k: request.GET.getlist(k) for k in request.GET}
+    for list_filter in _admin_list_filters(request, crud_config, params):
+        narrowed = list_filter.queryset(request, qs)
+        if narrowed is not None:
+            qs = narrowed
+    return qs
+
+
 # Query params that are *not* filters: they change how the same result set is
 # paged, ordered or drawn, or they are internal markers. A list that comes back
 # empty while only these are present is genuinely empty, not filtered-to-empty,
@@ -347,6 +469,7 @@ NON_FILTER_QUERY_PARAMS = frozenset(
     {
         "page",
         "page_size",
+        "per_page",
         "ordering",
         "display",
         "_notification",
@@ -387,7 +510,8 @@ def _build_toolbar_context(request: HttpRequest, crud_config, scoped_qs=None) ->
     """
     search_fields = crud_config._resolve_search_fields()
     filter_fields = crud_config._resolve_filter_fields()
-    if not search_fields and not filter_fields:
+    admin_filters = _admin_list_filters(request, crud_config, {k: request.GET.getlist(k) for k in request.GET})
+    if not search_fields and not filter_fields and not admin_filters:
         return {"show_toolbar": False, "toolbar_filters": [], "toolbar_has_active_filter": False}
 
     # Build filter metadata for the template
@@ -397,6 +521,17 @@ def _build_toolbar_context(request: HttpRequest, crud_config, scoped_qs=None) ->
         if meta:
             meta["current_value"] = request.GET.get(field_name, "")
             filters.append(meta)
+    # A ModelAdmin's SimpleListFilter: its own title and lookups(), as in Django admin.
+    for list_filter in admin_filters:
+        filters.append(
+            {
+                "name": list_filter.parameter_name,
+                "label": str(list_filter.title).capitalize(),
+                "type": "choice",
+                "choices": [("", "All")] + [(str(v), str(label)) for v, label in list_filter.lookup_choices],
+                "current_value": request.GET.get(list_filter.parameter_name, ""),
+            }
+        )
 
     has_active_filter = any(f["current_value"] for f in filters)
 
@@ -405,7 +540,7 @@ def _build_toolbar_context(request: HttpRequest, crud_config, scoped_qs=None) ->
     if search_fields:
         field_labels = []
         for f in search_fields[:3]:
-            clean = f.replace("__", " ").replace("_", " ")
+            clean = split_search_field(f)[0].replace("__", " ").replace("_", " ")
             field_labels.append(clean)
         search_placeholder = f"Search {', '.join(field_labels)}..."
 
@@ -531,6 +666,16 @@ class _CRUDContextMixin:
 
     crud_config: type["CRUDView"]  # injected by CRUDView._make_view() on every generated view
 
+    # The Django model permission this view needs when the CRUDView sets
+    # ``model_permissions``. Checked after the auth mixins, which sit ahead of
+    # this class in the MRO, so an anonymous visitor still gets the login redirect.
+    _model_permission = "view"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not self.crud_config.has_model_permission(request, self._model_permission):
+            raise PermissionDenied(f"You need the {self._model_permission} permission for this.")
+        return super().dispatch(request, *args, **kwargs)  # type: ignore[misc]
+
     # Reserved context variable names that Django's auth/template system uses.
     # If the model's default context_object_name would collide, we prefix it.
     _RESERVED_CONTEXT_NAMES = {"user", "request", "messages", "perms"}
@@ -546,6 +691,10 @@ class _CRUDContextMixin:
         cfg = self.crud_config
         url_base = cfg._get_url_base()
         meta = cfg.model._meta
+        # Buttons and row actions follow what this user may do, so a page never
+        # offers an Edit or Delete that answers 403.
+        actions = cfg.permitted_actions(self.request)
+        bulk_actions = cfg.permitted_bulk_actions(self.request)
         context.update(
             {
                 "crud_config": cfg,
@@ -556,23 +705,27 @@ class _CRUDContextMixin:
                 "list_fields": cfg._get_list_columns(),
                 "detail_fields": cfg._get_detail_fields(),
                 "link_field": cfg._get_link_field(),
-                "crud_actions": cfg.actions,
+                "crud_actions": actions,
                 "field_transforms": cfg._get_effective_transforms(),
                 # Legacy keys for backward compat with custom templates
                 "field_formatters": cfg.field_formatters,
                 "preview_fields": cfg.preview_fields,
                 # Bulk operations
-                "enable_bulk": bool(cfg.bulk_actions),
-                "bulk_actions": [a.value for a in cfg.bulk_actions],
-                "bulk_url": cfg._reverse(f"{url_base}-bulk") if cfg.bulk_actions else "",
+                "enable_bulk": bool(bulk_actions),
+                "bulk_actions": [a.value for a in bulk_actions],
+                "bulk_url": cfg._reverse(f"{url_base}-bulk") if bulk_actions else "",
             }
         )
+        if cfg.enable_history and Action.DETAIL in cfg.actions:
+            obj = getattr(self, "object", None)
+            if obj is not None and getattr(obj, "pk", None) is not None:
+                context["history_url"] = cfg._reverse(f"{url_base}-history", kwargs={"pk": obj.pk})
         # Optional parent breadcrumb: (label, url_name) tuple
         if cfg.breadcrumb_parent:
             label, url_name = cfg.breadcrumb_parent
             context["breadcrumb_parent_label"] = label
             context["breadcrumb_parent_url_name"] = url_name
-        if Action.CREATE in cfg.actions:
+        if Action.CREATE in actions:
             context["create_view_url"] = cfg._reverse(f"{url_base}-create")
         if Action.LIST in cfg.actions:
             context["list_view_url"] = cfg._reverse(f"{url_base}-list")
@@ -620,6 +773,7 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
         qs = self.crud_config.get_list_queryset(qs, self.request)
         qs = _apply_list_search(qs, self.request, self.crud_config)
         qs = _apply_list_filters(qs, self.request, self.crud_config)
+        qs = _apply_admin_filters(qs, self.request, self.crud_config)
         qs = _apply_ordering(qs, self.request, self.crud_config)
         return qs
 
@@ -683,6 +837,9 @@ class _CRUDListBase(_CRUDContextMixin, ListView):
         if display:
             display_ctx = display.get_context(qs, cfg, self.request)
             context.update(display_ctx)
+            if cfg.page_sizes:  # the pager's "Rows per page" (render_paginator reads these)
+                context["page_sizes"] = tuple(cfg.page_sizes)
+                context["per_page"] = cfg.page_size_for(self.request)
             context["display_template"] = display.template_name
             context["active_display"] = display.name
             all_displays = cfg._get_displays()
@@ -753,7 +910,7 @@ class _CRUDDetailBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DetailView)
                 context["available_displays"] = all_displays
 
         # Related tabs: enrich _get_related_tabs() with live counts and URLs
-        tabs = cfg._get_related_tabs()
+        tabs = cfg._visible_related_tabs(self.request)
         if tabs:
             url_base = cfg._get_url_base()
             related_tabs = []
@@ -790,6 +947,19 @@ class _CRUDFormDisplayMixin:
     """Shared display protocol logic for create and update views."""
 
     _form_action = "form"  # Override in subclass: "create" or "edit"
+
+    def get_form_kwargs(self):
+        """Pass ``user=request.user`` to a form that accepts it — the same rule
+        REST, MCP and ``sc`` apply through ``form_bridge.build_form``, so a
+        form scoping its own choices per user (or stamping an owner) gets the
+        user on every surface without each CRUDView injecting it."""
+        from .form_bridge import _accepts_user
+
+        kwargs = super().get_form_kwargs()
+        user = getattr(self.request, "user", None)
+        if user is not None and _accepts_user(self.get_form_class()):
+            kwargs["user"] = user
+        return kwargs
 
     def _get_active_form_display(self):
         """Determine the active form display for this request."""
@@ -828,6 +998,7 @@ class _CRUDFormDisplayMixin:
 
 class _CRUDCreateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, CreateView):
     _form_action = "create"
+    _model_permission = "add"
 
     def get_template_names(self):
         if getattr(self.request, "htmx", False):
@@ -847,9 +1018,10 @@ class _CRUDCreateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, CreateView):
         # The documented `on_form_valid` hook fired from REST, MCP and bulk
         # update but NOT from the primary (web) path, so every CRUDView using it
         # to stamp an owner / denormalise / file an approval had a data-integrity
-        # hole reachable from the UI. (F-05.)
+        # hole reachable from the UI.
         response = super().form_valid(form)
         self.crud_config.on_form_valid(self.request, form, self.object, is_create=True)
+        _audit_web_write(self.request, self.object, ADDITION, _change_message(form, add=True))
         return response
 
     def get_success_url(self):
@@ -858,6 +1030,7 @@ class _CRUDCreateBase(_CRUDFormDisplayMixin, _CRUDContextMixin, CreateView):
 
 class _CRUDUpdateBase(_CRUDObjectPermissionMixin, _CRUDFormDisplayMixin, _CRUDContextMixin, UpdateView):
     _form_action = "edit"
+    _model_permission = "change"
 
     def get_template_names(self):
         if getattr(self.request, "htmx", False):
@@ -879,9 +1052,10 @@ class _CRUDUpdateBase(_CRUDObjectPermissionMixin, _CRUDFormDisplayMixin, _CRUDCo
         return self._inject_display_context(context, obj=self.object)
 
     def form_valid(self, form):
-        # See _CRUDCreateBase.form_valid — same gap on the edit path. (F-05.)
+        # See _CRUDCreateBase.form_valid — same gap on the edit path.
         response = super().form_valid(form)
         self.crud_config.on_form_valid(self.request, form, self.object, is_create=False)
+        _audit_web_write(self.request, self.object, CHANGE, _change_message(form, add=False))
         return response
 
     def get_success_url(self):
@@ -896,6 +1070,8 @@ class _CRUDUpdateBase(_CRUDObjectPermissionMixin, _CRUDFormDisplayMixin, _CRUDCo
 
 
 class _CRUDDeleteBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DeleteView):
+    _model_permission = "delete"
+
     def get_template_names(self):
         return self.crud_config._get_template_names("confirm_delete")
 
@@ -904,12 +1080,70 @@ class _CRUDDeleteBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DeleteView)
             self.crud_config._get_queryset(), self.request
         )
 
+    def _deletion_summary(self):
+        """What else goes with this row, from Django's own deletion collector,
+        so "Are you sure?" says what the reader is agreeing to. Staff see the
+        cascaded rows by name; anyone else sees counts, since a row's children
+        aren't always rows its owner may read. ``None`` if it can't be worked out."""
+        from .deletion import summarize_deletion
+
+        user = getattr(self.request, "user", None)
+        try:
+            return summarize_deletion(
+                self.object,
+                user=user if self.crud_config.uses_model_permissions() else None,
+                names=bool(getattr(user, "is_staff", False)),
+            )
+        except Exception:
+            logger.exception(
+                "Could not list what deleting %s pk=%s would remove", type(self.object).__name__, self.object.pk
+            )
+            return None
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["deletion"] = self._deletion_summary()
+        return context
+
+    def get(self, request, *args, **kwargs):
+        # The list and detail pages confirm in a modal; it asks for just the
+        # summary, rendered by the same include the full page uses.
+        if request.headers.get("X-SmallStack-Delete-Summary"):
+            from django.template.loader import render_to_string
+
+            self.object = self.get_object()
+            deletion = self._deletion_summary()
+            html = render_to_string(
+                "smallstack/crud/includes/delete_summary.html", {"deletion": deletion}, request=request
+            )
+            response = HttpResponse(html)
+            if deletion is not None and deletion.blocked:
+                response["X-SmallStack-Delete-Blocked"] = "1"
+            return response
+        return super().get(request, *args, **kwargs)
+
     def get_success_url(self):
         return self.crud_config._reverse(f"{self.crud_config._get_url_base()}-list")
+
+    def form_valid(self, form):
+        # on_delete runs in the delete's transaction on every surface (here,
+        # REST, REST bulk, MCP) — a failed delete rolls its side effects back.
+        # The audit row is written in the same transaction, before the delete
+        # clears obj.pk, so a refused delete leaves no entry behind.
+        self.crud_config.check_cascade_permission(self.object, self.request)
+        with transaction.atomic():
+            self.crud_config.on_delete(self.request, self.object)
+            _audit_web_write(self.request, self.object, DELETION)
+            return super().form_valid(form)
 
     def post(self, request, *args, **kwargs):
         try:
             return super().post(request, *args, **kwargs)
+        except PermissionDenied as e:
+            msg = str(e) or "You don't have permission to delete this."
+            if getattr(request, "htmx", False) or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return HttpResponse(msg, status=403)
+            raise
         except (ProtectedError, RestrictedError) as e:
             protected = getattr(e, "protected_objects", None) or getattr(e, "restricted_objects", set())
             model_name = type(next(iter(protected))).__name__ if protected else "other records"
@@ -946,7 +1180,7 @@ def _log_bulk_action(request, verb: str, model: type[Model], ok_ids: list, error
         extra["fields"] = fields
     # Deletes log at WARNING so they reach the DB log handler at its default
     # WARNING baseline — at INFO the "visible in the log viewer" half of the
-    # v0.20.0 fix never persisted. Updates stay INFO. (Audit 2026-09-13, D8.)
+    # v0.20.0 fix never persisted. Updates stay INFO.
     logger.log(
         logging.WARNING if verb == "delete" else logging.INFO,
         "Bulk %s: %s %s %d/%d %s row(s), %d error(s)",
@@ -1045,7 +1279,7 @@ class _CRUDBulkActionView:
 
                 # Validate IDs
                 try:
-                    ids = config._coerce_pks(ids)  # pk-type aware, not int-only (F-38)
+                    ids = config._coerce_pks(ids)  # pk-type aware, not int-only
                 except (ValueError, TypeError, DjangoValidationError):
                     return HttpResponse(
                         _json.dumps({"error": "Invalid IDs"}),
@@ -1057,6 +1291,14 @@ class _CRUDBulkActionView:
                     return HttpResponse(
                         _json.dumps({"error": "No IDs provided"}),
                         status=400,
+                        content_type="application/json",
+                    )
+
+                needed = {"delete": "delete", "update": "change"}.get(action)
+                if needed and not config.has_model_permission(request, needed):
+                    return HttpResponse(
+                        _json.dumps({"error": f"You need the {needed} permission for this."}),
+                        status=403,
                         content_type="application/json",
                     )
 
@@ -1074,7 +1316,9 @@ class _CRUDBulkActionView:
             def _bulk_delete(self, request, ids, cfg):
                 import json as _json
 
-                if BulkAction.DELETE not in cfg.bulk_actions:
+                # A view that doesn't offer the single action (a read-only
+                # one) never takes it in bulk either.
+                if BulkAction.DELETE not in cfg.bulk_actions or Action.DELETE not in cfg.actions:
                     return HttpResponse(
                         _json.dumps({"error": "Bulk delete not enabled"}),
                         status=403,
@@ -1099,9 +1343,10 @@ class _CRUDBulkActionView:
                     # write to N single objects, and a view that expresses
                     # ownership in check_object_permission (rather than in
                     # get_detail_queryset) would otherwise have it bypassed by
-                    # the least-travelled route. That is F-27 exactly. (F-50.)
+                    # the least-travelled route.
                     try:
                         cfg.check_object_permission(obj, request)
+                        cfg.check_cascade_permission(obj, request)
                     except (PermissionDenied, Http404):
                         errors[str(pk)] = "Permission denied"
                         continue
@@ -1110,7 +1355,9 @@ class _CRUDBulkActionView:
                         # the moment the delete succeeds, so this must not be
                         # read back off the object afterward.
                         object_repr = str(obj)[:200]
-                        obj.delete()
+                        with transaction.atomic():
+                            cfg.on_delete(request, obj)
+                            obj.delete()
                         deleted_ids.append(pk)
                         deleted_snapshots.append((pk, object_repr))
                     except (ProtectedError, RestrictedError) as e:
@@ -1137,7 +1384,9 @@ class _CRUDBulkActionView:
             def _bulk_update(self, request, ids, fields_data, cfg):
                 import json as _json
 
-                if BulkAction.UPDATE not in cfg.bulk_actions:
+                # A view that doesn't offer the single action (a read-only
+                # one) never takes it in bulk either.
+                if BulkAction.UPDATE not in cfg.bulk_actions or Action.UPDATE not in cfg.actions:
                     return HttpResponse(
                         _json.dumps({"error": "Bulk update not enabled"}),
                         status=403,
@@ -1176,7 +1425,7 @@ class _CRUDBulkActionView:
                         errors[str(pk)] = "Permission denied"
                         continue
                     try:
-                        cfg.check_object_permission(obj, request)  # see _bulk_delete (F-50)
+                        cfg.check_object_permission(obj, request)  # see _bulk_delete
                     except (PermissionDenied, Http404):
                         errors[str(pk)] = "Permission denied"
                         continue
@@ -1233,6 +1482,9 @@ def _make_bulk_update_form_view(crud_config):
         def get(self, request, *args, **kwargs):
             from django.utils.html import escape
 
+            if not config.has_model_permission(request, "change"):
+                raise PermissionDenied("You need the change permission for this.")
+
             allowed_fields = config.can_bulk_update_fields()
             form_class = config.form_class or config._make_form_class()
             form = form_class()
@@ -1270,16 +1522,9 @@ def _make_bulk_update_form_view(crud_config):
                     "</div>"
                 )
 
-            html_parts.append(
-                "<script>"
-                'document.querySelectorAll("#bulk-update-fields .bulk-field-toggle").forEach(function(cb) {'
-                '  cb.addEventListener("change", function() {'
-                '    var widget = this.closest("div").querySelector(".bulk-field-widget");'
-                '    widget.style.display = this.checked ? "block" : "none";'
-                "  });"
-                "});"
-                "</script>"
-            )
+            # The field toggles' behaviour lives in bulk_update_modal.js (a delegated
+            # listener). A <script> here never ran: the modal inserts this
+            # fragment with innerHTML, which doesn't execute scripts.
 
             return HttpResponse("".join(html_parts))
 
@@ -1330,6 +1575,52 @@ class _CRUDFieldPreviewBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, Detai
         return self.crud_config._get_template_names("field_preview")
 
 
+class _CRUDHistoryBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DetailView):
+    """One row's audit trail: every ``LogEntry`` written for it, newest first.
+
+    The same entries Django admin's history page shows, from every surface that
+    writes them (these pages, bulk actions, REST, MCP, ``sc``, Django admin).
+    """
+
+    history_paginate_by = 25
+
+    def get_template_names(self) -> list[str]:
+        return self.crud_config._get_template_names("history")
+
+    def get_queryset(self) -> Any:
+        return self.crud_config.get_detail_queryset(self.crud_config._get_queryset(), self.request)
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        from django.contrib.contenttypes.models import ContentType
+
+        from .pagination import paginate_queryset
+
+        context = super().get_context_data(**kwargs)
+        cfg = self.crud_config
+        # Both content types for a proxy model: log_action() records the
+        # concrete model, Django admin records the proxy.
+        content_types = {
+            ContentType.objects.get_for_model(cfg._model(), for_concrete_model=concrete) for concrete in (True, False)
+        }
+        entries = (
+            LogEntry.objects.filter(content_type__in=content_types, object_id=str(self.object.pk))
+            .select_related("user")
+            .order_by("-action_time", "-pk")
+        )
+        page_obj = paginate_queryset(entries, self.request, page_size=self.history_paginate_by)
+        context.update(
+            {
+                "history_entries": page_obj.object_list,
+                "page_obj": page_obj,
+                "detail_url": cfg._reverse(f"{cfg._get_url_base()}-detail", kwargs={"pk": self.object.pk}),
+                "detail_url_name": f"{cfg.namespace}:{cfg._get_url_base()}-detail"
+                if cfg.namespace
+                else f"{cfg._get_url_base()}-detail",
+            }
+        )
+        return context
+
+
 class _CRUDRelatedTabBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DetailView):
     """HTMX partial: renders a paginated table of related objects for one tab."""
 
@@ -1363,7 +1654,7 @@ class _CRUDRelatedTabBase(_CRUDObjectPermissionMixin, _CRUDContextMixin, DetailV
 
         # Validate accessor against allowed tabs
         cfg = self.crud_config
-        tabs = cfg._get_related_tabs()
+        tabs = cfg._visible_related_tabs(request)
         tab = None
         for t in tabs:
             if t["accessor"] == accessor:
@@ -1502,6 +1793,17 @@ _REMOVED_RSS_ATTRS: tuple[str, ...] = (
 )
 
 
+#: Which action each generated view serves — what ``CRUDView.view_mixins``
+#: is keyed by. The field-preview and related-tab helpers take none.
+_BASE_ACTIONS: dict[type, Action] = {
+    _CRUDListBase: Action.LIST,
+    _CRUDCreateBase: Action.CREATE,
+    _CRUDDetailBase: Action.DETAIL,
+    _CRUDUpdateBase: Action.UPDATE,
+    _CRUDDeleteBase: Action.DELETE,
+}
+
+
 class CRUDView:
     """Configuration class that generates CRUD views and URL patterns.
 
@@ -1521,6 +1823,8 @@ class CRUDView:
         url_base:         URL prefix, e.g. "manage/users" (defaults to model_name)
         paginate_by:      Items per page (defaults to admin_class.list_per_page or None)
         mixins:           Auth mixins applied to all generated views
+        view_mixins:      {Action: [mixin, ...]} — ordinary Django view mixins
+                          added to one action's generated view (see below)
         actions:          Which CRUD actions to generate (default: all 5)
         breadcrumb_parent: Optional (label, url_name) for parent breadcrumb
 
@@ -1528,6 +1832,23 @@ class CRUDView:
         displays:         Available display classes (empty = legacy auto-detect)
         default_display:  Initial display (defaults to first in displays)
         detail_displays:  Display classes for detail view
+
+    Customising a generated view: put the override in a mixin and list it
+    under its action. It sits ahead of the generated base in the MRO, so
+    ``super()`` reaches the framework's behaviour::
+
+        class ReportDeleteMixin:
+            def get_context_data(self, **kwargs):
+                context = super().get_context_data(**kwargs)
+                context["columns"] = self.object.periods
+                return context
+
+        class ReportCRUDView(CRUDView):
+            view_mixins = {Action.DELETE: [ReportDeleteMixin]}
+
+    Prefer the classmethod hooks (``get_list_queryset``, ``can_update``,
+    ``on_form_valid``, ``on_delete``, ``row_actions``…) when one fits: those
+    apply to REST and MCP too, a view mixin only to the HTML view.
 
     Legacy:
         form_class:       Custom ModelForm (auto-generated if None)
@@ -1584,6 +1905,11 @@ class CRUDView:
     url_base: str | None = None
     namespace: str | None = None  # URL namespace for child ExplorerSite instances
     paginate_by = 25
+    # Opt-in "Rows per page" choice on the HTML list, e.g. PAGE_SIZE_CHOICES
+    # (apps.smallstack.pagination). When set, ``?per_page=`` picks one of these
+    # (anything else falls back to the first, which replaces paginate_by as the
+    # default) and the list's pager shows the control. Empty = paginate_by, fixed.
+    page_sizes: tuple[int, ...] = ()
     # Auth mixins wrapped around every generated view (HTML + REST). SECURE BY
     # DEFAULT: leave `mixins` unset (None) and the framework applies
     # LoginRequiredMixin. Set it explicitly to override entirely
@@ -1592,6 +1918,20 @@ class CRUDView:
     # `_resolved_mixins()`.
     mixins: list[Any] | None = None
     public = False  # opt into anonymous access (only when `mixins` is unset)
+    # Django model permissions, opt-in. When True, every surface (these pages,
+    # REST, MCP, `sc --user`) also requires the user's view / add / change /
+    # delete permission on the model, as Django admin does; superusers hold all
+    # four. It adds to `mixins`, it doesn't replace them. Off by default because
+    # a member-facing view's users usually hold no model permissions at all.
+    model_permissions = False
+    # A "History" page per row (`<pk>/history/`) listing its LogEntry audit
+    # trail: who changed it, when, and which fields. Opt-in, because it names
+    # the people who edited a row to everyone who can open it.
+    enable_history = False
+    # Per-action view mixins, e.g. {Action.DELETE: [MyDeleteMixin]} — placed
+    # after the auth mixins and before the generated base, so they can
+    # override and super() into it. HTML views only (see the class docstring).
+    view_mixins: dict[Any, list[type]] = {}
     actions = [Action.LIST, Action.CREATE, Action.DETAIL, Action.UPDATE, Action.DELETE]
     breadcrumb_parent: Any = None  # Optional (label, url_name) for parent breadcrumb
 
@@ -1656,6 +1996,9 @@ class CRUDView:
     # Restrict which CRUD actions become MCP tools. None means "follow
     # `actions`". Use to keep web writes while exposing MCP as read-only.
     mcp_actions: list | None = None
+    # A natural key (a slug field) get_/update_/delete_ tools also accept in place
+    # of id, for rows other tools already refer to by that name.
+    mcp_lookup_field: str | None = None
     # Per-action description overrides for finer-grained tool descriptions.
     # Default is f"<verb> {mcp_description or model._meta.verbose_name}".
     # Example: {Action.CREATE: "File a brand-new support ticket."}
@@ -1691,6 +2034,8 @@ class CRUDView:
     preview_fields: list[str] = []  # Deprecated — use field_transforms
     field_transforms: dict[str, Any] = {}  # {field_name: "transform_name" | ("name", {opts}) | callable}
     column_widths: dict[str, str] | None = None  # Optional {field_name: "30%"} for custom column proportions
+    column_labels: dict[str, str] | None = None  # Optional {field_name: "Updated"}: a shorter table header
+    wrap_fields: list[str] | None = None  # Optional ["title"]: these table columns wrap instead of clipping with …
 
     # -- Config resolution: admin_class → legacy attrs → defaults --
 
@@ -1783,6 +2128,17 @@ class CRUDView:
         if cls.admin_class:
             return getattr(cls.admin_class, "list_per_page", None)
         return None
+
+    @classmethod
+    def page_size_for(cls, request: HttpRequest) -> int | None:
+        """The HTML list's page size for *request*: the ``?per_page=`` choice
+        when ``page_sizes`` is set, else ``paginate_by``. What list displays
+        paginate with (``crud_config.page_size_for(request)``)."""
+        if not cls.page_sizes:
+            return cls._resolve_paginate_by()
+        from .pagination import page_size_from
+
+        return page_size_from(request, tuple(cls.page_sizes))
 
     @classmethod
     def _get_displays(cls) -> list:
@@ -1938,6 +2294,30 @@ class CRUDView:
         return []
 
     @classmethod
+    def _admin_filter_classes(cls) -> list[type]:
+        """The ``SimpleListFilter`` subclasses in ``admin_class.list_filter``
+        (the bare classes ``_resolve_filter_fields`` leaves out). They filter
+        the HTML list, REST and MCP lists with the admin's own ``lookups()`` and
+        ``queryset()``."""
+        if not cls.admin_class:
+            return []
+        from django.contrib.admin import SimpleListFilter
+
+        return [
+            f
+            for f in getattr(cls.admin_class, "list_filter", [])
+            if isinstance(f, type) and issubclass(f, SimpleListFilter)
+        ]
+
+    @classmethod
+    def _admin_instance(cls) -> Any:
+        """An instance of ``admin_class`` bound to the default admin site,
+        for the admin methods and filters that expect one."""
+        from django.contrib import admin
+
+        return cls.admin_class(cls._model(), admin.site)
+
+    @classmethod
     def _resolve_filter_class(cls) -> type | None:
         """Return the filter class, or None."""
         return cls.filter_class
@@ -1948,6 +2328,73 @@ class CRUDView:
         return cls.export_formats or []
 
     # -- Hooks for subclass overrides --
+
+    @classmethod
+    def uses_model_permissions(cls) -> bool:
+        """Whether this view checks Django model permissions. Reads
+        ``model_permissions``; Explorer overrides it to read its setting."""
+        return bool(cls.model_permissions)
+
+    @classmethod
+    def has_model_permission(cls, request, action: str) -> bool:
+        """Whether ``request.user`` may ``action`` ("view", "add", "change" or
+        "delete") this model. Always True unless ``model_permissions`` is on.
+
+        The model-wide half of authorization, checked on every surface before
+        the row is fetched. ``can_update`` / ``can_delete`` /
+        ``check_object_permission`` remain the per-row half.
+        """
+        if not cls.uses_model_permissions():
+            return True
+        return has_model_permission(getattr(request, "user", None), cls._model(), action)
+
+    @classmethod
+    def check_cascade_permission(cls, obj, request) -> None:
+        """Refuse (403) a delete that would cascade into rows of an
+        admin-registered model the user may not delete — Django admin's rule.
+        Runs only with ``model_permissions`` on; called by every delete surface."""
+        if not cls.uses_model_permissions():
+            return
+        from .deletion import summarize_deletion
+
+        needed = summarize_deletion(obj, user=getattr(request, "user", None), names=False).perms_needed
+        if needed:
+            raise PermissionDenied(
+                f"Deleting this also deletes {', '.join(needed)}, which you don't have permission to delete."
+            )
+
+    @classmethod
+    def permitted_actions(cls, request) -> list[Action]:
+        """The configured ``actions`` this request's user may take."""
+        return [a for a in cls.actions if cls.has_model_permission(request, ACTION_PERMISSION[a])]
+
+    @classmethod
+    def permitted_bulk_actions(cls, request) -> list[BulkAction]:
+        """The configured ``bulk_actions`` this request's user may take.
+
+        A bulk action is the matching single action N times, so it also needs
+        that action in ``actions``: a view without ``Action.DELETE`` (a
+        read-only one) never bulk-deletes, whatever ``bulk_actions`` says.
+        """
+        return [
+            a
+            for a in cls.bulk_actions
+            if BULK_ACTION_REQUIRES[a] in cls.actions
+            and cls.has_model_permission(request, BULK_ACTION_PERMISSION[a])
+        ]
+
+    @classmethod
+    def _visible_related_tabs(cls, request) -> list[dict[str, Any]]:
+        """Related tabs, less any whose rows the user may not view.
+
+        A tab lists another model's rows, so with ``model_permissions`` on it
+        needs view permission on that model too, whatever its own CRUDView says.
+        """
+        tabs = cls._get_related_tabs()
+        if not cls.uses_model_permissions():
+            return tabs
+        user = getattr(request, "user", None)
+        return [t for t in tabs if has_model_permission(user, t["related_model"], "view")]
 
     @classmethod
     def can_update(cls, obj, request) -> bool:
@@ -1979,6 +2426,17 @@ class CRUDView:
                 if request and obj.pk == getattr(request.user, "pk", None):
                     return [a for a in default_actions if not a.get("is_delete")]
                 return default_actions
+
+        A delete action may also carry ``confirm_modal`` (the modal's title):
+        TableDisplay then loads the view's own delete confirmation into the
+        global stat modal over htmx instead of the generic "Are you sure?"
+        box — so the view must answer an ``HX-Request`` GET with a fragment
+        (see apps/dashboards MetricCRUDView for a confirmation that lists
+        what deleting would break)::
+
+            for a in default_actions:
+                if a.get("is_delete"):
+                    a["confirm_modal"] = f"Delete {obj}?"
 
         Note: ``can_update`` / ``can_delete`` still gate the actual write
         when the action is invoked. ``row_actions`` is the *render-time*
@@ -2085,6 +2543,17 @@ class CRUDView:
     @classmethod
     def on_form_valid(cls, request, form, obj, is_create=False):
         """Hook called after successful create/update. Override for side effects."""
+        pass
+
+    @classmethod
+    def on_delete(cls, request, obj) -> None:
+        """Hook called just before ``obj.delete()`` on EVERY delete surface — the
+        HTML delete view, HTML bulk delete, the REST detail route, REST bulk
+        delete and the MCP ``delete_*`` tool — inside the same transaction, so if the delete fails
+        (a protected FK, say) whatever this hook did is rolled back. Override
+        to clean up what points at ``obj`` (apps/dashboards removes a deleted
+        metric's dashboard cards and report rows). Permissions are already
+        checked when it runs."""
         pass
 
     @classmethod
@@ -2223,20 +2692,20 @@ class CRUDView:
         reached the ORM and raised ``ValueError: Field 'id' expected a number but
         got 'search'``, i.e. a 500 in error monitoring for every CRUDView in the
         project. The REST routes always used ``<int:pk>`` and 404'd correctly;
-        this makes the HTML routes agree. (F-22.)
+        this makes the HTML routes agree.
 
         Note the ``uuid`` converter accepts only the **canonical** dashed
         lowercase spelling, so a non-canonical UUID in a bookmark or a log link
         404s where a bare ``<pk>`` used to resolve it. That is a deliberate
         tightening, recorded in ``UPGRADING.md``; ``_coerce_pks`` is deliberately
-        laxer for bulk ``ids``, which are data rather than routes. (F-38.)
+        laxer for bulk ``ids``, which are data rather than routes.
         """
         field = cls.model._meta.pk
         # A FK/O2O primary key (multi-table inheritance — the ordinary way to get
         # one) reports its OWN internal type, not the column's, so it fell
         # through to `str:` while the underlying column is an integer — the
         # original 500 surviving for that pk class. Follow the relation to the
-        # field that actually stores the value. (F-38.)
+        # field that actually stores the value.
         seen: set[Any] = set()
         while field.is_relation and field.target_field is not field:
             if id(field) in seen:  # pathological self-reference; stop rather than spin
@@ -2268,7 +2737,7 @@ class CRUDView:
         unusable — a flat ``400 Invalid IDs`` — which is the same asymmetry
         ``_pk_converter`` removed from the routes: the URLs learned the pk type,
         the bulk view did not. Uses the model field's own converter, so it follows
-        whatever pk class the model declares. (F-38.)
+        whatever pk class the model declares.
         """
         field = cls.model._meta.pk
         return [field.to_python(pk) for pk in raw]
@@ -2277,7 +2746,9 @@ class CRUDView:
     def _make_view(cls, base_class):
         """Create a view class with mixins applied."""
         name = f"{cls.model.__name__}{base_class.__name__.lstrip('_')}"
-        bases = tuple(cls._resolved_mixins()) + (base_class,)
+        action = _BASE_ACTIONS.get(base_class)
+        extra = list(cls.view_mixins.get(action, [])) if action is not None else []
+        bases = tuple(cls._resolved_mixins()) + tuple(extra) + (base_class,)
         resolved_paginate_by = cls._resolve_paginate_by()
         # When displays are configured, the display handles pagination —
         # skip Django's built-in paginate_by.
@@ -2303,7 +2774,7 @@ class CRUDView:
 
         url_base = cls._get_url_base()
         # Typed pk converter so a non-numeric segment 404s instead of 500ing
-        # inside the ORM (F-22).
+        # inside the ORM.
         pk = f"<{cls._pk_converter()}pk>"
         urls = []
 
@@ -2343,6 +2814,10 @@ class CRUDView:
         if Action.DETAIL in cls.actions:
             view = cls._make_view(_CRUDDetailBase)
             urls.append(path(f"{url_base}/{pk}/", view.as_view(), name=f"{url_base}-detail"))
+
+            if cls.enable_history:
+                history_view = cls._make_view(_CRUDHistoryBase)
+                urls.append(path(f"{url_base}/{pk}/history/", history_view.as_view(), name=f"{url_base}-history"))
 
             # Related tabs endpoint (lazy HTMX loading)
             if cls.related_tabs is not False:

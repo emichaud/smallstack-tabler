@@ -170,6 +170,10 @@ def check_http_endpoint(url: str, method: str, expected_status: int, timeout: in
 class EndpointMonitor(Monitor):
     """Wraps a :class:`~apps.heartbeat.models.MonitoredEndpoint` row as a monitor."""
 
+    # check() is one outbound HTTP request over fields already loaded from the
+    # row — no ORM — so the runner may run it on a worker thread.
+    concurrent_check = True
+
     def __init__(self, endpoint: MonitoredEndpoint) -> None:
         self.endpoint = endpoint
         self.key = endpoint.monitor_key
@@ -216,7 +220,7 @@ def _load_rows(model: type, label: str) -> list:
     an *absence*, not a fail, which uptime math can't see. Swallowing a DB
     error here silently dropped every dynamic monitor for that tick while
     uptime stayed green. Pre-migrate is the one expected case and stays quiet;
-    anything else is logged at WARNING. (Audit 2026-09-13, D7.)
+    anything else is logged at WARNING.
     """
     try:
         return list(model.objects.filter(enabled=True))  # type: ignore[attr-defined]

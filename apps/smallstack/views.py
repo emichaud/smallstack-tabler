@@ -6,13 +6,13 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib import messages
-from django.http import FileResponse, Http404, HttpResponseForbidden
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.views import View
 from django.views.generic import TemplateView
 
-from .dashboard import DashboardWidgetsMixin
+from .dashboard import DashboardWidgetsMixin, get_dashboard_page
 from .mixins import StaffRequiredMixin
 from .models import BackupRecord
 from .pagination import paginate_queryset
@@ -31,9 +31,19 @@ class NavGuideView(StaffRequiredMixin, TemplateView):
 
 
 class SmallStackDashboardView(StaffRequiredMixin, DashboardWidgetsMixin, TemplateView):
-    """Staff-only dashboard with at-a-glance widgets from each app."""
+    """Staff-only dashboard with at-a-glance widgets from each app.
+
+    When an app has taken the page over (``dashboard.set_dashboard_page`` —
+    apps.dashboards does), it draws it; this view still owns the route and
+    the staff check. Otherwise: the fixed grid of registered widgets."""
 
     template_name = "smallstack/dashboard.html"
+
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        page = get_dashboard_page()
+        if page is not None:
+            return page(request, *args, **kwargs)
+        return super().get(request, *args, **kwargs)
 
 
 def _get_db_info() -> dict[str, Any]:
@@ -63,7 +73,7 @@ def _prune_backups(triggered_by: str = "manual", keep: int | None = None) -> lis
         keep = getattr(settings, "BACKUP_RETENTION", None)
     # keep < 1 means "retention disabled" — keep everything. Treating 0 as a
     # real count made backups[keep:] = backups[0:] = ALL files, deleting the
-    # just-created backup (then a 500 on download). (Audit L8.)
+    # just-created backup (then a 500 on download).
     if keep is None or keep < 1:
         return []
 
@@ -361,7 +371,7 @@ class BackupDownloadView(StaffRequiredMixin, View):
 
         # Guard existence before opening — a misconfigured retention (keep<1)
         # or a concurrent prune could remove the file between create and read.
-        # (Audit L8; mirrors BackupFileDownloadView's existing check.)
+        # (Mirrors BackupFileDownloadView's existing check.)
         if not file_path.exists():
             messages.error(request, "Backup file is no longer available.")
             return redirect("smallstack:backups")

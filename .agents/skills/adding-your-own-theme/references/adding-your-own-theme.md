@@ -19,7 +19,7 @@ Instead, you add your own theme **alongside** SmallStack's. Your new pages use y
 │  ├── Status / Heartbeat     (/status/)           │
 │  ├── Backups                (/backups/)           │
 │  ├── User Manager           (/manage/users/)     │
-│  ├── Help & Docs            (/help/)             │
+│  ├── Help & Docs            (/smallstack/help/)             │
 │  ├── Profile                (/profile/)          │
 │  └── Django Admin           (/admin/)            │
 └──────────────────────────────────────────────────┘
@@ -81,7 +81,7 @@ templates/
 
 Create `templates/mytheme/base.html`. This is the foundation all your custom pages will extend.
 
-There are three **required** pieces that must be present for dark mode, palettes, and `theme.js` to work. They're marked with `REQUIRED` comments below.
+Two **required** pieces make dark mode and palettes work, and keep a signed-in user's choice saved on their profile. They're marked with `REQUIRED` comments below. Both are `<script src>` tags configured by `data-` attributes, the way `smallstack/base.html` does it, because SmallStack's CSP refuses inline `<script>` blocks. Keep the `hx-headers` CSRF token on `<body>` as well: the toggle's save is a POST.
 
 ```html
 {% load static theme_tags %}
@@ -93,21 +93,35 @@ There are three **required** pieces that must be present for dark mode, palettes
     <title>{% block title %}{% endblock %} | {{ brand.name }}</title>
 
     <!-- ============================================================
-         REQUIRED: Blocking theme script — prevents flash of wrong theme.
-         This MUST be in <head> before any stylesheets load.
-         Copy this verbatim — it reads localStorage and sets data-theme
-         and data-palette on <html> before the browser paints.
+         REQUIRED 1: theme-init.js — sets data-theme and data-palette on
+         <html> before the browser paints, so the page never flashes the
+         wrong theme. A plain blocking <script src> in <head>, before the
+         stylesheets. Order: the signed-in user's saved choice, then this
+         browser's, then dark.
          ============================================================ -->
-    <script>
-    (function() {
-        var theme = localStorage.getItem('smallstack-theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', theme);
-        var palette = localStorage.getItem('smallstack-palette') || '{{ color_palette }}';
-        if (palette && palette !== 'django') {
-            document.documentElement.setAttribute('data-palette', palette);
-        }
-    })();
-    </script>
+    <script src="{% static 'smallstack/js/theme-init.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-palette="{{ color_palette }}" data-default-palette="django"></script>
+
+    <!-- ============================================================
+         REQUIRED 2: config.js, then theme.js. config.js turns its data-
+         attributes into window.SMALLSTACK for theme.js; theme.js runs the
+         dark-mode toggle and palette switcher. data-theme-url and
+         data-palette-url are where the toggle SAVES a signed-in user's
+         choice: leave them out and the toggle changes only this browser,
+         and the next page load reverts to the profile's saved theme.
+         ============================================================ -->
+    <script src="{% static 'smallstack/js/config.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-color-palette="{{ color_palette }}"
+            data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+            data-theme-url="{% url 'theme_preference' %}"
+            data-palette-url="{% url 'palette_preference' %}"></script>
+    <!-- htmx — theme.js saves the choice with htmx.ajax; also needed for hx-get, hx-post, etc. -->
+    <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
+    <script src="{% static 'smallstack/js/theme.js' %}"></script>
 
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
@@ -116,8 +130,10 @@ There are three **required** pieces that must be present for dark mode, palettes
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
           rel="stylesheet">
 
-    <!-- SmallStack palette CSS — gives you palette color variables -->
-    <link rel="stylesheet" href="{% static 'smallstack/css/palettes.css' %}">
+    <!-- SmallStack's shared styles: design tokens, palettes and the components
+         SmallStack's embeds draw with, in a `smallstack` cascade layer, so your
+         theme's own rules win wherever both style the same class. -->
+    {% smallstack_assets %}
 
     <!-- Your custom overrides (create this file in step 3) -->
     <link rel="stylesheet" href="{% static 'css/mytheme.css' %}">
@@ -148,31 +164,9 @@ There are three **required** pieces that must be present for dark mode, palettes
         </div>
     </footer>
 
-    <!-- ============================================================
-         REQUIRED: window.SMALLSTACK config object.
-         Must come BEFORE theme.js. Provides theme.js with the
-         current user's saved preferences.
-         ============================================================ -->
-    <script>
-        window.SMALLSTACK = {
-            userTheme: {% if user.is_authenticated and user.profile %}'{{ user.profile.theme_preference }}'{% else %}null{% endif %},
-            userPalette: {% if user.is_authenticated and user.profile %}'{{ user.profile.color_palette }}'{% else %}null{% endif %},
-            colorPalette: '{{ color_palette }}',
-            isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %},
-            sidebarEnabled: false,
-            sidebarOpen: false,
-            topbarNavEnabled: false
-        };
-    </script>
-
-    <!-- ============================================================
-         REQUIRED: SmallStack theme.js — handles dark mode toggle,
-         palette switching, and profile sync for authenticated users.
-         ============================================================ -->
-    <script src="{% static 'smallstack/js/theme.js' %}"></script>
-
-    <!-- htmx — needed if you use hx-get, hx-post, etc. -->
-    <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
+    <!-- The drill-down modal that stat cards, metric cards, report values and
+         help bubbles open. Once per page; it renders nothing a second time. -->
+    {% smallstack_modal %}
 
     <!-- Your framework JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
@@ -184,6 +178,40 @@ There are three **required** pieces that must be present for dark mode, palettes
 ```
 
 > **CDN vs local:** CDN stylesheet and font links work out of the box — SmallStack's CSP allows external styles, fonts, and images over HTTPS. However, **CDN script tags are blocked** by default (scripts are restricted to `'self'` to prevent XSS). For Bootstrap JS or other third-party scripts, either download them locally into `static/mytheme/` or add the CDN origin to `script-src` in `config/settings/base.py`. See [Content Security Policy](#content-security-policy) and [Static Asset Placement](#static-asset-placement) below.
+
+#### Why These Pieces Are Required
+
+| Piece | What Happens Without It |
+|-------|------------------------|
+| **`theme-init.js` in `<head>`** | Flash of wrong theme (FOUC): the page paints in one theme, then snaps to the other |
+| **its `data-user-theme` / `data-user-palette`** | On a browser that has nothing stored yet, a signed-in user's page flashes dark before switching to their saved light theme |
+| **`config.js`** | `theme.js` has no settings: the toggle works in this browser only and never saves |
+| **`data-theme-url` / `data-palette-url` on `config.js`** | The toggle changes only this browser's copy. On the next page load the profile's saved theme wins, so the choice **flips back** |
+| **`theme.js`** (and htmx, which it saves with) | No dark mode toggle, no palette switching, no profile sync |
+| **`{% smallstack_assets %}`** | Embeds draw unstyled: no tokens (`--error-fg`, `--series-*`), no `.stat-card`, no modal styles |
+| **`{% smallstack_modal %}`** | A drill-down or help bubble opens nothing: its content has no `#stat-modal` to go to |
+| **`hx-headers` CSRF token on `<body>`** | The save is refused (403), with the same flip-back |
+
+#### Using SmallStack's embeds on your pages
+
+With those two tags in your base template, SmallStack's embeds work on your theme's pages as they do on its own:
+
+```html
+{% extends "mytheme/base.html" %}
+{% load dashboard_tags calendar_tags help_tags %}
+
+{% block content %}
+  {% metric_card "requests" period="mtd" %}       {# a KPI with its drill-down #}
+  {% dashboard "site-health" %}                    {# a whole dashboard, cells load lazily #}
+  {% calendar_card "smallstack_events" mode="upcoming" %}  {# the next few events #}
+  {% help_bubble "dashboards" "metric" %}          {# a "?" that opens a help page in the modal #}
+{% endblock %}
+```
+
+- Each embed loads its own app stylesheet (`dashboards.css`, `calendar.css`); `{% smallstack_assets %}` supplies what they share.
+- Each checks the viewer's access as its full page does, and renders nothing (or a muted "—") for someone who can't see it.
+- **Your theme wins any clash.** SmallStack's shared styles sit in the `smallstack` cascade layer, which loses to every unlayered rule. Where Bootstrap and SmallStack both style `.card` or `.btn-primary`, an embed's cards take Bootstrap's look, and your own page's cards are never restyled.
+- `/starter/own-theme/` in the showcase app is a working page on a base template that isn't SmallStack's.
 
 ### Step 3: Create Your Theme's CSS Override File
 
@@ -373,7 +401,7 @@ make run
 - `http://localhost:8005/status/` — Status/Heartbeat dashboard
 - `http://localhost:8005/backups/` — Backup manager
 - `http://localhost:8005/manage/users/` — User manager
-- `http://localhost:8005/help/` — Help & docs
+- `http://localhost:8005/smallstack/help/` — Help & docs
 - `http://localhost:8005/profile/` — Profile edit (theme/palette/timezone)
 
 **Verify dark mode persists across both themes:**
@@ -382,7 +410,12 @@ make run
 3. Toggle to light on the activity page
 4. Go back to `/` — should also be light
 
-This works because both bases read from the same `localStorage` keys.
+**Verify the choice is saved, not just remembered (signed in):**
+1. Toggle to light on your custom homepage
+2. Open the site in a private window (nothing stored in it), sign in as the same user, and open `/` — it should open light with no dark flash
+3. If it opens dark, or the light choice flips back to dark on reload, `config.js` is missing `data-theme-url` / `data-palette-url` (or the `<body>` CSRF header), so the toggle never saved
+
+This works because both bases read from the same `localStorage` keys and save to the same profile.
 
 ## Adding More Pages
 
@@ -482,7 +515,7 @@ These are the URL names you can link to from your custom navbar or footer:
 | Status | `heartbeat:dashboard` | `/status/` | Staff only |
 | Backups | `smallstack:backups` | `/backups/` | Staff only |
 | User Manager | `manage/users-list` | `/manage/users/` | Staff only |
-| Help & Docs | `help:index` | `/help/` | All users |
+| Help & Docs | `help:index` | `/smallstack/help/` | All users |
 | Profile | `profile` | `/profile/` | Authenticated |
 | Django Admin | `admin:index` | `/admin/` | Staff only |
 
@@ -577,7 +610,7 @@ SmallStack ships with a Content Security Policy (CSP) via `django-csp`. The defa
 
 | Directive | Default | What it allows |
 |-----------|---------|----------------|
-| `script-src` | `'self' 'unsafe-inline'` | Only your own JS files and inline `<script>` tags. **CDN scripts are blocked.** |
+| `script-src` | `'self'` | Only your own JS files. **Inline `<script>` blocks, `on…=` handlers and CDN scripts are blocked.** |
 | `style-src` | `'self' 'unsafe-inline' https:` | Your CSS files, inline styles, and any HTTPS CDN stylesheet |
 | `font-src` | `'self' https: data:` | Local fonts, CDN fonts (Google Fonts, etc.), and data: URIs |
 | `img-src` | `'self' data: https:` | Local images, data: URIs, and any HTTPS image source |
@@ -596,7 +629,7 @@ curl -o static/mytheme/js/bootstrap.bundle.min.js \
 **Option B: Add the CDN to `script-src`**
 ```python
 # config/settings/base.py
-"script-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+"script-src": ["'self'", "https://cdn.jsdelivr.net"],
 ```
 
 Option A is preferred — it eliminates the external dependency and works offline.

@@ -100,19 +100,26 @@ Every page in this project starts with:
 
 ## Asset loading (what's already loaded)
 
-`tabler/base.html` loads, in order:
+`tabler/base.html` loads, in order (no inline `<script>` anywhere — the CSP is heading for `script-src 'self'`):
 
-1. **Blocking theme script** (inline `<script>` in `<head>`) — reads `localStorage` and sets `data-bs-theme`, `data-bs-theme-font/-base/-radius` on `<html>` *before* render, preventing FOUC
-2. **Favicon** — from `{% static brand.favicon %}`
-3. **Inter font** — Google Fonts preconnect + stylesheet
-4. **Tabler CSS** — CDN
-5. **`tabler_overrides.css`** — local overrides
-6. `{% block extra_css %}`
-7. (in `<body>`) **Second inline script** — adds `theme-dark` class to `<body>` + applies `layout-boxed/condensed/fluid` from `localStorage`
-8. **HTMX** (`smallstack/js/htmx.min.js`, vendored — not CDN)
-9. **Tabler JS** — CDN
-10. **`tabler_theme.js`** — the settings-panel engine
-11. `{% block extra_js %}`
+1. **`smallstack/js/theme-init.js`** (upstream, blocking, in `<head>`) — sets `data-theme` / `data-palette` on `<html>` from the profile, then `localStorage`; upstream's per-page CSS keys its dark rules on `data-theme`
+2. **`tabler/js/tabler_init.js`** (blocking, in `<head>`) — the Tabler first paint: `data-bs-theme`, `data-bs-theme-font/-base/-radius` on `<html>`, same order (profile → this browser → dark), so there is no FOUC. The profile's theme rides on its `data-user-theme` attribute
+3. **Favicon** — from `{% static brand.favicon %}`
+4. **Inter font** — rsms.me preconnect + stylesheet
+5. **Tabler CSS** — CDN (`tabler.min.css` + `tabler-themes.min.css`)
+6. **`tabler_overrides.css`** — local overrides, the SmallStack-var aliases, and the rules ported from upstream `components.css` (which this shell does not load)
+7. `{% block extra_css %}`
+8. (first thing in `<body>`) **`tabler/js/tabler_body_init.js`** — adds `theme-dark` to `<body>` + applies `layout-boxed/condensed/fluid` from `localStorage`
+9. `{% smallstack_modal %}` — the shared stat-card / help-bubble drill-down modal, once per page. Never `{% include %}` `stat_modal.html` yourself
+10. **`smallstack/js/config.js`** — `window.SMALLSTACK` for theme.js, from data- attributes (`data-authenticated="false"` on purpose: `tabler_theme.js` owns the theme and saves it to the profile; theme.js would re-POST on every load)
+11. **HTMX** (`smallstack/js/htmx.min.js`, vendored — not CDN)
+12. **`smallstack/js/theme.js`** (upstream) — the behaviour layer every upstream template relies on: the `data-ss-action` / `data-confirm` / `data-copy` / `data-stat-modal` dispatchers, the focus trap, `openStatModal`. Without it the Delete buttons, bulk bar, cookie banner and help bubbles are dead
+13. **Tabler JS** — CDN, then **`tabler/js/bootstrap_alias.js`** (exposes `window.bootstrap`)
+14. **`tabler_theme.js`** — the settings-panel engine
+15. **`smallstack/js/table-resize.js`**
+16. `{% block extra_js %}`
+
+`<body>` carries `data-sidebar-state="disabled"` (upstream's contract; a kiosk page overrides the `sidebar_state` block) and `data-no-stepper` (theme.js leaves number fields to Tabler's form styling).
 
 You do **not** need to load Tabler CSS or HTMX yourself — they are already there.
 

@@ -1,0 +1,122 @@
+/* Moved from apps/datasets/templates/datasets/browse.html (inline <style>). */
+.ds-filters { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-end; padding: 12px 14px; }
+.ds-field { display: flex; flex-direction: column; gap: 3px; }
+.ds-field > label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--body-quiet-color); }
+.ds-field > span.ds-range { display: inline-flex; gap: 4px; align-items: center; }
+.ds-rollup { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ds-filters input, .ds-filters select, .ds-rollup select {
+    background: var(--input-bg); border: 1px solid var(--input-border); color: var(--body-fg);
+    border-radius: 6px; padding: 4px 8px; font-size: 0.78rem; width: auto; max-width: 13rem; margin: 0;
+    min-height: 0;
+}
+.ds-filters .ds-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+/* The live count at the right edge, read like a stat: the number large and
+ * bold with "rows" beside it, and what to do with the rows beneath. "…
+ * counting" shows while a request is out. */
+.ds-filters .ds-live { flex-direction: column; align-items: flex-end; gap: 6px; align-self: stretch; justify-content: flex-end; padding-left: 16px; }
+.ds-count { display: flex; align-items: baseline; gap: 0.4rem; margin: 0; white-space: nowrap; }
+.ds-count-n { font-size: 2rem; font-weight: 750; line-height: 1; letter-spacing: -0.02em; color: var(--body-fg); font-feature-settings: "tnum"; }
+.ds-count-label { font-size: 0.82rem; font-weight: 500; color: var(--body-quiet-color); }
+.ds-count-wait { display: none; }
+.ds-count-wait .ds-count-n { color: var(--text-muted); }
+#ds-live.htmx-request .ds-count { display: none; }
+#ds-live.htmx-request .ds-count-wait { display: flex; }
+.ds-live-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ds-filters .btn-outline, .ds-filters .btn-primary { white-space: nowrap; }
+
+.ds-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.ds-table th { padding: 8px 12px; white-space: nowrap; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--body-quiet-color); }
+.ds-table td { padding: 6px 12px; vertical-align: top; max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-table td.num, .ds-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ds-table td.dt { white-space: nowrap; color: var(--body-quiet-color); }
+.ds-null { color: var(--text-muted); }
+/* Same trick as .crud-table-wrap: the wrapper scrolls a wide table instead of
+   handing its min-content width up to the page. */
+.ds-wrap { overflow-x: auto; contain: inline-size; max-width: 100%; }
+.ds-card { contain: inline-size; max-width: 100%; }
+
+.ds-bar { height: 8px; border-radius: 4px; background: var(--primary); min-width: 2px; }
+.ds-bar-cell { width: 40%; }
+.ds-bar-track { background: var(--card-header-bg); border-radius: 4px; }
+
+.ds-meta { color: var(--body-quiet-color); font-size: 0.78rem; }
+.ds-key { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.78rem; color: var(--body-quiet-color); }
+.paginator { padding: 10px 14px; }
+
+/* "Save as metric" and the keep-as-card links: the one thing on the rows card
+ * that leads somewhere new, so it carries the accent. */
+.ds-keep-btn,
+a.ds-keep-btn:link,
+a.ds-keep-btn:visited {
+    background: var(--accent-band-bg);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+.ds-keep-btn:hover,
+a.ds-keep-btn:hover,
+.ds-keep-btn:focus-visible {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--btn-primary-fg);
+}
+
+/* The header keeps the CSV card at the top right: the text column shrinks and
+ * wraps before the card is pushed down. It still drops below on a phone. */
+.ds-header .page-header-content { flex: 1 1 24rem; min-width: 0; }
+.ds-header .action-cards { flex: 0 0 auto; }
+
+/* More conditions: the shared filter-tree editor inside the filter form. */
+.ds-more { flex-basis: 100%; border-top: 1px solid var(--card-border); padding-top: 8px; margin-top: 2px; }
+.ds-more > summary { cursor: pointer; font-size: 0.78rem; font-weight: 600; color: var(--body-quiet-color); }
+.ds-more > summary:hover, .ds-more > summary:focus-visible { color: var(--primary); }
+.ds-more-on { display: inline-block; margin-left: 0.4rem; padding: 0 0.45rem; border-radius: 999px; background: var(--primary); color: var(--button-fg); font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.ds-more-help { margin: 6px 0 2px; }
+.ds-more .vTextField { width: 100%; max-width: none; }
+.ds-tree-error { margin: 6px 0; font-size: 0.82rem; color: var(--error-fg); }
+.ds-tree-reading { margin: 6px 0 0; }
+
+/* Keep it: "Save as metric" in the rows header, "keep this roll-up as a card" under the roll-up. */
+/* Keep this roll-up as a card: the lede and note at the left, and a tile per
+ * card type at the right, each sketching its card from the roll-up on screen. */
+.ds-keep { display: flex; align-items: center; justify-content: space-between; gap: 10px 24px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--card-border); }
+.ds-keep-text { min-width: 0; flex: 1 1 16rem; }
+.ds-keep-lede { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--body-fg); }
+.ds-keep .ds-keep-note { margin: 2px 0 0; font-size: 0.74rem; }
+.ds-keep-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.ds-tile, a.ds-tile:link, a.ds-tile:visited {
+    display: grid; gap: 5px; width: 8.25rem; padding: 6px 6px 7px;
+    border: 1px solid var(--card-border); border-radius: 8px; background: var(--card-bg);
+    color: var(--body-fg); text-decoration: none; cursor: pointer;
+}
+a.ds-tile:hover, .ds-tile:focus-visible { border-color: var(--primary); background: var(--accent-band-bg); }
+.ds-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ds-tile-label { font-size: 0.74rem; font-weight: 600; text-align: center; color: var(--body-fg); }
+.ds-tile-art {
+    display: flex; align-items: center; justify-content: center; gap: 6px; height: 3rem; padding: 4px 7px;
+    border-radius: 5px; background: color-mix(in srgb, var(--body-fg) 5%, var(--card-bg)); overflow: hidden;
+}
+/* a grouped stat: the total, and the two largest groups beside it */
+.ds-art-total { font-size: 1.35rem; font-weight: 750; line-height: 1; letter-spacing: -0.02em; color: var(--primary); font-feature-settings: "tnum"; }
+.ds-art-groups { display: grid; gap: 2px; min-width: 0; }
+.ds-art-group { display: flex; justify-content: space-between; gap: 6px; font-size: 0.58rem; line-height: 1.1; min-width: 0; }
+.ds-art-group-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--body-quiet-color); max-width: 3.6rem; }
+.ds-art-group-value { font-weight: 650; font-feature-settings: "tnum"; }
+/* ranked bars: largest first */
+.ds-art-bars { display: grid; gap: 3px; width: 100%; align-self: center; }
+.ds-art-bar { display: block; height: 5px; border-radius: 3px; background: var(--primary); }
+.ds-art-bar:nth-child(2) { opacity: 0.72; }
+.ds-art-bar:nth-child(3) { opacity: 0.5; }
+.ds-art-bar:nth-child(4) { opacity: 0.32; }
+/* a pie: the shares, drawn by the view as a conic gradient of accent strengths */
+.ds-art-pie { display: block; width: 2.3rem; height: 2.3rem; border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--body-fg) 12%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .ds-tile { transition: border-color 120ms ease, background-color 120ms ease; } }
+.ds-keep-problem { color: var(--warning-fg); font-size: 0.78rem; cursor: help; }
+
+
+/* "Start from a metric": the saved metrics on this dataset, above the filters. */
+.ds-start { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0 0 12px; }
+.ds-start label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.ds-start select { width: auto; flex: 0 1 22rem; min-width: 12rem; max-width: 100%; }
+.ds-start-note { flex: 1 1 18rem; margin: 0; font-size: 0.85rem; color: var(--body-quiet-color); }
+.ds-start-note a { color: var(--link-color); }

@@ -21,7 +21,19 @@ def close_ticket(request, pk):
     logger.info("Ticket %s closed by %s", ticket.pk, request.user)
 ```
 
-All `apps.*` loggers are captured by the `apps` logger configured in settings.
+All `apps.*` loggers, SmallStack's own included (`apps.dashboards.metrics`, `apps.webhooks.services`, …), are captured by the `apps` logger configured in settings, so `__name__` is all you need. A name outside `apps.` falls through to root, which is WARNING in production: its INFO lines are dropped and a `log_capture` window can't raise it. Settings also configure `smallstack`, for code written to SmallStack's old `getLogger("smallstack.<app>")` convention. `test_every_app_logger_reaches_a_configured_logger_at_info` in `apps/smallstack/tests/test_logging.py` checks every name in `apps/`.
+
+### Catching an exception you don't re-raise
+
+`except Exception:` that returns a default is sometimes right (a cosmetic label, a probe of a table that may not exist yet, a hook that must fail closed), but never silently. Pick the level by who needs to know:
+
+| The failure | Log it as |
+|---|---|
+| Something broke and a person was affected: a delete that failed, an approver refused by a broken hook, a heartbeat that couldn't be saved | `logger.exception(...)` (ERROR with the traceback) |
+| A fallback took over: no task backend, so mail went inline | `logger.warning(..., exc_info=True)` |
+| An expected miss: the search index isn't built yet, a link resolver raised on one row | `logger.debug(..., exc_info=True)`; a `log_capture` window at DEBUG shows it when you go looking |
+
+Name what failed and its key (`"Bulk delete of %s pk=%s failed"`), so the line is findable in `/smallstack/logs/`.
 
 ### Attaching structured fields
 
@@ -67,6 +79,25 @@ Always reset in a `finally` — worker threads are reused, and an unreset value 
 
 **`apps.tasks` and `apps.scheduler` already do this for you.** Every background task gets a `trace_task_<id>` bound around its execution automatically (`apps/tasks/tracing.py`, hooked into the task-running signals every task funnels through, regardless of which app enqueued it), and the scheduler's own tick binds a `trace_schedjob_<job pk>_<tick>` around each job's tick-time processing. Reach for `bind_trace_id()` yourself for work these two don't cover — a webhook delivery chain, a multi-step pipeline outside the task/scheduler system.
 
+### What SmallStack logs about accounts
+
+`apps.accounts` logs every sign-in, sign-out and failed sign-in (from Django's auth signals, so every way in is covered), sign-ups, invites sent and accepted, sign-in codes issued and rejected, the hourly code cap being hit (WARNING), and password resets requested (with how many accounts matched) and completed. Lines name the account by username and pk, never a password, code or reset token. Every formatter and the database log handler also run messages, tracebacks and `extra` through `apps.smallstack.redaction.redact_text`, so a path Django logs itself (`Not Found: …`, `Forbidden (CSRF …): …`) has its reset/invite token and any credential query parameter (`?token=`, `code=` …) replaced with `***`. In the User Manager, sending a set-password link and clearing a login lockout each write a `LogEntry` (who, for whom) and an INFO line; a failed unlock logs its traceback.
+
+### Access logs outside Django: gunicorn, runserver, proxies
+
+The shipped `gunicorn.conf` sets `logger_class =
+"apps.smallstack.gunicorn_logging.RedactingLogger"`, which passes every access-log atom (path,
+request line, referer, query, header and environ atoms) through the same `redaction` helpers, so
+the production access line reads `"GET /accounts/reset/MQ/***/ HTTP/1.1"`. Keep that line if you
+replace `gunicorn.conf`; a custom `access_log_format` is redacted too. What it can't reach:
+
+- **`manage.py runserver`** prints the full URL, token included, and has no setting for it. Treat
+  dev-server output as secret.
+- **A proxy in front** (kamal-proxy, nginx, Caddy, a load balancer, a CDN) writes its own request
+  log with the path. Drop the path for `/accounts/reset/`, `/accounts/invite/`, `/blog/subscribe/confirm/`
+  and `/blog/unsubscribe/` (or log method and status only), or treat those logs as credentials:
+  limit who reads them (`kamal proxy logs`) and keep retention short.
+
 ### Log levels by environment
 
 | Logger | Development | Production |
@@ -76,6 +107,9 @@ Always reset in a `finally` — worker threads are reused, and an unreset value 
 | `django.db.backends` | WARNING | — |
 | `django.security` | INFO | WARNING |
 | `apps` (your code) | DEBUG | INFO |
+| `apps.mcp` (MCP; DEBUG would log every tool it registers) | INFO | INFO |
+| `smallstack` (code on the old naming) | INFO | INFO |
+| root (anything else) | INFO | WARNING |
 
 ### Enabling SQL query logging in development
 
@@ -276,7 +310,18 @@ Set `TELEMETRY_LOG_CAPTURE_ENABLED=false` to switch the whole thing off — no h
 
 ## Audit with LogEntry
 
+Changes to **access** (group membership, permissions, the staff / superuser /
+active flags, token revocation) are recorded separately and more precisely by
+`apps/access` (`AccessEvent`, the log, and the account's history); see
+`access-control.md`. What follows is the general-purpose history of writes.
+
 SmallStack provides `log_action()` and `AuditMixin` in `apps.smallstack.audit` for creating Django `LogEntry` records from non-admin code. No new models or migrations required.
+
+Every `CRUDView` already writes these for you on every surface: its create, edit
+and delete pages, its bulk actions, REST, MCP and `sc`. `enable_history = True`
+on the view adds a per-row History page (Explorer has it on). Reach for the
+helpers below only for writes a `CRUDView` doesn't make, and don't add
+`AuditMixin` to a `CRUDView`, which would record each write twice.
 
 ### log_action()
 
@@ -331,4 +376,4 @@ class TicketUpdateView(AuditMixin, LoginRequiredMixin, UpdateView):
 
 ### Browsing audit logs
 
-LogEntry is registered in Django admin at `/admin/admin/logentry/`. It shows all actions from both admin and `log_action()` calls, with filters for action type, content type, and user.
+A `CRUDView` with `enable_history = True` (every Explorer model) shows one row's entries at `<pk>/history/`, from the History button on its detail page. LogEntry is registered in Django admin at `/admin/admin/logentry/`. It shows all actions from both admin and `log_action()` calls, with filters for action type, content type, and user.

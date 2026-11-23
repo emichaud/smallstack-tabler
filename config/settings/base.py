@@ -52,8 +52,10 @@ INSTALLED_APPS = [
     "apps.telemetry",  # Telemetry: DB-backed log capture + time-boxed capture windows
     "apps.heartbeat",
     "apps.usermanager",
+    "apps.access",  # Access: who may do what, every change recorded, least-privilege review
     "apps.website",  # Project-specific pages (customize freely)
     "apps.preview",  # Tabler preview pages (design reference)
+    "apps.showcase",  # SmallStack's demo pages (about, starter, search…). Delete it, here and in config/urls.py
     "apps.mcp",  # Model Context Protocol server for AI clients
     "apps.tokenmgr",  # User-facing UI for API token management
     "apps.api",  # API admin: /smallstack/api/ health + activity + threat panel
@@ -67,6 +69,7 @@ INSTALLED_APPS = [
     "apps.feeds",  # Feeds: curated RSS/Atom publish (register_feed) + consume (collector)
     "apps.blog",  # Blog: markdown posts + per-blog feeds + newsletter (label: smallstack_blog)
     "apps.calendar",  # Calendar: datasets with a date axis on one grid + saved views (label: smallstack_calendar)
+    "apps.dashboards",  # Dashboards: metrics (stored filters), dashboards, reports (label: smallstack_dashboards)
     # (Approvals scenario demos are appended below, only when present.)
     # Django built-in apps
     "django.contrib.admin",
@@ -95,7 +98,9 @@ HEARTBEAT_EXPECTED_INTERVAL = 60
 TASKS = {
     "default": {
         "BACKEND": "django_tasks_db.DatabaseBackend",
-        "QUEUES": ["default", "email"],
+        # "webhooks" carries outbound deliveries so their own worker can drain
+        # them (docker-entrypoint.sh starts one); see webhooks.services.delivery_queue.
+        "QUEUES": ["default", "email", "webhooks"],
     }
 }
 
@@ -111,6 +116,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Names the signed-in user as the actor of any access change made in the
+    # request (apps.access records them from model signals, which carry no request).
+    "apps.access.context.ActorMiddleware",
     "apps.smallstack.middleware.TimezoneMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -232,12 +240,18 @@ CSRF_COOKIE_SAMESITE = "Lax"
 
 # Content Security Policy (django-csp)
 # Styles, fonts, and images allow "https:" so CDN frameworks (Bootstrap, Tailwind,
-# Google Fonts, etc.) work out of the box. Scripts stay restricted to 'self' — that's
-# where XSS risk lives. Tighten these in production if you don't use external resources,
-# or loosen script-src if you need third-party analytics/widgets.
+# Google Fonts, etc.) work out of the box. Scripts are restricted to 'self' with NO
+# 'unsafe-inline' — that's where XSS risk lives, and it's what makes an injected
+# <script> or onclick="…" inert. SmallStack's templates carry no inline script: behaviour
+# is data- attributes handled by static JS (docs/skills/templates.md), server values ride
+# on data- attributes or JSON data blocks. Keep your own templates that way, or this
+# policy blocks them (the browser console names the blocked line). Loosen script-src
+# only for a specific third-party origin you trust (analytics, widgets).
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": ["'self'"],
+        # Tabler fork: 'unsafe-inline' stays until the inline blocks in apps/tabler/templates/
+        # are moved to static JS; cdn.jsdelivr.net serves Tabler's CSS/JS bundle.
         "script-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
         "style-src": ["'self'", "'unsafe-inline'", "https:"],
         "img-src": ["'self'", "data:", "https:"],

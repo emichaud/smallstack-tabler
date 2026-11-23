@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 from django.contrib.auth import get_user_model
 from django.db.models import BooleanField, Case, CharField, Count, Value, When
+from django.urls import reverse
 
 from apps.datasets import core
 from apps.datasets.registry import dataset
@@ -138,14 +139,15 @@ def test_filter_applies_across_rows_series_and_scalar(computed_ds, people):
 def _api_token(db):
     from apps.smallstack.models import APIToken
 
-    admin = User.objects.create_user(username="ds_admin", password="x", is_staff=True)
+    # A superuser: the dataset reads the user model, which needs accounts.view_user.
+    admin = User.objects.create_user(username="ds_admin", password="x", is_staff=True, is_superuser=True)
     _token, raw = APIToken.create_token(admin, name="test")
     return raw
 
 
 def test_rest_rows_honour_a_computed_filter(client, computed_ds, people, _api_token):
     resp = client.get(
-        "/smallstack/datasets/t_computed_filters/?hours_band=business",
+        f"{reverse('datasets:rows', args=['t_computed_filters'])}?hours_band=business",
         HTTP_AUTHORIZATION=f"Bearer {_api_token}",
     )
     assert resp.status_code == 200
@@ -158,7 +160,7 @@ def test_rest_rows_honour_a_computed_filter(client, computed_ds, people, _api_to
 
 def test_rest_scalar_honours_a_computed_filter(client, computed_ds, people, _api_token):
     resp = client.get(
-        "/smallstack/datasets/t_computed_filters/scalar/?agg=count&answered=1",
+        f"{reverse('datasets:scalar', args=['t_computed_filters'])}?agg=count&answered=1",
         HTTP_AUTHORIZATION=f"Bearer {_api_token}",
     )
     assert resp.status_code == 200

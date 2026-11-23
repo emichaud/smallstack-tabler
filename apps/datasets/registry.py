@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Optional
 
-logger = logging.getLogger("smallstack.datasets")
+logger = logging.getLogger(__name__)
 
 # key -> DatasetDef. First-wins (see register()).
 _dataset_registry: dict[str, "DatasetDef"] = {}
@@ -53,12 +53,22 @@ class DatasetDef:
     enable_mcp: bool = False
     # MCP access tier for the generated tool. Secure default: staff-only.
     mcp_access: str = "staff"
+    # Who may read this dataset through in-app surfaces that evaluate it on a
+    # user's behalf — metrics, dashboards and reports (apps.dashboards).
+    # ``"staff"`` (secure default) or ``"auth"`` (any signed-in user; the
+    # dataset fn still receives the request for per-user scoping).
+    access: str = "staff"
     # Where a row's object can be viewed. ``None`` (default) resolves
     # generically — the model's CRUDView detail route, else its
     # ``get_absolute_url()``; a callable ``(obj) -> str | None`` or a URL route
     # name (reversed with ``pk=``) overrides that; ``False`` opts out. The
     # resolved URL rides on every row as the ``url`` key (see Dataset.link_for).
     link: Any = None
+    # Optional semantic units by column name (``{"talk_seconds": "seconds",
+    # "fee": "currency"}``), surfaced as each schema column's ``unit`` so a
+    # builder offers unit-appropriate formats. Undeclared columns fall back to
+    # a name heuristic (``*_seconds`` → seconds, ``*_minutes`` → minutes).
+    units: Optional[dict] = None
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -103,6 +113,8 @@ def dataset(
     enable_mcp: bool = False,
     mcp_access: str = "staff",
     link: Any = None,
+    access: str = "staff",
+    units: Optional[dict] = None,
 ) -> Callable[[Callable], Callable]:
     """Decorator: register a function returning a QuerySet as a named dataset.
 
@@ -127,7 +139,16 @@ def dataset(
     ``get_absolute_url()``. Pass a callable ``(obj) -> str | None``, or a URL
     route name reversed with ``pk=<obj.pk>``, to override; ``link=False`` opts
     out. The result is the ``url`` key on every row (rows, REST, MCP, CSV).
+
+    ``access=`` says who may read the dataset through metrics, dashboards and
+    reports: ``"staff"`` (default) or ``"auth"`` (any signed-in user — scope
+    rows per user via the ``request`` arg). See :func:`user_may_read`.
+
+    ``units=`` names a column's semantic unit (``"seconds"``, ``"minutes"``,
+    ``"currency"``, ``"percent"``, …), shown as the schema column's ``unit``.
     """
+    if access not in ACCESS_LEVELS:
+        raise ValueError(f"@dataset({key!r}): access must be one of {sorted(ACCESS_LEVELS)}, got {access!r}")
     if filters is not None:
         import warnings
 
@@ -154,11 +175,60 @@ def dataset(
                 enable_mcp=enable_mcp,
                 mcp_access=mcp_access,
                 link=link,
+                access=access,
+                units=units,
             )
         )
         return fn
 
     return decorator
+
+
+#: The in-app read tiers a dataset may declare (see ``DatasetDef.access``).
+ACCESS_LEVELS = frozenset({"staff", "auth"})
+
+
+def user_may_read(dfn: "DatasetDef", user: Any) -> bool:
+    """Whether *user* may read *dfn* through an in-app surface (a metric card,
+    a dashboard, a report). Staff may, and ``access="auth"`` admits any
+    signed-in user, as long as :func:`user_may_view_model` holds. Anonymous
+    users never may."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if not user_may_view_model(dfn, user):
+        return False
+    if getattr(user, "is_staff", False):
+        return True
+    return dfn.access == "auth"
+
+
+def user_may_view_model(dfn: "DatasetDef", user: Any) -> bool:
+    """Whether *user* may see the rows of the model *dfn* reads.
+
+    A dataset over a model that checks Django model permissions (accounts,
+    API tokens and the other access models always do; otherwise when the
+    model's CRUDView sets ``model_permissions``) needs that model's ``view``
+    permission on every dataset surface, staff included, so a dataset can't
+    show what the model's own pages refuse. ``user=None`` is a trusted
+    internal call. A dataset whose model can't be resolved is refused.
+    """
+    if user is None:
+        return True
+    from apps.smallstack.model_permissions import has_model_permission, model_checks_permissions
+
+    from .core import get_dataset
+
+    try:
+        ds = get_dataset(dfn.key)
+        model = ds.model if ds is not None else None
+    except Exception:  # noqa: BLE001 — fail closed
+        logger.warning("dataset %r: couldn't resolve its model; refusing", dfn.key, exc_info=True)
+        return False
+    if model is None:
+        return False
+    if not model_checks_permissions(model):
+        return True
+    return has_model_permission(user, model, "view")
 
 
 def get_def(key: str) -> Optional["DatasetDef"]:

@@ -14,7 +14,6 @@ lands in ``callback_error`` for the console to surface.
 from __future__ import annotations
 
 import logging
-import traceback
 from datetime import datetime, timedelta
 from typing import Any, Sequence
 
@@ -26,11 +25,11 @@ from apps.smallstack.audit import ADDITION, CHANGE, log_system_write, log_write
 from apps.smallstack.exceptions import FeatureDisabled
 
 from . import permissions
-from .models import ApprovalRequest
+from .models import ApprovalRequest, summarize_error
 from .registry import get_kind, resolve_on_decision
 from .signals import approval_decided, approval_requested
 
-logger = logging.getLogger("smallstack.approvals")
+logger = logging.getLogger(__name__)
 
 Actor = permissions.Actor
 
@@ -51,11 +50,21 @@ class UnknownKind(ApprovalError):
     """Filing with a kind no app registered (→ 400 on HTTP surfaces)."""
 
 
+class ApprovalRefused(NotEligible):
+    """The kind's ``check_approve`` refused this approver: approving would
+    change nothing. The request stays pending (→ 403, with the reason)."""
+
+
+class NotRemotelyFileable(NotEligible):
+    """The kind declares ``remote_filing=False``: only its own app's code may
+    file it, so the generic REST/MCP filing surfaces refuse (→ 403)."""
+
+
 class TooManyPending(ApprovalError):
     """The requester already has the maximum pending requests for this kind
     (→ 429 on REST/MCP). The abuse model is an agent token in a loop: without a
     cap one identity can bury every approver's bell and mailbox, which defeats
-    the gate by fatigue rather than by a bug. (F-18.)"""
+    the gate by fatigue rather than by a bug."""
 
 
 class ApprovalsDisabled(ApprovalError, FeatureDisabled):
@@ -64,7 +73,7 @@ class ApprovalsDisabled(ApprovalError, FeatureDisabled):
     Also a :class:`~apps.smallstack.exceptions.FeatureDisabled`, so **any**
     ``@api_view`` endpoint that calls into approvals degrades to a 503 with the
     standard envelope instead of a 500. Approvals' own routes are unmounted when
-    the switch is off, so this is the only way the 503 is ever observable. (F-31.)
+    the switch is off, so this is the only way the 503 is ever observable.
     """
 
 
@@ -72,7 +81,7 @@ def enabled() -> bool:
     """The master switch. When off, the URLs are not mounted (see
     ``apps/smallstack/site_urls.py``), the sweep job is not registered, and
     every state-changing service call raises :class:`ApprovalsDisabled` rather
-    than half-working with the fan-out silently dead. (F-11.)"""
+    than half-working with the fan-out silently dead."""
     return bool(getattr(settings, "SMALLSTACK_APPROVALS_ENABLED", True))
 
 
@@ -112,6 +121,7 @@ def request_approval(
     expires_at: datetime | None = None,
     expires_in: timedelta | None = None,
     require_known_kind: bool = False,
+    remote: bool = False,
     source: str = "web",
 ) -> ApprovalRequest:
     """File a new approval request.
@@ -121,6 +131,10 @@ def request_approval(
     (0 = never). Unregistered kinds are allowed by default (rows must outlive
     code churn); pass ``require_known_kind=True`` on surfaces where a typo is
     likelier than a plan (REST/MCP do).
+
+    ``remote=True`` marks the generic filing surfaces (the REST create endpoint
+    and the MCP ``request_approval`` tool): a kind registered with
+    ``remote_filing=False`` is refused there with :class:`NotRemotelyFileable`.
     """
     _require_enabled()
     _check_pending_cap(kind=kind, actor=actor)
@@ -130,6 +144,10 @@ def request_approval(
 
         known = ", ".join(known_keys()) or "(none registered)"
         raise UnknownKind(f"Unknown approval kind {kind!r}. Known kinds: {known}")
+    if remote and kind_def is not None and not kind_def.remote_filing:
+        raise NotRemotelyFileable(
+            f"Approval kind {kind!r} can only be filed by its own app's tool, not through the generic filing endpoint."
+        )
 
     if expires_at is None:
         if expires_in is None and kind_def is not None:
@@ -184,12 +202,18 @@ def _run_callback(req: ApprovalRequest) -> None:
         return
     try:
         callback(req)
-    except Exception:  # noqa: BLE001 — the decision stands regardless
+    except Exception as exc:  # noqa: BLE001 — the decision stands regardless
+        # The traceback goes to the log; the row (shown on the request page and
+        # returned to the requester by REST and MCP) gets one line, never the
+        # frames and server paths.
         logger.exception("approvals: on_decision failed for %s (%s)", req.pk, req.kind)
-        ApprovalRequest.objects.filter(pk=req.pk).update(
-            callback_error=traceback.format_exc()[-2000:]
-        )
+        ApprovalRequest.objects.filter(pk=req.pk).update(callback_error=_one_line(exc))
         req.refresh_from_db()
+
+
+def _one_line(exc: BaseException) -> str:
+    message = summarize_error(str(exc))
+    return f"{type(exc).__name__}: {message}"[:500] if message else type(exc).__name__
 
 
 def _finish(req: ApprovalRequest, *, actor: Actor, source: str) -> ApprovalRequest:
@@ -211,7 +235,7 @@ def _finish(req: ApprovalRequest, *, actor: Actor, source: str) -> ApprovalReque
     )
     if getattr(actor, "pk", None) is None:
         # Expiry has no human actor; without this the one terminal outcome
-        # nobody caused was also the one with no audit row. (F-15.)
+        # nobody caused was also the one with no audit row.
         log_system_write(req, CHANGE, source)
     else:
         log_write(actor, req, CHANGE, source)
@@ -245,6 +269,10 @@ def decide(
         raise NotPending(f"This request is already {req.get_status_display().lower()}.")
     if not permissions.can_decide(actor, req):
         raise NotEligible("You are not eligible to decide this request.")
+    if approved:
+        refusal = _approve_refusal(actor, req)
+        if refusal:
+            raise ApprovalRefused(refusal)
 
     _claim(
         req,
@@ -256,6 +284,21 @@ def decide(
         decision_note=note,
     )
     return _finish(req, actor=actor, source=source)
+
+
+def _approve_refusal(actor: Actor, req: ApprovalRequest) -> str:
+    """The kind's ``check_approve`` reason for refusing ``actor``'s approval,
+    or "". A hook that raises refuses too (with its one-line message): an
+    approval whose effect can't be checked is not recorded as approved."""
+    kind = get_kind(req.kind)
+    hook = getattr(kind, "check_approve", None)
+    if hook is None:
+        return ""
+    try:
+        return str(hook(actor, req) or "")
+    except Exception as exc:  # noqa: BLE001 — refuse rather than approve blind
+        logger.exception("approvals: check_approve failed for %s (%s)", req.pk, req.kind)
+        return _one_line(exc)
 
 
 def approve(req: ApprovalRequest, *, actor: Actor, note: str = "", source: str = "web") -> ApprovalRequest:
@@ -291,7 +334,7 @@ def lazy_expire_limit() -> int:
     fans out a webhook delivery — roughly 20 queries per row. Unbounded, the
     first visitor after a backlog paid the whole bill inside their GET
     (200 overdue rows = 4,017 queries / 0.57 s; 1,000 rows = 2.8 s). Bounded, the
-    page stays responsive and the scheduled sweep drains the remainder. (F-12.)
+    page stays responsive and the scheduled sweep drains the remainder.
     """
     return int(getattr(settings, "SMALLSTACK_APPROVALS_LAZY_EXPIRE_LIMIT", 25))
 

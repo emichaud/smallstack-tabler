@@ -7,7 +7,7 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 
-logger = logging.getLogger("smallstack.blog")
+logger = logging.getLogger(__name__)
 
 
 class BlogConfig(AppConfig):
@@ -20,7 +20,7 @@ class BlogConfig(AppConfig):
     label = "smallstack_blog"
     verbose_name = "Blog"
 
-    # Surfaces apps/blog/content/*.md in the help app at /help/blog/.
+    # Surfaces apps/blog/content/*.md in the help app at /smallstack/help/blog/.
     help_content_dir = "content"
     help_section_slug = "blog"
     help_section_title = "Blog"
@@ -75,7 +75,7 @@ class BlogConfig(AppConfig):
             # author can use it — but the ADMIN section is staff-only in the
             # sidebar template, which would leave her with no nav entry and no
             # way back to her drafts. Registered separately and hidden from
-            # staff so they don't see "Blog" twice. (Mirrors approvals F-46.)
+            # staff so they don't see "Blog" twice, as approvals does.
             nav.register(
                 section="app",
                 label="Blog",

@@ -7,7 +7,7 @@ register per-variant tools if the view implements SearchBuilder
 Register a cross-model ``search_all(query, limit_per_model)`` tool so
 Claude can find anything matching across the whole site.
 
-Tools follow the same async-handler shape as the existing factory tools
+Tools follow the same plain-function handler shape as the factory tools
 (see ``apps/mcp/factory.py``). The MCP server's TOOL_REGISTRY is a
 process-level dict, so we just call ``tool(...)`` at startup time from
 ``SearchConfig.ready()``.
@@ -38,12 +38,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from asgiref.sync import sync_to_async
-
 from .registry import all_views
 from .registry import search_all as _search_all
 
-logger = logging.getLogger("smallstack.search")
+logger = logging.getLogger(__name__)
 
 
 def _tool_name_for(view, variant: str = "default") -> str:
@@ -117,7 +115,7 @@ def register_search_tools(only_view=None) -> int:
                 f"over {view.model_verbose}."
             )
 
-            async def _handler(args: dict, *, _view=view, _variant=variant_name):
+            def _handler(args: dict, *, _view=view, _variant=variant_name):
                 query = (args.get("query") or "").strip()
                 limit = int(args.get("limit") or 10)
                 if not query:
@@ -131,7 +129,7 @@ def register_search_tools(only_view=None) -> int:
                 from apps.mcp.server import current_context
 
                 from .backends import get_backend
-                from .registry import _user_can_see
+                from .registry import _bypasses_visibility, _user_can_see
 
                 ctx = current_context()
                 user = getattr(ctx, "user", None)
@@ -141,28 +139,25 @@ def register_search_tools(only_view=None) -> int:
                         "denied": True,
                         "reason": (
                             f"Access to {_view.model_label} requires "
-                            f"search_access >= {_view.access}; "
-                            f"this token's user does not satisfy that tier."
+                            f"search_access >= {_view.access} (and its view permission "
+                            f"when the view checks model permissions); "
+                            f"this token's user does not satisfy that."
                         ),
                     }
 
                 backend = get_backend()
-                hits = await sync_to_async(backend.query)(_view, query, limit, variant=_variant)
+                hits = backend.query(_view, query, limit, variant=_variant)
 
                 # Run search_visibility for non-staff callers — same fail-safe
                 # semantics as registry.search_all (a raising callback drops
                 # every hit rather than leaking the unfiltered set).
-                is_privileged = user is None or bool(getattr(user, "is_staff", False))
-                if hits and not is_privileged and _view.visibility is not None:
+                if hits and not _bypasses_visibility(_view, user) and _view.visibility is not None:
                     try:
                         hit_ids = [h.object_id for h in hits]
 
-                        def _filter():
-                            qs = _view.model.objects.filter(pk__in=hit_ids)
-                            qs = _view.visibility(qs, user)
-                            return set(qs.values_list("pk", flat=True))
-
-                        visible_ids = await sync_to_async(_filter)()
+                        qs = _view.model.objects.filter(pk__in=hit_ids)
+                        qs = _view.visibility(qs, user)
+                        visible_ids = set(qs.values_list("pk", flat=True))
                         hits = [h for h in hits if h.object_id in visible_ids]
                     except Exception:
                         logger.exception(
@@ -322,7 +317,7 @@ def register_search_tools(only_view=None) -> int:
     return count
 
 
-async def _search_all_handler(args: dict):
+def _search_all_handler(args: dict):
     query = (args.get("query") or "").strip()
     limit = int(args.get("limit_per_model") or 5)
     if not query:
@@ -335,11 +330,11 @@ async def _search_all_handler(args: dict):
     # are filtered out for non-staff callers; visibility callbacks scope
     # rows. ``search_all`` was already user-aware (see registry.py); this
     # just feeds it the right identity instead of None (trusted-internal).
-    hits = await sync_to_async(_search_all)(query, limit, user=user)
+    hits = _search_all(query, limit, user=user)
     return {"results": [h.as_dict() for h in hits]}
 
 
-async def _search_help_handler(args: dict):
+def _search_help_handler(args: dict):
     query = (args.get("query") or "").strip()
     limit = int(args.get("limit") or 10)
     if not query:
@@ -348,11 +343,11 @@ async def _search_help_handler(args: dict):
         from apps.help.search import search_help_articles
     except Exception:
         return {"results": [], "error": "apps.help not installed"}
-    hits = await sync_to_async(search_help_articles)(query, limit)
+    hits = search_help_articles(query, limit)
     return {"results": [h.as_dict() for h in hits]}
 
 
-async def _search_help_docs_handler(args: dict):
+def _search_help_docs_handler(args: dict):
     query = (args.get("query") or "").strip()
     limit = int(args.get("limit") or 5)
     if not query:
@@ -361,7 +356,7 @@ async def _search_help_docs_handler(args: dict):
         from apps.help.search import search_help_chunks
     except Exception:
         return {"results": [], "error": "apps.help not installed"}
-    hits = await sync_to_async(search_help_chunks)(query, limit)
+    hits = search_help_chunks(query, limit)
     # as_dict() carries the heading_path/source/section from SearchHit.extra,
     # so the calling model gets the citation trail alongside the snippet.
     return {"results": [h.as_dict() for h in hits], "mode": "lexical"}

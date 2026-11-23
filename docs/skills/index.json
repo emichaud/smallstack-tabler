@@ -156,10 +156,31 @@
       "use_when": "Before exposing a filtered queryset as typed rows/columns for a dashboard, report, or chart UI."
     },
     {
+      "id": "dashboards",
+      "file": "dashboards.md",
+      "name": "Dashboards",
+      "description": "**KPIs, dashboards and KPI reports over datasets** — the `Metric` (a stored filter tree + aggregate → one value, thresholds, period-aware), grid dashboards (gridstack, lazy htmx cells, period bar, `register_component_type` for your own card types), reports (metrics × periods, CSV), `{% metric_card %}`, and the agent loop (`metric_preview` → `create_metric` → `dashboard_add_card` → `dashboard_snapshot`)",
+      "section": "Available Skills"
+    },
+    {
+      "id": "card-types",
+      "file": "card-types.md",
+      "name": "Card Types",
+      "description": "**Publish a dashboard card type** — the extension API: `register_component_type(ComponentType(...))` from `ready()`, every field, what `build` gets (`CellContext`) and the data helpers, rows links, `options_schema` types and your own editors, `validate` vs the shared checks, `media` + the `dashboards:card-drawn` event, what agents see, how to test. Read before adding a chart, gauge, table or any card design",
+      "section": "Available Skills"
+    },
+    {
+      "id": "app-defaults",
+      "file": "app-defaults.md",
+      "name": "App Defaults",
+      "description": "**Ship dashboard defaults with your app** — metrics, saved cards, dashboards, reports, goal lists and playlists declared in `dashboard_defaults.py` (`register_defaults(Defaults(...))`), created and kept in step after every migrate; edited in place, never overwritten once changed (provenance + fingerprints), Reset to default, deleted ones stay deleted, `manage.py dashboard_defaults`",
+      "section": "Available Skills"
+    },
+    {
       "id": "calendar",
       "file": "calendar.md",
       "name": "Calendar",
-      "description": "**Put anything with a date on a calendar** — the calendar protocol over `@dataset` (`@calendar_dataset` / `register_calendar`: start/end columns, title/status resolvers, access), the merged `/smallstack/calendar/` grid with saved views, the events + `.ics` API, MCP tools, and the eleven bundled calendars",
+      "description": "**Put anything with a date on a calendar** — the calendar protocol over `@dataset` (`@calendar_dataset` / `register_calendar`: start/end columns, title/status resolvers, access), the merged `/smallstack/calendar/` grid with saved views, the events + `.ics` API, MCP tools, the eleven bundled calendars, and **a calendar on any page** (`{% calendar_card %}`, the `calendar` dashboard card)",
       "section": "Available Skills"
     },
     {
@@ -722,6 +743,13 @@
       "use_when": "Configuring logging, adding audit trails, debugging log output, correlating an X-Request-ID to log lines, or reading logs from a deployment you cannot shell into."
     },
     {
+      "id": "access-control",
+      "file": "access-control.md",
+      "name": "Access Control",
+      "description": "**Read before adding a permission check or declaring a group** — Django groups + permissions as the one model, `register_group` (groups shipped in code, kept in step), every access change recorded to `AccessEvent` + the log + the account's history, the `/smallstack/access/` review (findings, per-user \"why\", exports), `register_check`, `acting_as` for directory syncs; REST at `/smallstack/api/access/`, MCP read tools + a membership proposal an approver decides, `manage.py access`",
+      "section": "Available Skills"
+    },
+    {
       "id": "screenshot-workflow",
       "file": "screenshot-workflow.md",
       "name": "Screenshot Workflow",
@@ -826,7 +854,7 @@
       "id": "adopting-smallstack",
       "file": "adopting-smallstack.md",
       "name": "Adopting Smallstack",
-      "description": "Adopting SmallStack into an *existing* Django project — overlay into the current repo vs fresh clone + app migration",
+      "description": "Moving an *existing* Django project onto SmallStack — a fresh clone (kept as `upstream`) with your apps migrated in one at a time: labels, migrations, sign-in, the CSP, users and data with natural keys, then which SmallStack tools to adopt. Not an overlay into your repo",
       "section": "Available Skills",
       "scope": "fork-facing"
     },
@@ -834,7 +862,7 @@
       "id": "downstream-release-migration",
       "file": "downstream-release-migration.md",
       "name": "Downstream Release Migration",
-      "description": "Migrating a fork onto a new release — additive vs breaking changes, the false-test-result + removed-symbol traps, this release's actions",
+      "description": "Migrating a fork onto a new release — additive vs breaking changes, the false-test-result + removed-symbol traps, finding what each crossed version changes",
       "section": "Available Skills",
       "scope": "fork-facing"
     },

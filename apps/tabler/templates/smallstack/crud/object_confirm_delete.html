@@ -42,14 +42,17 @@
     </div>
     {% endif %}
     <div class="card-body">
-        <p class="mb-3">
+        <p class="mb-2">
             Are you sure you want to delete <strong>{{ object }}</strong>?
         </p>
-        <form method="POST">
+        {% include "smallstack/crud/includes/delete_summary.html" %}
+        <form method="POST" class="mt-4">
             {% csrf_token %}
             <div class="btn-list">
+                {% if not deletion.blocked %}
                 <button type="submit" class="btn btn-danger">Delete</button>
-                <a href="{{ list_view_url }}" class="btn btn-ghost-secondary">Cancel</a>
+                {% endif %}
+                <a href="{{ list_view_url }}" class="btn btn-ghost-secondary">{% if deletion.blocked %}Back{% else %}Cancel{% endif %}</a>
             </div>
         </form>
     </div>

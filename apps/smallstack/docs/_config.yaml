@@ -41,6 +41,12 @@ pages:
     icon: "rocket"
     category: "Getting Started"
 
+  - slug: plain-django
+    title: "Plain Django on SmallStack"
+    description: "Write an app the way you would in any Django project: a view, a form, a template, a test"
+    icon: "code"
+    category: "Getting Started"
+
   - slug: prompting-coding-agents
     title: "Prompting a coding agent"
     description: "Copy-ready prompts for the common getting-started tasks — phrased so the agent uses what SmallStack already provides"
@@ -315,6 +321,12 @@ pages:
     title: "User Manager"
     description: "Built-in user management with search, profiles, activity stats, and timezone dashboard"
     icon: "users"
+    category: "Built-in Tools"
+
+  - slug: access-control
+    title: "Access Control"
+    description: "Who may do what, every change to it, and the least-privilege review at /smallstack/access/"
+    icon: "shield"
     category: "Built-in Tools"
 
   - slug: dashboard-widgets

@@ -6,24 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Dashboard{% endblock %} | {{ brand.name }}</title>
 
-    <!-- Blocking theme script — prevents flash of wrong theme -->
-    <script>
-    (function() {
-        var t = localStorage.getItem('smallstack-theme') || 'dark';
-        if (t === 'dark') {
-            document.body ? document.body.classList.add('theme-dark') : document.addEventListener('DOMContentLoaded', function() { document.body.classList.add('theme-dark'); });
-        }
-        document.documentElement.setAttribute('data-bs-theme', t);
-        document.documentElement.dataset.stkTheme = t;
-        // Apply font, base, radius early to prevent flash
-        var font = localStorage.getItem('smallstack-font');
-        var base = localStorage.getItem('smallstack-base');
-        var radius = localStorage.getItem('smallstack-radius');
-        if (font && font !== 'sans-serif') document.documentElement.setAttribute('data-bs-theme-font', font);
-        if (base && base !== 'gray') document.documentElement.setAttribute('data-bs-theme-base', base);
-        if (radius && radius !== '1') document.documentElement.setAttribute('data-bs-theme-radius', radius);
-    })();
-    </script>
+    {% comment %} Blocking first-paint scripts — no flash of the wrong theme. theme-init.js is
+       upstream's (data-theme / data-palette on <html>, which upstream's per-page CSS
+       keys on); tabler_init.js paints Tabler's data-bs-theme + font/base/radius. {% endcomment %}
+    <script src="{% static 'smallstack/js/theme-init.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-palette="{{ color_palette }}" data-default-palette="django"></script>
+    <script src="{% static 'tabler/js/tabler_init.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"></script>
 
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
@@ -42,20 +33,12 @@
 
     {% block extra_css %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-    <script>
-    // Apply theme + layout immediately on body to prevent flash
-    (function() {
-        var t = localStorage.getItem('smallstack-theme') || 'dark';
-        if (t === 'dark') document.body.classList.add('theme-dark');
-        var layout = localStorage.getItem('smallstack-layout') || 'default';
-        // Migrate legacy values
-        if (layout === 'sticky') layout = 'navbar-sticky';
-        if (layout === 'boxed') document.body.classList.add('layout-boxed');
-        else if (layout === 'condensed') document.body.classList.add('layout-condensed');
-        else if (layout === 'fluid') document.body.classList.add('layout-fluid');
-    })();
-    </script>
+{% comment %} data-sidebar-state: upstream's contract (a kiosk page sets the block to "disabled";
+   Tabler has no sidebar, so that is the default). data-no-stepper: theme.js leaves
+   number fields to Tabler's own form styling. {% endcomment %}
+<body class="{% block body_class %}{% endblock %}" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      data-sidebar-state="{% block sidebar_state %}disabled{% endblock %}" data-no-stepper>
+    <script src="{% static 'tabler/js/tabler_body_init.js' %}"></script>
     <div class="page">
         <!-- Top Navbar -->
         {% block navbar %}
@@ -111,20 +94,32 @@
     <!-- Theme Settings Panel -->
     {% include "tabler/includes/settings.html" %}
 
+    {% comment %} Shared stat-card drill-down modal — rendered once; {% stat_card %} and the
+       runbook / dashboards drill-downs open it through theme.js. {% endcomment %}
+    {% smallstack_modal %}
+
+    {% comment %} Upstream's page behaviours. config.js feeds theme.js; theme.js carries the
+       data-ss-action / data-confirm / data-stat-modal dispatchers every upstream
+       template relies on now that they have no inline handlers. data-authenticated
+       is "false" on purpose: tabler_theme.js owns the theme and saves it to the
+       profile on a change, where theme.js would re-POST it on every page load. {% endcomment %}
+    <script src="{% static 'smallstack/js/config.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-color-palette="{{ color_palette }}"
+            data-authenticated="false"
+            data-sidebar-enabled="false"
+            data-sidebar-default="disabled"
+            data-topbar-nav-enabled="false"
+            data-theme-url="{% url 'theme_preference' %}"
+            data-palette-url="{% url 'palette_preference' %}"></script>
     <!-- htmx -->
     <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
+    <script src="{% static 'smallstack/js/theme.js' %}"></script>
     <!-- Tabler JS -->
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.4.0/dist/js/tabler.min.js"></script>
-    <!-- Tabler 1.4 bundles Bootstrap under window.tabler.bootstrap and no
-         longer exposes the conventional global `bootstrap`. Alias it so
-         code using `new bootstrap.Modal(...)`, tooltips/popovers, and the
-         htmx re-init patterns keep working. -->
-    <script>
-        if (typeof window.bootstrap === 'undefined' && window.tabler && window.tabler.bootstrap) {
-            window.bootstrap = window.tabler.bootstrap;
-        }
-    </script>
-    <!-- Theme switching -->
+    <script src="{% static 'tabler/js/bootstrap_alias.js' %}"></script>
+    <!-- Theme switching (the settings panel) -->
     <script src="{% static 'tabler/js/tabler_theme.js' %}"></script>
     <!-- CRUD table column resize + wrap mode -->
     <script src="{% static 'smallstack/js/table-resize.js' %}" defer></script>

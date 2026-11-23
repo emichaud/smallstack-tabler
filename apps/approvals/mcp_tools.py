@@ -29,13 +29,11 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from asgiref.sync import sync_to_async
-
 from apps.mcp.server import current_context, tool
 
 from .resolvers import resolve_assignees, resolve_target
 
-logger = logging.getLogger("smallstack.approvals")
+logger = logging.getLogger(__name__)
 
 _SPECS: list[tuple] = []
 
@@ -71,7 +69,7 @@ def _serialize(req: Any) -> dict[str, Any]:
     payload the agent itself supplied, ``decided_at`` times the outcome, and
     ``callback_error`` is the only way an agent can learn that the approved side
     effect *failed* — without it a broken callback came back as a clean
-    ``{"status": "approved"}``. (F-21.)
+    ``{"status": "approved"}``.
     """
     return {
         "id": req.pk,
@@ -87,7 +85,7 @@ def _serialize(req: Any) -> dict[str, Any]:
         # `target`/`assignees` — because this payload is hand-built and flat;
         # REST reaches the same values as `target_ref`/`assignee_usernames`,
         # since `target` and `assignees` are already taken there by the instance
-        # and the M2M. (F-35.)
+        # and the M2M.
         "target": req.target_ref,
         "target_repr": req.target_repr,
         "assignees": req.assignee_usernames,
@@ -96,7 +94,7 @@ def _serialize(req: Any) -> dict[str, Any]:
         "decided_at": req.decided_at.isoformat() if req.decided_at else None,
         "decision_note": req.decision_note,
         # Non-empty ⇒ the decision stands but the kind's side effect raised.
-        "callback_error": req.callback_error,
+        "callback_error": req.callback_error_summary,
         "expires_at": req.expires_at.isoformat() if req.expires_at else None,
         "created_at": req.created_at.isoformat(),
     }
@@ -108,9 +106,9 @@ def _serialize(req: Any) -> dict[str, Any]:
         "File a human-approval request and return its id and status. A human "
         "decides it in the SmallStack console (or an app's own review page). "
         "Then poll get_approval, passing that value as 'id' — roughly every 30 "
-        "seconds — until "
-        "'terminal' is true; the statuses are pending / approved / rejected / "
-        "canceled / expired, and only 'approved' means go ahead. The reply's "
+        "seconds — until its 'status' is no longer 'pending'; the statuses are "
+        "pending / approved / rejected / canceled / expired, and only "
+        "'approved' means go ahead. The reply's "
         "'expires_at' is the loop's deadline; when it is null the request never "
         "expires on its own, so cap your own polling and stop. After approval, "
         "check 'callback_error' — non-empty means the approved side effect "
@@ -144,7 +142,7 @@ def _serialize(req: Any) -> dict[str, Any]:
     },
     write=True,
 )
-async def request_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
+def request_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
     from datetime import timedelta
 
     from . import services
@@ -173,8 +171,11 @@ async def request_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
                 assignees=assignees,
                 expires_in=expires_in,
                 require_known_kind=True,
+                remote=True,
                 source="MCP",
             )
+        except services.NotRemotelyFileable as exc:
+            return _err("not_permitted", str(exc))
         except services.UnknownKind as exc:
             return _err("unknown_kind", str(exc))
         except services.TooManyPending as exc:
@@ -183,7 +184,7 @@ async def request_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _err("disabled", str(exc))
         return _serialize(req)
 
-    return await sync_to_async(_file)()
+    return _file()
 
 
 @_register(
@@ -208,7 +209,7 @@ async def request_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
     },
     write=True,
 )
-async def decide_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
+def decide_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
     from . import permissions, services
     from .models import ApprovalRequest
 
@@ -240,4 +241,4 @@ async def decide_approval_tool(args: dict[str, Any]) -> dict[str, Any]:
             return _err("disabled", str(exc))
         return _serialize(req)
 
-    return await sync_to_async(_decide)()
+    return _decide()

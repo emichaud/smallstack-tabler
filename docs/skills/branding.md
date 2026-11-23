@@ -9,6 +9,34 @@
 - **Default location**: `static/smallstack/brand/` (upstream defaults)
 - **Custom location**: `static/brand/` (downstream project overrides)
 
+### The stock logo follows the theme
+
+While a project still uses SmallStack's own logo files, the logo is **drawn live from the
+theme** instead of loaded as an image, so it matches every palette in both themes:
+
+| Piece | Template | Styled by |
+|---|---|---|
+| The four-square mark (also the sidebar toggle) | `smallstack/includes/brand_mark.html` | `.brand-mark`: all four squares in `--brand-mark`, stepped by opacity |
+| The wordmark in the top bar | `smallstack/includes/brand_wordmark.html` | `.brand-word`: "Django" in the bar's text colour, "SmallStack" in `--brand-mark` |
+| The full logo on the sign-in pages | `smallstack/includes/brand_lockup.html` | the same two, with `.brand-on-page` |
+
+| Where | `--brand-mark` | Why |
+|---|---|---|
+| Top bar, dark theme | `var(--primary)` | the bar is near-black, so the logo is the palette's accent |
+| Top bar, light theme | `var(--header-fg)` | the bar itself is the accent, so the logo takes the bar's text colour and the two words differ by weight |
+| A page's own background (`.brand-on-page`) | `var(--primary)` | the accent reads on the page in both themes |
+
+**Your own logo is untouched.** The context processor sets `brand.wordmark_themed` only while
+`BRAND_LOGO_TEXT` is the stock file, and `brand.logo_themed` only while `BRAND_LOGO` and
+`BRAND_LOGO_DARK` are. Point any of them at your own file and that image is used, as before.
+To keep the stock logo but pin its colour, set `--brand-mark` in your stylesheet.
+
+**As files.** `manage.py brand_logos` writes the same logo for every palette to
+`static/smallstack/brand/palettes/` (`logo-<palette>-{dark,light}.svg`,
+`icon-<palette>-{dark,light}.svg`), from each palette's `--primary` (`apps/smallstack/brand_logos.py`).
+Use those outside the app. The favicon and `BRAND_ICON` (public status and blog pages) are still
+single image files and don't change with the palette.
+
 ### Logo Sizes Reference
 
 | Setting | Purpose | Size | Format |
@@ -52,7 +80,7 @@ BRAND_TAGLINE = "Your project tagline"
 
 ## CSS Variables for Theming
 
-Key variables in `static/smallstack/css/theme.css`:
+Key variables in `static/smallstack/css/core.css` (imported by `theme.css`):
 
 ```css
 :root {
@@ -76,9 +104,9 @@ Branding is available in all templates via `brand` context:
 
 ## Files to Modify for Rebranding
 
-1. **Settings**: `config/settings/base.py` - Update `BRAND_*` settings
+1. **Settings**: `BRAND_*` in `config/settings/smallstack.py`, or the same names in the environment
 2. **Assets**: `static/brand/` - Add your custom logo files (defaults are in `static/smallstack/brand/`)
-3. **Colors**: `static/smallstack/css/theme.css` - Update CSS variables (or add overrides in `static/css/project.css`)
+3. **Colors**: add a palette (`docs/skills/modify-palettes.md`) rather than editing SmallStack's CSS, which the next upgrade replaces
 
 ## Related Documentation
 

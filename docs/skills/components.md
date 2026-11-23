@@ -12,13 +12,14 @@ SmallStack provides styled components via CSS classes in `static/smallstack/css/
 
 ```
 static/smallstack/css/
-├── theme.css              # CSS variables, layout, page-header-bleed, stat-modal
-├── components.css         # All component classes (buttons, tables, forms, cards, badges, tabs, action cards, filter toggles, stat cards, search)
+├── core.css               # CSS variables (design tokens) and .sr-only, imported by theme.css
+├── theme.css              # Layout, page shell, page-header-bleed
+├── components.css         # All component classes (buttons, tables, forms, cards, badges, tabs, action cards, filter toggles, stat cards, search, stat-modal, help bubbles)
+├── embed.css              # {% smallstack_assets %}: core + palettes + components in a cascade layer, for your own theme
 └── palettes.css           # Color palette overrides
 
 templates/smallstack/
 ├── base.html              # Base template with all blocks
-├── starter.html           # Copy-paste starter template for new pages
 ├── crud/                  # CRUD generic templates
 │   └── includes/
 │       └── delete_modal.html  # Reusable delete confirmation modal
@@ -79,18 +80,18 @@ Card with header actions (flex layout on card-header is acceptable):
 
 For lighter dashboard tables, use `class="table-plain"`.
 
-### django-tables2
+### CRUDView tables
+
+A CRUDView's list table is its own (django-tables2 was removed in 0.12.0): choose the columns
+with `list_fields` and the linked column with `link_field`, and shape cells with
+`field_transforms`. See `docs/skills/crud-views.md`.
 
 ```python
-class WidgetTable(tables.Table):
-    name = DetailLinkColumn(url_base="manage/widgets", link_view="update")
-    is_active = BooleanColumn(verbose_name="Active")
-    actions = ActionsColumn(url_base="manage/widgets")
-
-    class Meta:
-        model = Widget
-        fields = ("name", "is_active", "created_at")
-        attrs = {"class": "crud-table"}
+class WidgetCRUDView(CRUDView):
+    model = Widget
+    fields = ["name", "is_active"]
+    list_fields = ["name", "is_active", "created_at"]
+    link_field = "name"
 ```
 
 ## Stat Cards
@@ -110,11 +111,11 @@ Clickable with modal drilldown:
 <div class="stat-card stat-card-clickable"
      hx-get="{% url 'stat-detail' 'total' %}"
      hx-target="#stat-modal-body"
-     onclick="openStatModal('All Items')">
+     data-stat-modal="All Items">
     <div class="stat-card-value">{{ count }}</div>
     <div class="stat-card-label">Label</div>
 </div>
-{% include "smallstack/includes/stat_modal.html" %}
+{# No modal include: smallstack/base.html has it ({% smallstack_modal %} on a base of your own) #}
 ```
 
 ## Action Cards
@@ -258,5 +259,5 @@ Trigger from a button:
 3. **Use `color-mix()`** for tints — `color-mix(in srgb, var(--primary) 15%, var(--body-bg))`
 4. **Use `.crud-table`** for all tables
 5. **Use `.crud-form`** for all forms
-6. **Copy `templates/smallstack/starter.html`** when creating new pages
+6. **Copy `apps/showcase/templates/showcase/includes/starter_content.html`** when creating new pages
 7. **See [admin-page-styling.md](admin-page-styling.md)** for the full reference with anti-patterns

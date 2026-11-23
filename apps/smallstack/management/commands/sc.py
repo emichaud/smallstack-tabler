@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
@@ -36,7 +37,7 @@ from apps.smallstack.api import apply_filters, apply_ordering, apply_search, ser
 from apps.smallstack.audit import ADDITION, CHANGE, DELETION, log_write
 from apps.smallstack.cli_format import json_dump, table
 from apps.smallstack.crud import CRUDView
-from apps.smallstack.form_bridge import merge_form_payload
+from apps.smallstack.form_bridge import build_form, merge_form_payload
 
 # Never emitted by the CLI, even when a view falls back to "all concrete fields" for
 # detail: a password hash in --json (which gets piped/logged) is a sharp edge, and the
@@ -73,6 +74,7 @@ class Command(BaseCommand):
             "status": self._cmd_status,
             "index": self._cmd_index,
             "webhook": self._cmd_webhook,
+            "access": self._cmd_access,
             "commands": self._cmd_commands,
         }
         if sub is None:
@@ -103,6 +105,10 @@ class Command(BaseCommand):
         user = get_user_model().objects.filter(username=username).first()
         if user is None:
             raise CommandError(f"no user with username {username!r}")
+        if not user.is_active:
+            # Every other surface refuses a deactivated account; acting as one
+            # would also put its name on the audit entry.
+            raise CommandError(f"user {username!r} is deactivated; sc won't act as an inactive account")
         return user
 
     def _fake_request(self, actor) -> HttpRequest:
@@ -114,13 +120,16 @@ class Command(BaseCommand):
         req.META = {}
         return req
 
-    def _scoped_qs(self, view, actor, request):
+    def _scoped_qs(self, view, actor, request, *, check_view: bool = True):
         """Base queryset, scoped by the view's tenancy hook **only** when acting as
         a user (``--user``). Without ``--user`` the CLI is a local admin tool with
         full access, so no scoping is applied — this keeps ``ls``/``get``/``--counts``
         consistent with each other and with ``sc search``."""
         qs = view._get_queryset()
         if actor is not None:
+            # A write verb checks its own permission first (`_check_write_permission`).
+            if check_view and not view.has_model_permission(request, "view"):
+                raise CommandError(f"{actor.get_username()} lacks the view permission on {view.model.__name__}")
             qs = view.get_list_queryset(qs, request)
         return qs
 
@@ -457,13 +466,16 @@ class Command(BaseCommand):
 
     # -- write verbs ----------------------------------------------------------
 
-    def _check_write_permission(self, view, actor) -> None:
+    def _check_write_permission(self, view, actor, action: str) -> None:
         """Staff-gated models (StaffRequiredMixin) require a staff --user for writes,
-        mirroring the MCP tools' requires_access='staff'."""
+        mirroring the MCP tools' requires_access='staff'. A view with
+        ``model_permissions`` also needs the --user's ``action`` permission."""
         if self._is_staff_gated(view) and not (actor is not None and getattr(actor, "is_staff", False)):
             raise CommandError(
                 f"{self._canonical_token(view.model)} is staff-only; pass --user <staff-username> to write"
             )
+        if actor is not None and not view.has_model_permission(self._fake_request(actor), action):
+            raise CommandError(f"{actor.get_username()} lacks the {action} permission on {view.model.__name__}")
 
     @staticmethod
     def _parse_field_assignments(tokens: list[str]) -> dict[str, str]:
@@ -543,7 +555,7 @@ class Command(BaseCommand):
 
         view = self._resolve_view(opts.model)
         actor = self._resolve_actor(opts.user)
-        self._check_write_permission(view, actor)
+        self._check_write_permission(view, actor, "add")
 
         fields = self._parse_field_assignments(extras)
         if opts.stdin_field:
@@ -554,7 +566,9 @@ class Command(BaseCommand):
         request = self._fake_request(actor)
         # Omitted fields fall back to model defaults (mirrors REST/MCP create) —
         # so e.g. a BooleanField(default=True) isn't silently created as False.
-        form = form_class(merge_form_payload(form_class, fields, fill_defaults=True))
+        # build_form passes --user to a form that takes ``user=`` (scoped
+        # choices, the account rules), as REST and MCP do.
+        form = build_form(form_class, merge_form_payload(form_class, fields, fill_defaults=True), user=actor)
         if not form.is_valid():
             self._fail_form(form)
         try:
@@ -577,7 +591,7 @@ class Command(BaseCommand):
 
         view = self._resolve_view(opts.model)
         actor = self._resolve_actor(opts.user)
-        self._check_write_permission(view, actor)
+        self._check_write_permission(view, actor, "change")
         request = self._fake_request(actor)
 
         obj = self._fetch(view, actor, request, opts.pk)
@@ -602,7 +616,7 @@ class Command(BaseCommand):
             instance_fields=view.fields or view._get_detail_fields(),
         )
 
-        form = form_class(merged, instance=obj)
+        form = build_form(form_class, merged, instance=obj, user=actor)
         if not form.is_valid():
             self._fail_form(form)
         try:
@@ -624,12 +638,17 @@ class Command(BaseCommand):
 
         view = self._resolve_view(opts.model)
         actor = self._resolve_actor(opts.user)
-        self._check_write_permission(view, actor)
+        self._check_write_permission(view, actor, "delete")
         request = self._fake_request(actor)
 
         obj = self._fetch(view, actor, request, opts.pk)
         if not view.can_delete(obj, request):
             raise CommandError("delete not permitted")
+        if actor is not None:
+            try:
+                view.check_cascade_permission(obj, request)
+            except PermissionDenied as exc:
+                raise CommandError(str(exc)) from exc
         if not opts.force:
             raise CommandError(
                 f"refusing to delete {self._canonical_token(view.model)} #{obj.pk} without --force"
@@ -645,7 +664,7 @@ class Command(BaseCommand):
     def _fetch(self, view, actor, request, pk):
         """Fetch one object (scoped as ``actor`` when given), with clean errors."""
         try:
-            obj = self._scoped_qs(view, actor, request).filter(pk=pk).first()
+            obj = self._scoped_qs(view, actor, request, check_view=False).filter(pk=pk).first()
         except (ValueError, TypeError):
             raise CommandError(f"invalid id {pk!r} for {self._canonical_token(view.model)}")
         if obj is None:
@@ -715,6 +734,14 @@ class Command(BaseCommand):
         """
         self._run("webhook", list(argv))
 
+    def _cmd_access(self, argv: list[str]) -> None:
+        """sc access explain|check|grant|revoke|groups|findings — who may do what.
+
+        Fronts the `access` management command: the same membership service
+        and audit trail as the Access pages, REST and the approved MCP request.
+        """
+        self._run("access", list(argv))
+
     def _cmd_token(self, argv: list[str]) -> None:
         """sc token create|list|revoke — API token operations."""
         rest = list(argv)
@@ -774,15 +801,19 @@ class Command(BaseCommand):
         )
         # argparse's own error for a dash-leading prefix is "the following
         # arguments are required: prefix", which is true but useless — the
-        # argument WAS supplied. Name the fix before it reaches argparse. (F-34.)
+        # argument WAS supplied. Name the fix before it reaches argparse.
         if argv and argv[0].startswith("-") and argv[0] not in ("-h", "--help", "--"):
             raise CommandError(
                 f"{argv[0]!r} starts with '-', so argparse reads it as an option. "
                 f"Pass it after a separator:\n\n    sc token revoke -- {argv[0]}\n"
             )
         opts = parser.parse_args(argv)
-        n = APIToken.objects.filter(prefix=opts.prefix, is_active=True).update(is_active=False)
-        if not n:
+        # token.revoke() (not .update()) so each one is stamped and recorded
+        # as a token_revoked access event.
+        tokens = list(APIToken.objects.filter(prefix=opts.prefix, is_active=True))
+        for token in tokens:
+            token.revoke()
+        if not tokens:
             raise CommandError(f"no active token with prefix {opts.prefix!r}")
         self.stdout.write(self.style.SUCCESS(f"revoked token {opts.prefix}"))
 

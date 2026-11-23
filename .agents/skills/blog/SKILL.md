@@ -22,7 +22,7 @@ published into a blog and optionally kept in sync.
 
 ```
 /my/blogs/               the author's studio login-gated, owner-scoped (namespace `myblogs`)
-/smallstack/blog/        system blog manager login-gated, ownership-scoped CRUDViews
+/smallstack/blog/        system blog manager login-gated, ownership-scoped CRUDViews (lands on posts/; also blogs/, tags/, subscribers/, issues/)
 /blog/                   public reading      anonymous (gated by a setting)
 /blog/<blog>/<post>/     permalink
 /blog/<blog>/feed.rss    per-blog feed       .atom and .json too
@@ -285,7 +285,7 @@ subscriber address.
    `ModelForm.__init__`, which startup instantiates). It builds and caches the
    root URLConf before the app registry is ready, leaving every later-registered
    app with no routes. Use `reverse_lazy` or `django.utils.functional.lazy`.
-   `apps/smallstack/test_urlconf_load_timing.py` is the canary.
+   `apps/smallstack/tests/test_urlconf_load_timing.py` is the canary.
 8. **Don't hard-code a colour** in a template or `blog.css` — six palettes × two
    themes. See `modern-dark-theme.md`.
 

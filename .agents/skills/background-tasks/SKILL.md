@@ -51,10 +51,13 @@ In `config/settings/base.py`:
 TASKS = {
     "default": {
         "BACKEND": "django_tasks_db.DatabaseBackend",
-        "QUEUES": ["default", "email"],
+        "QUEUES": ["default", "email", "webhooks"],
     }
 }
 ```
+
+`webhooks` carries outbound webhook deliveries only. A project whose `TASKS`
+leaves it out keeps working: deliveries fall back to `default`.
 
 ## Defining Tasks
 
@@ -160,8 +163,11 @@ send_html_email_task.enqueue(
 ### Development
 
 ```bash
-uv run python manage.py db_worker
+uv run python manage.py db_worker --queue-name "*"
 ```
+
+`"*"` drains every queue. A bare `db_worker` takes only `default`, so invites and
+sign-in codes (`email`) and webhook deliveries (`webhooks`) would sit queued.
 
 Or with a specific queue:
 
@@ -193,6 +199,13 @@ replace the production worker — that's wired into the container entrypoint bel
 By default, the web container runs `db_worker` inline — no separate worker service needed. The entrypoint script launches `db_worker` as a background process with a restart loop and cleans it up via a signal trap on container stop.
 
 This is controlled by the `WORKER_INLINE` env var, which defaults to `true`.
+
+The entrypoint also starts `WORKER_WEBHOOKS` (default `1`) workers for the
+`webhooks` queue alone, and the main worker skips that queue. A delivery can wait
+up to `SMALLSTACK_WEBHOOK_TIMEOUT` on a slow endpoint, so on a shared worker a
+fan-out or retry burst held up sign-in emails and scheduled jobs behind it.
+Raise it for more delivery throughput; `0` runs everything on the one worker.
+Each worker is one more Python process, which matters on a 1 GB VPS.
 
 ### Separate Worker (Scaling Up)
 
@@ -300,7 +313,7 @@ running. Test worker death with `--no-reload`.
 
 Everything above fails *silently* when misconfigured — the symptom is an absence
 (no heartbeat, no reaper), which surfaces only when a worker dies. So
-`manage.py check` reports three degraded configurations. All are warnings, and
+`manage.py check` reports five degraded configurations. All are warnings, and
 none fires on shipped defaults:
 
 | ID | Fires when | Why it matters |
@@ -394,7 +407,7 @@ def _run_worker():
 
 Use `pytest.mark.django_db(transaction=True)`, and define test tasks at **module
 level** (the worker re-imports them by dotted path). See
-`apps/tasks/test_retries.py` and `apps/tasks/test_reaper.py`.
+`apps/tasks/tests/test_retries.py` and `apps/tasks/tests/test_reaper.py`.
 
 ## Built-in Tasks
 

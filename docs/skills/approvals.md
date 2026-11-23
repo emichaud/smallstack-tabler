@@ -52,7 +52,14 @@ Other `@approval_kind` kwargs: `description`, `can_decide=fn(user, req)`
 (eligibility hook — **narrows only**, see below), `context_template="…"`
 (explicit card template), `notify=["ops@example.com"]` (extra email
 recipients), `assignable=[…]` (whitelist for remote assignee selection, §2),
-and `landing_url=fn(req) -> "/your/page/"` — where this kind sends its humans.
+`remote_filing=False` (only your own code may file the kind: the generic REST
+create endpoint and MCP `request_approval` refuse it with 403 / `not_permitted`;
+set it whenever the callback trusts `target`/`context` to say what it will do),
+`check_approve=fn(actor, req) -> str | None` (asked when someone approves, before
+anything is recorded: a reason refuses the approval with `ApprovalRefused`, a 403 /
+`not_eligible` carrying the reason, and the request stays pending; use it when your
+callback would refuse this approver anyway, so nobody reads "approved" for a
+change that never happened), and `landing_url=fn(req) -> "/your/page/"` — where this kind sends its humans.
 All four channels (both emails, both bell rows) use that one value, so a kind
 that owns an embedded `{% approval_card %}` review page can point participants
 there instead of the shared console. Unset ⇒ the console.
@@ -83,8 +90,9 @@ Remote surfaces (both route through the same service):
   `{"kind": …, "title": …, "context": {…}, "target": "app_label.model:pk",
   "assignees": ["username"], "expires_in_minutes": …}` → 201.
   Unknown kind → 400 listing the registered kinds. Readonly tokens can't file.
+  A kind registered with `remote_filing=False` → 403.
 - **MCP** — the `request_approval` tool (any token tier; write-gated), then
-  poll `get_approval` until `terminal` is true.
+  poll `get_approval` until its `status` is no longer `pending`.
 
 Both remote surfaces accept `target` and `assignees`, so a client does **not**
 need an app-specific filing endpoint to point an approval at a business row:
@@ -156,8 +164,10 @@ any surface.
 One decision triggers, in order:
 
 1. **The kind callback** — never breaks the decision; a raised exception lands
-   in `callback_error` (surfaced on the console, and returned by the REST detail
-   and the `get_approval` MCP tool so a remote caller can see it too).
+   in `callback_error` as one line (`ExcType: message`; the traceback goes to the
+   log only), surfaced on the console, and returned by the REST detail and the
+   `get_approval` MCP tool so a remote caller can see it too. A refusal you can
+   foresee belongs in `check_approve`, not here.
 2. **Audit** — a `LogEntry` with the source (`web` / `REST API` / `MCP` /
    `expiry`). Expiry has no human actor, so it is attributed to the reserved
    `SMALLSTACK_AUDIT_SYSTEM_USERNAME` account (created on first use as
@@ -249,6 +259,9 @@ Remote reaction story: subscribe a webhook filtered on
 - **Embed** — `{% load approvals_tags %}{% approval_card req %}` drops the
   decision card into any of your own pages — use it (plus `landing_url` on the
   kind) when you want participants on *your* page instead of the console.
+  The card checks `can_view` itself: for anyone but staff, the requester or an
+  assignee it renders nothing, whatever request the page hands it, so the title
+  and description never leak through a page that picked the wrong row.
   Also: `{% approval_can_decide user req as ok %}`.
 - **Dashboard** — a pending-count widget on `/smallstack/`.
 

@@ -19,16 +19,11 @@ templates/
 │   │   └── breadcrumbs.html   # Breadcrumb navigation
 │   ├── partials/              # htmx swap fragments
 │   │   └── messages.html      # OOB messages partial for htmx responses
-│   └── pages/                 # SmallStack marketing content (upstream)
-│       ├── home_content.html
-│       ├── about_content.html
-│       ├── starter_content.html
-│       ├── starter_css.html
-│       └── starter_js.html
+│   └── pages/                 # SmallStack's home content (upstream)
+│       └── home_content.html
 ├── website/
-│   ├── home.html              # Thin wrapper → includes pages/home_content.html
-│   └── about.html             # Thin wrapper → includes pages/about_content.html
-├── starter.html               # Thin wrapper → includes pages/starter_*.html
+│   ├── base.html              # The public site's base
+│   └── home.html              # Thin wrapper → includes pages/home_content.html
 ├── profile/
 │   ├── profile.html
 │   ├── profile_edit.html
@@ -47,7 +42,7 @@ templates/
 
 ## Base Template Structure
 
-`templates/smallstack/base.html`:
+`apps/smallstack/templates/smallstack/base.html` (abridged):
 
 ```html
 <!DOCTYPE html>
@@ -57,23 +52,11 @@ templates/
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% endblock %} | {{ brand.name }}</title>
 
-    <!-- Blocking script prevents theme/sidebar/palette flash -->
-    <script>
-    (function() {
-        var THEME_KEY = 'smallstack-theme';
-        var SIDEBAR_KEY = 'smallstack-sidebar-closed';
-        var PALETTE_KEY = 'smallstack-palette';
-        var theme = localStorage.getItem(THEME_KEY) || 'dark';
-        document.documentElement.setAttribute('data-theme', theme);
-        var palette = localStorage.getItem(PALETTE_KEY) || '{{ color_palette }}';
-        if (palette && palette !== 'django') {
-            document.documentElement.setAttribute('data-palette', palette);
-        }
-        if (window.innerWidth > 768 && localStorage.getItem(SIDEBAR_KEY) === 'true') {
-            document.documentElement.classList.add('sidebar-will-close');
-        }
-    })();
-    </script>
+    <!-- Blocking theme/sidebar/palette script: prevents a flash of the wrong theme -->
+    <script src="{% static 'smallstack/js/theme-init.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-palette="{{ color_palette }}" data-default-palette="django" data-sidebar-no-transition></script>
 
     <!-- CSS -->
     <link rel="stylesheet" href="{% static 'admin/css/base.css' %}">
@@ -106,16 +89,19 @@ templates/
         </div>
     </div>
 
-    <!-- Theme configuration -->
-    <script>
-        window.SMALLSTACK = {
-            userTheme: {% if user.is_authenticated and user.profile %}'{{ user.profile.theme_preference }}'{% else %}null{% endif %},
-            userPalette: {% if user.is_authenticated and user.profile %}'{{ user.profile.color_palette }}'{% else %}null{% endif %},
-            colorPalette: '{{ color_palette }}',
-            isAuthenticated: {% if user.is_authenticated %}true{% else %}false{% endif %}
-        };
-    </script>
-    <!-- JavaScript -->
+    <!-- Theme configuration, read by theme.js. data-theme-url / data-palette-url
+         are where the toggle saves a signed-in user's choice: without them it
+         changes only this browser, and the profile's theme wins on the next load. -->
+    <script src="{% static 'smallstack/js/config.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-color-palette="{{ color_palette }}"
+            data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+            data-sidebar-enabled="{{ smallstack_sidebar_enabled|yesno:'true,false' }}"
+            data-sidebar-default="{{ smallstack_sidebar_default }}"
+            data-topbar-nav-enabled="{{ smallstack_topbar_nav_enabled|yesno:'true,false' }}"
+            data-theme-url="{% url 'theme_preference' %}"
+            data-palette-url="{% url 'palette_preference' %}"></script>
     <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
     <script src="{% static 'smallstack/js/theme.js' %}"></script>
     {% block extra_js %}{% endblock %}
@@ -273,19 +259,19 @@ Contains:
 ```
 
 **Sidebar active-state gotcha for help sections:**
-The "Help & Docs" link uses path-based matching (`'/help/' in request.path`) and must explicitly exclude any help section that has its own sidebar link. When adding a new sidebar link that points to a help path, add a `not in request.path` exclusion to the "Help & Docs" link so both don't highlight at once.
+The "Help & Docs" link uses path-based matching (`'/smallstack/help/' in request.path`) and must explicitly exclude any help section that has its own sidebar link. When adding a new sidebar link that points to a help path, add a `not in request.path` exclusion to the "Help & Docs" link so both don't highlight at once.
 
-Similarly, the "SmallStack" link matches all `/help/smallstack` paths. The "Components" sidebar link points to `/help/smallstack/components` — so SmallStack excludes that path to avoid double-highlighting.
+Similarly, the "SmallStack" link matches all `/smallstack/help/smallstack` paths. The "Components" sidebar link points to `/smallstack/help/smallstack/components` — so SmallStack excludes that path to avoid double-highlighting.
 
 ```html
-<!-- Help & Docs excludes /help/smallstack -->
-<a class="nav-link {% if '/help/' in request.path and '/help/smallstack' not in request.path %}active{% endif %}">
+<!-- Help & Docs excludes /smallstack/help/smallstack -->
+<a class="nav-link {% if '/smallstack/help/' in request.path and '/smallstack/help/smallstack' not in request.path %}active{% endif %}">
 
-<!-- SmallStack excludes /help/smallstack/components -->
-<a class="nav-link {% if '/help/smallstack' in request.path and '/help/smallstack/components' not in request.path %}active{% endif %}">
+<!-- SmallStack excludes /smallstack/help/smallstack/components -->
+<a class="nav-link {% if '/smallstack/help/smallstack' in request.path and '/smallstack/help/smallstack/components' not in request.path %}active{% endif %}">
 
 <!-- Components matches only its own page -->
-<a class="nav-link {% if '/help/smallstack/components' in request.path %}active{% endif %}">
+<a class="nav-link {% if '/smallstack/help/smallstack/components' in request.path %}active{% endif %}">
 ```
 
 When adding a new sidebar link to a page within SmallStack docs, follow this pattern: add an exclusion to the parent link and a specific path check on the new link.
@@ -481,7 +467,7 @@ def my_view(request):
 {% endblock %}
 ```
 
-> **Tip:** For a full copy-paste starter with all page sections, copy `templates/smallstack/starter.html`. See [admin-page-styling.md](admin-page-styling.md) for the complete CSS class reference.
+> **Tip:** For a full copy-paste starter with all page sections, copy `apps/showcase/templates/showcase/includes/starter_content.html` (the page at `/starter/`, from the deletable `apps/showcase`). See [admin-page-styling.md](admin-page-styling.md) for the complete CSS class reference.
 
 ## Conditional Content
 
@@ -578,6 +564,132 @@ def item_list(request):
 ```
 
 See [htmx-patterns.md](../skills/htmx-patterns.md) for the full reference including OOB messages and JS integration.
+
+## Behaviour without inline JavaScript
+
+**The CSP's `script-src` is `'self'` with no `'unsafe-inline'`.** The browser runs no inline
+`<script>` block and no `onclick="…"`; it logs the blocked line in the console instead.
+
+### Moving an existing project onto the policy
+
+**Size it first:** `uv run python manage.py template_hygiene` lists every inline `<script>`, `on…=`
+handler and `<style>` block, by file and line (`--summary` gives counts per file, `--check` exits 1
+while any script or handler is left, `--framework` limits it to SmallStack's own templates).
+
+**The stopgap:** add `"'unsafe-inline'"` back to `CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"]`
+and your inline code runs again while you move it. The hygiene tests follow the policy in force
+(the rules live in `apps/smallstack/template_hygiene.py`):
+
+| `script-src` | Script + handler sweeps cover | `test_csp_script_src_allows_no_inline_script` |
+|---|---|---|
+| no `'unsafe-inline'` | every template, yours included, since the browser blocks them all | passes |
+| `'unsafe-inline'` (stopgap) | SmallStack's own templates only | skips, naming how many of yours remain |
+
+The `<style>` sweep covers SmallStack's own templates only, under either policy. `style-src` allows
+inline styles, so yours break nothing.
+
+**A step between the two: nonces.** Rather than reopen every inline script, keep a block you can't
+move yet and give it django-csp's per-request nonce:
+
+```python
+from csp.constants import NONCE
+
+CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"] = ["'self'", NONCE]
+```
+```django
+<script nonce="{{ request.csp_nonce }}">…</script>
+```
+
+A browser that sees a nonce in `script-src` ignores `'unsafe-inline'` there, so it's one route or the
+other, not both. A nonce can't cover an `on…=` handler, so move the handlers to data- attributes
+(below) first. Under a nonce policy the script sweep doesn't count a block that carries `nonce=`.
+
+### Scripts are static files
+
+Put page JavaScript in the app's `static/`. SmallStack mirrors the template tree, so
+`apps/runbook/templates/runbook/dashboard.html` loads `runbook/js/templates/dashboard.js`. Load it
+with a plain `<script src="{% static '…' %}"></script>` where the block used to be. Without
+`defer`, it runs at the same point in parsing as the inline code did.
+
+**Server values ride on the script's own tag:**
+
+```django
+<script src="{% static 'myapp/js/templates/widget_form.js' %}"
+        data-save-url="{% url 'myapp:save' object.pk %}"
+        data-csrf-token="{{ csrf_token }}"></script>
+```
+```js
+var widgetFormConfig = document.currentScript.dataset;   // read once, at load
+fetch(widgetFormConfig.saveUrl, { headers: { 'X-CSRFToken': widgetFormConfig.csrfToken } });
+```
+
+- **Name the config after the file** (`widgetFormConfig`, not `config`). Two scripts on one page
+  share the global scope.
+- **Read `document.currentScript` at the top level**, not inside a later callback, because it's
+  only set while the script runs.
+- **Lists and objects go in a JSON data block:** `{{ rows|json_script:"widget-rows" }}`, or a
+  hand-rendered `<script type="application/json" id="…">` using `|escapejs` for values. Read it
+  with `JSON.parse(document.getElementById('widget-rows').textContent)`. The CSP doesn't block
+  non-executable types.
+- **Theme before first paint:** a new page shell loads `smallstack/js/theme-init.js` in `<head>`
+  (`data-palette="{{ color_palette }}" data-default-palette="django"`), not a copy of the snippet.
+
+`test_no_template_has_an_inline_script_block` fails on an inline executable block.
+
+### Page CSS is a static file too
+
+A page's own CSS goes in a stylesheet, not a `<style>` block: `apps/<app>/static/<app>/css/templates/<template>.css`,
+mirroring the template tree. Link it from `{% block extra_css %}` (or where the block was, for
+an include). `test_no_template_has_an_inline_style_block` enforces this; the only exceptions
+are `500.html`, which must render without static files, and the Swagger page. The CSP's
+`style-src` still allows inline `style="…"` attributes. Prefer the theme's classes and
+`var(--…)` tokens over long `style` attributes anyway (see `modern-dark-theme.md`).
+
+**A new app `static/` directory needs a dev-server restart:** Django's app static finder lists
+those directories at startup. `collectstatic` (production) always sees them.
+
+### Event handlers
+
+Never write `onclick="…"`, `onsubmit="…"` or any other inline handler. `make test` fails on
+one (`test_no_template_has_an_inline_event_handler`), and the CSP blocks it anyway. Declare the behaviour with a data- attribute instead;
+`smallstack/js/theme.js` (on every page) carries it out:
+
+| Instead of | Write |
+|---|---|
+| `onsubmit="return confirm('Delete it?')"` | `<form data-confirm="Delete it?">` (also on an `<a>` or `<button>`) |
+| `onchange="this.form.submit()"` | `<select data-autosubmit>` |
+| `onclick="openStatModal('Title', this)"` | `data-stat-modal="Title"` (with `hx-get` + `hx-target="#stat-modal-body"`) |
+| `onclick="closeStatModal()"` | `data-stat-modal-close` |
+| copy a value to the clipboard | `data-copy="element-id"` or `data-copy-text="literal"` |
+| `scrollIntoView` | `data-scroll-to="#id"` |
+| toggle a class on a container | `data-toggle-class="open" data-toggle-on=".panel"` |
+| make one tab/button `.active` | `data-activate-in=".tab-bar"` on each button |
+| Enter/Space on a `role="button"` div | `data-keyclick` |
+| `onclick="myFunction('x', this)"` | `data-ss-action="myFunction" data-ss-args='["x", "$this"]'` |
+
+**Page actions are an allow-list.** `data-ss-action` only calls a function a script registered:
+
+```html
+<button type="button" data-ss-action="openPanel" data-ss-args='["settings", "$this"]'>Settings</button>
+<script>
+function openPanel(name, button) { … }
+window.SmallStack = window.SmallStack || {};
+window.SmallStack.actions = Object.assign(window.SmallStack.actions || {}, { openPanel: window.openPanel });
+</script>
+```
+
+- **The arguments are a JSON array.** `"$this"` is the clicked element and `"$event"` is the
+  event.
+- **A template value inside the JSON gets `|escapejs`**, as in
+  `data-ss-args='["$this", "{{ obj.name|escapejs }}"]'`. Its `\uXXXX` output is valid JSON and
+  survives attribute decoding; autoescape's `&quot;` would break the JSON. A test checks this.
+- **Optional modifiers:**
+  - `data-ss-on="change"` runs the action on change instead of click.
+  - `data-ss-self` runs it only when the click is on the element itself (a modal backdrop).
+  - `data-ss-prevent` stops a link from navigating (keep a real `href` as the no-JS fallback).
+- **A test fails on any `data-ss-action` name that no script registers.**
+- **The `data-ss-` prefix is deliberate.** A project's own `data-action` (Stimulus, or the blog
+  studio's submit buttons) never collides with it.
 
 ## Best Practices
 

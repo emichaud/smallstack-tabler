@@ -12,12 +12,12 @@ Rendered by {% calendar_month %} or included directly.
 <div class="calendar-grid cal-grid{% if not weekends %} cal-cols-5{% endif %}">
     {% for week in weeks %}{% for cell in week %}
     {% if cell %}
-    <a href="{{ cell.url }}" class="calendar-cell cal-cell{% if cell.is_today %} calendar-cell--today{% endif %}{% if cell.is_selected %} calendar-cell--selected{% endif %}{% if cell.is_weekend %} cal-cell--weekend{% endif %}"
+    <a href="{{ cell.url }}" class="calendar-cell cal-cell{% if cell.is_today %} calendar-cell--today{% endif %}{% if cell.is_selected %} calendar-cell--selected{% endif %}{% if cell.is_weekend %} cal-cell--weekend{% endif %}" data-day="{{ cell.date|date:'Y-m-d' }}" data-day-label="{{ cell.date|date:'D j M' }}"
        aria-label="{{ cell.date|date:'l, F j' }}: {{ cell.total }} event{{ cell.total|pluralize }}">
         <span class="calendar-cell-day">{{ cell.day }}</span>
         {% for ev in cell.events %}
         <span class="cal-chip cal-series-{{ ev.series }}{% if ev.status %} cal-chip--{{ ev.status }}{% endif %}{% if not ev.all_day %} cal-chip--timed{% endif %}{% if ev.cancelled %} cal-chip--cancelled{% endif %}" title="{{ ev.title }}{% if ev.cancelled %} (cancelled){% endif %}{% if ev.calendar_label %} · {{ ev.calendar_label }}{% endif %}">
-            {% if not ev.all_day and ev.start_date == cell.date %}<span class="cal-chip-time">{{ ev.start|date:"g:i A" }}</span>{% endif %}<span class="cal-chip-label">{{ ev.title }}</span>
+            {% if not ev.all_day and ev.start_date == cell.date %}<span class="cal-chip-time">{{ ev.start|date:"H:i" }}</span>{% endif %}<span class="cal-chip-label">{{ ev.title }}</span>
         </span>
         {% endfor %}
         {% if cell.overflow %}<span class="calendar-more cal-more">+{{ cell.overflow }} more</span>{% endif %}

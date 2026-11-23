@@ -20,7 +20,10 @@ When the user asks you to do any of these, read the matching skill file BEFORE w
 | Add a CRUDView (model → admin + REST + MCP) | `docs/skills/django-apps.md` + `apps/smallstack/docs/building-crud-pages.md` |
 | Add keyword search + an MCP search tool to a model | `docs/skills/search.md` |
 | Expose a filtered queryset as typed rows/columns for a dashboard/report/chart UI (`@dataset`) | `docs/skills/datasets.md` |
-| Put due dates / expiries / maintenance windows on the shared **calendar** (`@calendar_dataset`, saved views, `.ics`) | `docs/skills/calendar.md` |
+| Put due dates / expiries / maintenance windows on the shared **calendar** (`@calendar_dataset`, saved views, `.ics`), or drop a calendar onto **your own page or a dashboard** (`{% calendar_card %}`, the `calendar` card) | `docs/skills/calendar.md` |
+| Build a **KPI**, a grid **dashboard**, a **KPI report** or a **goal list** over datasets — stored filter trees → values (or have an agent build one via MCP/REST) | `docs/skills/dashboards.md` |
+| **Publish a dashboard card type** of your own — a chart over a JS library, a gauge, a table, a navigation card (`register_component_type`) | `docs/skills/card-types.md` |
+| **Ship default metrics, dashboards, goal lists or reports with your app**, kept in step without overwriting people's edits (`dashboard_defaults.py`, `register_defaults`) | `docs/skills/app-defaults.md` |
 | Add stat cards / metric tiles + drill-down modals to a dashboard page | `docs/skills/dashboard-cards.md` |
 | Add a dashboard widget (the central `/smallstack/` dashboard) | `docs/skills/dashboard-widgets.md` |
 | Monitor a subsystem's uptime/health on `/smallstack/status/` (Service + Monitor, or a status chart) | `docs/skills/status-monitors.md` |
@@ -41,6 +44,7 @@ When the user asks you to do any of these, read the matching skill file BEFORE w
 | Take a screenshot to verify UI work | `docs/skills/screenshot-workflow.md` |
 | Set up auth or protect a view | `docs/skills/authentication.md` |
 | Pull upstream `django-smallstack` updates into this Tabler downstream | `docs/skills/upstream-workflow.md` |
+| Add a **permission check**, declare a **group** an app ships, review **who can do what** (least privilege, audit evidence), prepare for **SSO group mapping** | `docs/skills/access-control.md` |
 
 The full skill index lives at `docs/skills/README.md`.
 
@@ -77,7 +81,7 @@ All custom apps in `apps/`, registered as `apps.<name>`:
 
 - `apps/accounts/` — Custom User model, auth views, login/signup
 - `apps/smallstack/` — Theme, CRUDView library, navigation, dashboard, displays, APIToken model — the framework core
-- `apps/tabler/` — **Tabler theme integration**: bridge `smallstack/base.html`, navbar, settings panel, `tabler_overrides.css` (SmallStack-var aliases, dark/light mode, layout variants), `tabler_theme.js` (settings engine)
+- `apps/tabler/` — **Tabler theme integration**: bridge `smallstack/base.html`, navbar, settings panel, `tabler_overrides.css` (SmallStack-var aliases, dark/light mode, layout variants, the rules ported from upstream `components.css`), `tabler_theme.js` (settings engine). The shell also loads upstream's `config.js` + `theme.js`, the `data-ss-action` behaviour layer every upstream template relies on
 - `apps/preview/` — Tabler preview pages (design reference)
 - `apps/activity/` — RequestLog middleware and admin
 - `apps/approvals/` — Human-in-the-loop approval gate (`@approval_kind` + decision console) at `/smallstack/approvals/requests/`
@@ -92,10 +96,13 @@ All custom apps in `apps/`, registered as `apps.<name>`:
 - `apps/tasks/` — Background-task helpers
 - `apps/tokenmgr/` — Self-service API token UI at `/smallstack/tokens/`
 - `apps/usermanager/` — User CRUD at `/smallstack/manage/users/`
+- `apps/access/` — Access: groups declared in code, every access change recorded, the least-privilege review at `/smallstack/access/`
 - `apps/webhooks/` — Outbound event delivery (`enable_webhooks`) + inbound receivers (`@webhook_handler`) at `/smallstack/webhooks/`
-- `apps/blog/` — Blogs + newsletters (label: `smallstack_blog`); console at `/smallstack/blog/`, public reading at `/blog/`
-- `apps/calendar/` — Calendar (label: `smallstack_calendar`): datasets with a date axis merged on one grid at `/smallstack/calendar/`, saved views, events + `.ics` API
+- `apps/blog/` — Blogs + newsletters (label: `smallstack_blog`); console at `/smallstack/blog/` (lands on the posts list), public reading at `/blog/`
+- `apps/calendar/` — Calendar (label: `smallstack_calendar`): datasets with a date axis merged on one grid at `/smallstack/calendar/`, saved views, events + `.ics` API; `{% calendar_card %}` + a `calendar` dashboard card put one on any page
+- `apps/dashboards/` — Dashboards (label: `smallstack_dashboards`): Metrics (stored filter trees over datasets → KPI values), grid dashboards, KPI reports, goal lists (targets judged on target / at risk / missed, with a meeting view) at `/smallstack/dashboards/`; `{% metric_card %}`; MCP agent tools
 - `apps/website/` — Project-specific pages — **edit freely** (the others are framework-provided)
+- `apps/showcase/` — SmallStack's demo pages (about, getting started, prompts, starter, public search) — **don't build on it**; a project deletes it (the directory, its `INSTALLED_APPS` line and its `include()` in `config/urls.py`)
 
 Settings split in `config/settings/`:
 - `smallstack.py` — App-level config (branding, feature flags, palette default, MCP/API toggles)
@@ -119,8 +126,9 @@ Settings split in `config/settings/`:
   and the skill-index check; all three must be green before reporting work done,
   and the pre-commit hook enforces the same gate.
   **The ratchet:** the apps listed under `[[tool.mypy.overrides]]` in
-  `pyproject.toml` (approvals, blog, datasets, feeds, notifications, runbook,
-  scheduler, webhooks) are fully annotated and checked strictly — an
+  `pyproject.toml` (access, activity, approvals, blog, calendar, dashboards,
+  datasets, feeds, notifications, runbook, scheduler, showcase, webhooks; the
+  list there is authoritative) are fully annotated and checked strictly — an
   unannotated function there fails lint. New apps start on that list. Run
   `make typecheck-strict` to see what the lenient global config hides and to
   find the next app to add; never remove one.
@@ -209,6 +217,7 @@ The biggest recurring mistakes when AI builds Tabler pages in this codebase:
 4. **Reinventing components** — Tabler has cards, buttons, badges, alerts, dropdowns, modals, offcanvas, tabs, accordions, timelines, ribbons, status indicators, empty states, steps. Don't write a custom one. See `docs/skills/tabler/components.md`.
 5. **Hand-rolling backup scripts / OpenAPI validators / token-mint scripts** — there's already a `manage.py` command for it (check `docs/skills/cli-tools.md`).
 6. **Importing `django.contrib.auth.models.User` directly** — always `settings.AUTH_USER_MODEL` or `get_user_model()`.
+7. **Inline JavaScript in new templates** — a `<script>…</script>` block or `onclick="…"`. Upstream's CSP `script-src` is `'self'` only; this fork still carries `'unsafe-inline'` as a stopgap because the Tabler templates in `apps/tabler/templates/` predate that rule. Don't add to the debt: put new scripts in `static/`, pass server values as `data-` attributes (`document.currentScript.dataset`) or with `json_script`, and use `data-confirm` / `data-ss-action` / `data-stat-modal` instead of handlers. The recipe is in `docs/skills/templates.md`.
 
 ## When you're stuck
 

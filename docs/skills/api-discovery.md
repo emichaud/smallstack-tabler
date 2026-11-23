@@ -169,7 +169,7 @@ SmallStack includes Swagger UI and ReDoc pages that consume the OpenAPI spec:
 
 Both load from CDN (`cdn.jsdelivr.net`) — no Python packages required. The views set a per-response CSP header to allow the CDN scripts. Templates are at `apps/smallstack/templates/smallstack/api/swagger.html` and `redoc.html`.
 
-See the help page at `/help/smallstack/api-documentation/` for theming options, CSP details, and troubleshooting.
+See the help page at `/smallstack/help/smallstack/api-documentation/` for theming options, CSP details, and troubleshooting.
 
 ## Comparison Table
 
@@ -224,7 +224,7 @@ Import the spec URL directly:
 
 ## Spec Validity Gate
 
-`apps/smallstack/test_openapi_validity.py` runs `openapi-spec-validator` against both `build_openapi_spec()` and the live `/api/schema/openapi.json` endpoint on every test run. The spec MUST stay valid OpenAPI 3.0.3 — Swagger UI silently renders garbage if it isn't, so this test is the only thing standing between "Swagger looks fine in dev" and "Swagger shows a blank page in prod."
+`apps/smallstack/tests/test_openapi_validity.py` runs `openapi-spec-validator` against both `build_openapi_spec()` and the live `/api/schema/openapi.json` endpoint on every test run. The spec MUST stay valid OpenAPI 3.0.3 — Swagger UI silently renders garbage if it isn't, so this test is the only thing standing between "Swagger looks fine in dev" and "Swagger shows a blank page in prod."
 
 If you touch any of these and the test fails, that's the regression:
 - `apps/smallstack/openapi.py` (the builder)

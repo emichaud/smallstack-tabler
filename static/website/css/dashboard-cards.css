@@ -1,0 +1,213 @@
+/* This project's dashboard card types (apps/website/dashboard_cards.py).
+   Theme tokens only — the card reads right on every palette, light and dark. */
+
+.trend { display: flex; flex-direction: column; height: 100%; padding: 10px 12px 8px; gap: 6px; }
+.trend-head { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
+.trend-label { font-size: 0.8rem; font-weight: 600; color: var(--body-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trend-latest { margin-left: auto; font-size: 0.95rem; font-weight: 700; color: var(--body-fg); white-space: nowrap; font-feature-settings: "tnum"; }
+.trend-unit, .trend-when { font-size: 0.72rem; font-weight: 400; color: var(--body-quiet-color); }
+.trend-note { margin: auto; font-size: 0.8rem; color: var(--body-quiet-color); text-align: center; }
+
+.trend-plot { position: relative; flex: 1; min-height: 40px; }
+.trend-cols { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 3px; }
+.trend-col {
+    flex: 1; min-width: 0; display: flex; align-items: flex-end;
+    padding: 0; border: 0; background: none; cursor: pointer; border-radius: 3px;
+}
+.trend-col:hover { background: var(--card-header-bg); }
+.trend-col:focus-visible { outline: 2px solid var(--input-focus-border); outline-offset: 1px; }
+/* --bar is the series colour: the accent, a bucket's threshold state, or the
+   card's chosen colour (cs-color-…). Bars, dots and the hatching all read it. */
+.trend { --bar: var(--primary); --line: var(--primary); }
+.trend-col--success { --bar: var(--success-fg); }
+.trend-col--warning { --bar: var(--warning-fg); }
+.trend-col--danger { --bar: var(--error-fg); }
+.trend-col--muted { --bar: var(--body-quiet-color); }
+.trend-bar {
+    width: 100%; height: calc(var(--share) * 90% + 2px);
+    background: var(--bar); border-radius: 3px 3px 0 0; opacity: 0.85;
+}
+.trend-col:hover .trend-bar { opacity: 1; }
+/* The bucket still running (this week, today): hatched, so a short bar reads as "so far". */
+.trend-col--partial .trend-bar {
+    background: repeating-linear-gradient(135deg, var(--bar) 0 3px, transparent 3px 6px);
+    box-shadow: inset 0 0 0 1px var(--bar);
+}
+
+.trend-plot--line .trend-bar { display: none; }
+.trend-col { position: relative; }
+.trend-dot {
+    position: absolute; left: 50%; bottom: calc(var(--share) * 90% - 3px);
+    width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%;
+    background: var(--bar); box-shadow: 0 0 0 2px var(--card-bg);
+}
+.trend-line { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.trend-line polyline { fill: none; stroke: var(--line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+/* The shared card styling (components.CARD_STYLE → cs-… on .trend). */
+.trend.cs-size-s .trend-latest { font-size: 0.82rem; }
+.trend.cs-size-l .trend-latest { font-size: 1.3rem; }
+.trend.cs-size-xl .trend-latest { font-size: 1.75rem; }
+.trend-latest--success { color: var(--success-fg); }
+.trend-latest--warning { color: var(--warning-fg); }
+.trend-latest--danger { color: var(--error-fg); }
+.trend-latest--muted { color: var(--body-quiet-color); }
+/* A chosen colour paints the whole series and the headline; "state" keeps per-bucket colours. */
+.trend.cs-color-accent { --line: var(--primary); }
+.trend.cs-color-accent .trend-col, .trend.cs-color-accent .trend-latest { --bar: var(--primary); color: var(--primary); }
+.trend.cs-color-plain { --line: var(--body-fg); }
+.trend.cs-color-plain .trend-col { --bar: var(--body-fg); }
+.trend.cs-color-plain .trend-latest { color: var(--body-fg); }
+.trend.cs-color-success { --line: var(--success-fg); }
+.trend.cs-color-success .trend-col { --bar: var(--success-fg); }
+.trend.cs-color-success .trend-latest { color: var(--success-fg); }
+.trend.cs-color-warning { --line: var(--warning-fg); }
+.trend.cs-color-warning .trend-col { --bar: var(--warning-fg); }
+.trend.cs-color-warning .trend-latest { color: var(--warning-fg); }
+.trend.cs-color-danger { --line: var(--error-fg); }
+.trend.cs-color-danger .trend-col { --bar: var(--error-fg); }
+.trend.cs-color-danger .trend-latest { color: var(--error-fg); }
+.trend.cs-color-muted { --line: var(--body-quiet-color); }
+.trend.cs-color-muted .trend-col { --bar: var(--body-quiet-color); }
+.trend.cs-color-muted .trend-latest { color: var(--body-quiet-color); }
+.trend.cs-title-s .trend-label { font-size: 0.7rem; }
+.trend.cs-title-l .trend-label { font-size: 0.98rem; }
+.trend.cs-title-color-quiet .trend-label { color: var(--body-quiet-color); }
+.trend.cs-title-color-accent .trend-label { color: var(--primary); }
+.trend.cs-align-center .trend-head { flex-direction: column; align-items: center; gap: 0.1rem; }
+.trend.cs-align-center .trend-latest { margin-left: 0; }
+.trend.cs-align-end .trend-head { flex-direction: row-reverse; }
+.trend.cs-align-end .trend-latest { margin-left: 0; margin-right: auto; }
+
+.trend-axis { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--body-quiet-color); }
+
+/* -- the pie and ranked-bars cards: plain SVG and CSS, no library ------------- */
+.pie, .ranked { display: flex; flex-direction: column; height: 100%; padding: 10px 12px 8px; gap: 6px; min-height: 0; }
+.pie-body { flex: 1; display: flex; align-items: center; gap: 0.75rem; min-height: 0; }
+.pie-chart { flex: 0 1 45%; max-width: 45%; max-height: 100%; aspect-ratio: 1; min-width: 0; }
+.pie-slice { fill: none; stroke-width: 7; stroke: var(--body-quiet-color); }
+.pie-legend { flex: 1; min-width: 0; list-style: none; margin: 0; padding: 0; overflow-y: auto; align-self: stretch; display: flex; flex-direction: column; justify-content: safe center; }
+.pie-legend li, .ranked-rows li { margin: 0; padding: 0; }
+.pie-key { display: flex; align-items: center; gap: 0.4rem; width: 100%; min-height: 0; line-height: 1.2; padding: 2px 4px; background: none; border: 0; border-radius: 4px; color: var(--body-fg); font: inherit; font-size: 0.78rem; cursor: pointer; text-align: left; }
+.pie-key:hover { background: var(--card-header-bg); }
+.pie-key:focus-visible, .ranked-row:focus-visible { outline: 2px solid var(--input-focus-border); outline-offset: 1px; }
+.pie-dot { flex: none; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--body-quiet-color); }
+.pie-name, .ranked-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pie-percent { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pie-slice--1 { stroke: var(--series-1); } .pie-dot--1 { background: var(--series-1); }
+.pie-slice--2 { stroke: var(--series-2); } .pie-dot--2 { background: var(--series-2); }
+.pie-slice--3 { stroke: var(--series-3); } .pie-dot--3 { background: var(--series-3); }
+.pie-slice--4 { stroke: var(--series-4); } .pie-dot--4 { background: var(--series-4); }
+.pie-slice--5 { stroke: var(--series-5); } .pie-dot--5 { background: var(--series-5); }
+.pie-slice--6 { stroke: var(--series-6); } .pie-dot--6 { background: var(--series-6); }
+.pie-slice--7 { stroke: var(--series-7); } .pie-dot--7 { background: var(--series-7); }
+.pie-slice--8 { stroke: var(--series-8); } .pie-dot--8 { background: var(--series-8); }
+.ranked-rows { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: safe space-around; gap: 1px; }
+.ranked-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 0.5rem; width: 100%; min-height: 0; line-height: 1.15; padding: 1px 4px; background: none; border: 0; border-radius: 4px; color: var(--body-fg); font: inherit; font-size: 0.78rem; cursor: pointer; text-align: left; }
+.ranked-row:hover { background: var(--card-header-bg); }
+.ranked-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ranked-track { grid-column: 1 / -1; height: 0.3rem; border-radius: 2px; background: var(--card-header-bg); overflow: hidden; }
+.ranked-bar { display: block; height: 100%; width: calc(var(--share) * 100%); background: var(--bar, var(--primary)); }
+.ranked-row--success { --bar: var(--success-fg); }
+.ranked-row--warning { --bar: var(--warning-fg); }
+.ranked-row--danger { --bar: var(--error-fg); }
+.ranked-row--other { --bar: var(--body-quiet-color); }
+
+/* -- the bar chart: columns with names under them, or bars with names beside them ---- */
+.bars { display: flex; flex-direction: column; height: 100%; padding: 10px 12px 8px; gap: 6px; min-height: 0; --bar: var(--primary); }
+.bars-plot { flex: 1; min-height: 0; list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; }
+.bars-item { display: flex; min-width: 0; min-height: 0; }
+.bars-item--success { --bar: var(--success-fg); }
+.bars-item--warning { --bar: var(--warning-fg); }
+.bars-item--danger { --bar: var(--error-fg); }
+.bars-item--other, .bars-item--muted { --bar: var(--body-quiet-color); }
+.bars-bar { display: flex; min-width: 0; min-height: 0; padding: 0; border: 0; background: none; border-radius: 3px; cursor: pointer; color: var(--body-fg); font: inherit; }
+.bars-bar:hover { background: var(--card-header-bg); }
+.bars-bar:focus-visible { outline: 2px solid var(--input-focus-border); outline-offset: 1px; }
+.bars-fill { display: block; background: var(--bar); border-radius: 3px; opacity: 0.85; }
+.bars-bar:hover .bars-fill { opacity: 1; }
+.bars-value { font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bars-name { font-size: 0.7rem; color: var(--body-quiet-color); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* columns: each item a column, the bar grows up from the name */
+.bars--vertical .bars-plot { flex-direction: row; align-items: stretch; }
+.bars--vertical .bars-item { flex: 1; flex-direction: column; }
+.bars--vertical .bars-bar { flex: 1; flex-direction: column; justify-content: flex-end; align-items: center; width: 100%; gap: 2px; }
+.bars--vertical .bars-fill { order: 2; width: 70%; height: calc(var(--share) * 85%); min-height: 2px; }
+.bars--vertical .bars-value { order: 1; }
+.bars--vertical .bars-name { text-align: center; padding-top: 2px; }
+/* bars: each item a row, the name first, the bar grows right with its value at its end */
+.bars--horizontal .bars-plot { flex-direction: column; justify-content: safe space-around; overflow-y: auto; }
+.bars--horizontal .bars-item { flex: 1; flex-direction: row-reverse; align-items: center; gap: 0.5rem; max-height: 1.6rem; }
+.bars--horizontal .bars-bar { flex: 1; align-items: center; gap: 0.4rem; height: 100%; }
+.bars--horizontal .bars-fill { width: calc(var(--share) * 100%); min-width: 2px; height: 70%; }
+.bars--horizontal .bars-name { flex: 0 0 5.5rem; width: 5.5rem; text-align: right; }
+.bars.cs-color-accent { --bar: var(--primary); } .bars.cs-color-accent .bars-item { --bar: var(--primary); }
+.bars.cs-color-plain .bars-item { --bar: var(--body-fg); }
+.bars.cs-color-success .bars-item { --bar: var(--success-fg); }
+.bars.cs-color-warning .bars-item { --bar: var(--warning-fg); }
+.bars.cs-color-danger .bars-item { --bar: var(--error-fg); }
+.bars.cs-color-muted .bars-item { --bar: var(--body-quiet-color); }
+
+/* -- the gauge: a stat on a half dial ------------------------------------------- */
+.gauge { display: flex; flex-direction: column; height: 100%; padding: 10px 12px 6px; min-height: 0; --bar: var(--primary); }
+.gauge-label { flex: none; }
+.gauge-dial { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding: 0; border: 0; background: none; border-radius: 6px; color: var(--body-fg); font: inherit; }
+button.gauge-dial { cursor: pointer; }
+button.gauge-dial:hover { background: var(--card-header-bg); }
+button.gauge-dial:focus-visible { outline: 2px solid var(--input-focus-border); outline-offset: 1px; }
+.gauge-dial svg { flex: 1; min-height: 0; width: 100%; max-height: 100%; overflow: visible; }
+.gauge-track { fill: none; stroke: var(--card-header-bg); stroke-width: 9; stroke-linecap: round; }
+.gauge-band { fill: none; stroke-width: 9; opacity: 0.35; }
+.gauge-band--success { stroke: var(--success-fg); }
+.gauge-band--warning { stroke: var(--warning-fg); }
+.gauge-band--danger { stroke: var(--error-fg); }
+.gauge-band--muted { stroke: var(--body-quiet-color); }
+.gauge-fill { fill: none; stroke: var(--bar); stroke-width: 9; stroke-linecap: round; }
+.gauge-needle { stroke: var(--body-fg); stroke-width: 1.8; stroke-linecap: round; }
+.gauge-hub { fill: var(--body-fg); }
+.gauge-end { font-size: 6px; fill: var(--body-quiet-color); font-family: inherit; }
+.gauge-value { margin-top: -0.35rem; font-size: 1.1rem; font-weight: 700; font-feature-settings: "tnum"; color: var(--bar); white-space: nowrap; }
+.gauge-dial--success { --bar: var(--success-fg); }
+.gauge-dial--warning { --bar: var(--warning-fg); }
+.gauge-dial--danger { --bar: var(--error-fg); }
+.gauge-dial--muted { --bar: var(--body-quiet-color); }
+.gauge.cs-color-accent .gauge-dial { --bar: var(--primary); }
+.gauge.cs-color-plain .gauge-dial { --bar: var(--body-fg); }
+.gauge.cs-color-success .gauge-dial { --bar: var(--success-fg); }
+.gauge.cs-color-warning .gauge-dial { --bar: var(--warning-fg); }
+.gauge.cs-color-danger .gauge-dial { --bar: var(--error-fg); }
+.gauge.cs-color-muted .gauge-dial { --bar: var(--body-quiet-color); }
+.gauge.cs-size-s .gauge-value { font-size: 0.9rem; }
+.gauge.cs-size-l .gauge-value { font-size: 1.4rem; }
+.gauge.cs-size-xl .gauge-value { font-size: 1.8rem; }
+.gauge.cs-title-s .gauge-label { font-size: 0.7rem; }
+.gauge.cs-title-l .gauge-label { font-size: 0.98rem; }
+.gauge.cs-title-color-quiet .gauge-label { color: var(--body-quiet-color); }
+.gauge.cs-title-color-accent .gauge-label { color: var(--primary); }
+.gauge.cs-align-center .gauge-label { text-align: center; }
+.gauge.cs-align-end .gauge-label { text-align: right; }
+
+/* -- the table: the rows themselves, paged ---------------------------------------- */
+.tbl { display: flex; flex-direction: column; height: 100%; padding: 10px 0 0; gap: 4px; min-height: 0; }
+.tbl .trend-head { padding: 0 12px; }
+.tbl-count { margin-left: auto; font-size: 0.72rem; color: var(--body-quiet-color); white-space: nowrap; font-feature-settings: "tnum"; }
+.tbl-scroll { flex: 1; min-height: 0; overflow: auto; contain: inline-size; }
+/* Columns keep their natural width; a narrow card scrolls sideways rather than crushing
+   them. `.tbl .tbl-table` outranks the framework's .crud-table rules (fixed layout, upper-case
+   headers), which the resize handles don't need. */
+.tbl .tbl-table { table-layout: auto; width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.tbl .tbl-table thead tr { background: var(--card-header-bg); }
+.tbl .tbl-table thead th { position: sticky; top: 0; z-index: 1; background: var(--card-header-bg); text-align: left; font-weight: 600; font-size: 0.72rem; text-transform: none; letter-spacing: 0; padding: 4px 10px; white-space: nowrap; border-bottom: 1px solid var(--card-border) !important; }
+.tbl .tbl-table th.tbl-num, .tbl .tbl-table th.tbl-num .dm-sort, .tbl .tbl-table td.tbl-num { text-align: right; }
+.tbl .tbl-table tbody tr { background: var(--card-bg); }
+.tbl .tbl-table tbody td { padding: 3px 10px; max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-feature-settings: "tnum"; border: 0; }
+.tbl .tbl-table tbody tr + tr td { border-top: 1px solid color-mix(in srgb, var(--body-fg) 7%, transparent); }
+.tbl .tbl-table tbody tr:hover td { background: color-mix(in srgb, var(--body-fg) 4%, var(--card-bg)); }
+.tbl .tbl-table tfoot td { padding: 4px 10px; border-top: 1px solid var(--card-border); font-weight: 600; font-feature-settings: "tnum"; white-space: nowrap; position: sticky; bottom: 0; background: var(--card-header-bg); }
+.tbl-totals-label { color: var(--body-quiet-color); font-weight: 500; }
+.tbl-open, a.tbl-open:link, a.tbl-open:visited { color: var(--body-fg); text-decoration: none; border-bottom: 1px dotted var(--body-quiet-color); }
+.tbl-open:hover { color: var(--primary); }
+.tbl-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 3px 12px 6px; border-top: 1px solid var(--card-border); font-size: 0.72rem; color: var(--body-quiet-color); font-feature-settings: "tnum"; }
+.tbl-links { display: inline-flex; align-items: center; gap: 0.6rem; }
+.tbl-links a { font-size: 0.8rem; }
+.tbl-off { opacity: 0.4; font-size: 0.8rem; }

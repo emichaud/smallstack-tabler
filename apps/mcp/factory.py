@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django import forms
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpRequest, QueryDict
 
@@ -27,13 +28,13 @@ from apps.smallstack.api import (
     serialize,
 )
 from apps.smallstack.audit import ADDITION, CHANGE, DELETION, log_write
-from apps.smallstack.crud import Action
+from apps.smallstack.crud import Action, _apply_admin_filters
 from apps.smallstack.form_bridge import build_form, merge_form_payload
 from apps.smallstack.mixins import StaffRequiredMixin
 
 from .server import TOOL_REGISTRY, ToolDef, current_context, tool
 
-logger = logging.getLogger("smallstack.mcp.factory")
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +62,14 @@ def _has_staff_mixin(view_cls) -> bool:
         issubclass(m, StaffRequiredMixin) or getattr(m, "__name__", "") == "StaffRequiredMixin"
         for m in view_cls._resolved_mixins()
     )
+
+
+def _permission_refusal(view_cls, request, action: str) -> dict[str, Any] | None:
+    """A ``not_permitted`` error when the view checks Django model permissions
+    (``model_permissions``) and the caller lacks ``action`` on its model."""
+    if view_cls.has_model_permission(request, action):
+        return None
+    return _tool_error("not_permitted", f"you need the {action} permission on {view_cls.model.__name__}")
 
 
 # Per-action verb prefix so the LLM sees distinct descriptions for each tool
@@ -112,7 +121,7 @@ def _action_description(view_cls, action: Action) -> str:
     # from the previous tool's output ("it returned id: 2254") plus a prose
     # instruction is the documented HITL loop, and that loop failed on its first
     # call while `pk` was the only accepted key and the only place it was
-    # written down. (F-25.)
+    # written down.
     if action in _SINGLE_OBJECT_ACTIONS:
         out = f"{out}. Identify the row by 'id' — the value list/get/create returns ('pk' is accepted as an alias)"
     return out
@@ -130,6 +139,10 @@ def _build_list_input_schema(view_cls) -> dict[str, Any]:
     for fname in filter_fields:
         # Light schema — the helper accepts strings for booleans/dates already.
         props[fname] = {"type": "string", "description": f"Filter by {fname}."}
+
+    # A ModelAdmin's SimpleListFilter classes, by their parameter_name.
+    for list_filter in getattr(view_cls, "_admin_filter_classes", lambda: [])():
+        props[list_filter.parameter_name] = {"type": "string", "description": f"Filter: {list_filter.title}."}
 
     props["ordering"] = {
         "type": "string",
@@ -217,9 +230,17 @@ def _build_form_input_schema(view_cls, *, include_pk: bool = False) -> dict[str,
             # user-scoped form in the create/update handlers below.
             form_instance = form_class()
             for fname, ffield in form_instance.fields.items():
+                if isinstance(ffield, forms.FileField):
+                    # A JSON-RPC argument can't carry a file, and the form reads
+                    # uploads from request.FILES only — a string sent here was
+                    # silently dropped. Leave it out; uploads go over REST
+                    # (multipart). The read side still returns the file's URL.
+                    continue
                 schema = field_to_schema(fname, ffield, view_cls.model)
                 props[fname] = _to_json_schema_prop(schema)
-                if schema.get("required") and not include_pk:
+                # A model default fills an absent field on create (merge_form_payload),
+                # so the form's "required" doesn't bind the caller.
+                if schema.get("required") and not include_pk and not _has_model_default(view_cls.model, fname):
                     required.append(fname)
         except Exception:
             logger.exception("Failed to introspect form_class for %s", view_cls)
@@ -232,6 +253,11 @@ def _build_form_input_schema(view_cls, *, include_pk: bool = False) -> dict[str,
     }
     if include_pk:
         out["anyOf"] = [{"required": ["id"]}, {"required": ["pk"]}]
+        lookup = getattr(view_cls, "mcp_lookup_field", None)
+        if lookup:
+            # Without an id it names the row; with one it's a new value.
+            props.setdefault(lookup, {"type": "string", "description": f"The row's {lookup}, instead of id."})
+            out["anyOf"].append({"required": [lookup]})
     return out
 
 
@@ -246,6 +272,9 @@ def _build_list_tool(view_cls, *, base: str):
     def handler(args: dict[str, Any]):
         ctx = current_context()
         request = _fake_request(ctx.user)
+        refused = _permission_refusal(view_cls, request, "view")
+        if refused:
+            return refused
 
         qs = view_cls._get_queryset()
         qs = view_cls.get_list_queryset(qs, request)
@@ -266,6 +295,11 @@ def _build_list_tool(view_cls, *, base: str):
             request.GET = QueryDict("&".join(get_pairs), mutable=False)
             qs = apply_filters(qs, request, view_cls)
 
+        admin_filter_names = [f.parameter_name for f in getattr(view_cls, "_admin_filter_classes", lambda: [])()]
+        if admin_filter_names:
+            params = {n: [str(args[n])] for n in admin_filter_names if args.get(n) not in (None, "")}
+            qs = _apply_admin_filters(qs, request, view_cls, params)
+
         # Ordering
         ordering = (args.get("ordering") or "").strip() if isinstance(args.get("ordering"), str) else ""
         if ordering:
@@ -273,18 +307,23 @@ def _build_list_tool(view_cls, *, base: str):
             qs = apply_ordering(qs, ordering, allowed)
 
         # Limit
-        limit = args.get("limit") or 50
+        limit = args.get("limit", 50)
         try:
-            limit = max(1, min(int(limit), 200))
+            limit = int(limit)
         except (TypeError, ValueError):
-            limit = 50
+            return _tool_error("invalid_argument", f"limit must be a whole number, not {limit!r}")
+        if limit < 1:
+            return _tool_error("invalid_argument", f"limit must be at least 1, not {limit}")
+        limit = min(limit, 200)
 
         fields = view_cls._get_list_fields()
         extra = getattr(view_cls, "api_extra_fields", [])
         expand = set(getattr(view_cls, "api_expand_fields", []) or [])
         rows = list(qs[:limit])
+        # count is this page; total is how many match, so a capped page says so.
         return {
             "count": len(rows),
+            "total": qs.count(),
             "limit": limit,
             "results": [serialize(obj, fields, extra, expand) for obj in rows],
         }
@@ -304,7 +343,7 @@ def _build_list_tool(view_cls, *, base: str):
 # obvious thing — take the `id` the previous tool returned and pass it to the
 # next — got `{"error": "pk is required"}` on its first call. In approvals that
 # was actively mis-instructed: `request_approval`'s own description says "poll
-# get_approval with that id". (F-25.)
+# get_approval with that id".
 #
 # Fix: `id` is the wire name everywhere; `pk` stays a permanent alias so no
 # existing client breaks.
@@ -313,8 +352,8 @@ def _build_list_tool(view_cls, *, base: str):
 # failure instead of pattern-matching English. `isError` (set by the dispatcher
 # from the presence of this "error" key) already separates failure from success;
 # without a code, an agent still cannot tell not-found from not-permitted from
-# bad-argument on a generated tool. F-20 gave the hand-written approvals tools
-# this shape and the harness asserts it; F-53 is that shape reaching the ~12
+# bad-argument on a generated tool. The hand-written approvals tools already
+# answer in this shape (the harness asserts it); this brings it to the ~12
 # apps' worth of GENERATED tools, where the three cases were already
 # distinguished in code but never named.
 #
@@ -337,17 +376,24 @@ _OBJECT_ID_SCHEMA = {
 }
 
 
-def _object_id_schema() -> dict[str, Any]:
+def _object_id_schema(view_cls=None) -> dict[str, Any]:
     """Input schema for a tool that addresses exactly one row.
 
     Both keys are declared and exactly one is required, expressed as ``anyOf``
     so ``additionalProperties: false`` still holds and a client that hedges by
-    sending both is not a schema violation.
+    sending both is not a schema violation. A view with ``mcp_lookup_field``
+    also takes its natural key, the name the other tools use for the row.
     """
+    props = dict(_OBJECT_ID_SCHEMA)
+    any_of = [{"required": ["id"]}, {"required": ["pk"]}]
+    lookup = getattr(view_cls, "mcp_lookup_field", None)
+    if lookup:
+        props[lookup] = {"type": "string", "description": f"The row's {lookup}, instead of id."}
+        any_of.append({"required": [lookup]})
     return {
         "type": "object",
-        "properties": dict(_OBJECT_ID_SCHEMA),
-        "anyOf": [{"required": ["id"]}, {"required": ["pk"]}],
+        "properties": props,
+        "anyOf": any_of,
         "additionalProperties": False,
     }
 
@@ -366,24 +412,37 @@ def _fetch_one(view_cls, args: dict[str, Any], request) -> Any:
     Returns the instance, or an error dict ready to return to the caller. Applies
     both halves of the single-object read contract: ``get_detail_queryset``
     (scoping — a row you cannot see is "not found") and
-    ``check_object_permission`` (authorization — F-27), so a CRUDView that
+    ``check_object_permission`` (authorization), so a CRUDView that
     expresses ownership in the hook is protected over MCP too.
     """
     pk = _object_id(args)
-    if pk is None:
-        return _tool_error("invalid_argument", "id is required (alias: pk)")
+    lookup = getattr(view_cls, "mcp_lookup_field", None)
+    natural = args.get(lookup) if lookup and pk is None else None
+    if pk is None and natural in (None, ""):
+        hint = f"id or {lookup} is required" if lookup else "id is required (alias: pk)"
+        return _tool_error("invalid_argument", hint)
     qs = view_cls.get_detail_queryset(view_cls._get_queryset(), request)
+    named = f"{lookup}={natural!r}" if pk is None else f"id={pk}"
+    where: dict[str, Any] = {"pk": pk} if pk is not None else {str(lookup): natural}
     try:
-        obj = qs.get(pk=pk)
+        obj = qs.get(**where)
     except (view_cls.model.DoesNotExist, ValueError, TypeError, ValidationError):
-        return _tool_error("not_found", f"{view_cls.model.__name__} id={pk} not found")
+        return _tool_error("not_found", f"{view_cls.model.__name__} {named} not found")
     try:
         view_cls.check_object_permission(obj, request)
     except (PermissionDenied, Http404):
         # Existence-hiding: an agent that may not touch the row is told the same
         # thing as an agent naming a row that isn't there.
-        return _tool_error("not_found", f"{view_cls.model.__name__} id={pk} not found")
+        return _tool_error("not_found", f"{view_cls.model.__name__} {named} not found")
     return obj
+
+
+def _has_model_default(model, name: str) -> bool:
+    try:
+        field = model._meta.get_field(name)
+    except Exception:
+        return False
+    return field.has_default() and field.get_default() is not None
 
 
 def _build_get_tool(view_cls, *, singular: str):
@@ -392,6 +451,9 @@ def _build_get_tool(view_cls, *, singular: str):
     def handler(args: dict[str, Any]):
         ctx = current_context()
         request = _fake_request(ctx.user)
+        refused = _permission_refusal(view_cls, request, "view")
+        if refused:
+            return refused
         obj = _fetch_one(view_cls, args, request)
         if isinstance(obj, dict):
             return obj
@@ -400,7 +462,7 @@ def _build_get_tool(view_cls, *, singular: str):
         expand = set(getattr(view_cls, "api_expand_fields", []) or [])
         return serialize(obj, fields, extra, expand)
 
-    schema = _object_id_schema()
+    schema = _object_id_schema(view_cls)
     desc = _action_description(view_cls, Action.DETAIL)
     requires = "staff" if _has_staff_mixin(view_cls) else None
     return tool(name, desc, schema, requires_access=requires)(handler)
@@ -412,6 +474,9 @@ def _build_create_tool(view_cls, *, singular: str):
     def handler(args: dict[str, Any]):
         ctx = current_context()
         request = _fake_request(ctx.user)
+        refused = _permission_refusal(view_cls, request, "add")
+        if refused:
+            return refused
         form_class = view_cls.form_class or (
             view_cls._make_form_class() if hasattr(view_cls, "_make_form_class") else None
         )
@@ -449,6 +514,9 @@ def _build_update_tool(view_cls, *, singular: str):
     def handler(args: dict[str, Any]):
         ctx = current_context()
         request = _fake_request(ctx.user)
+        refused = _permission_refusal(view_cls, request, "change")
+        if refused:
+            return refused
         obj = _fetch_one(view_cls, args, request)
         if isinstance(obj, dict):
             return obj
@@ -490,18 +558,35 @@ def _build_delete_tool(view_cls, *, singular: str):
     def handler(args: dict[str, Any]):
         ctx = current_context()
         request = _fake_request(ctx.user)
+        refused = _permission_refusal(view_cls, request, "delete")
+        if refused:
+            return refused
         obj = _fetch_one(view_cls, args, request)
         if isinstance(obj, dict):
             return obj
         if not view_cls.can_delete(obj, request):
             return _tool_error("not_permitted", "delete not permitted")
+        try:
+            view_cls.check_cascade_permission(obj, request)
+        except PermissionDenied as exc:
+            return _tool_error("not_permitted", str(exc))
         pk = obj.pk
         log_write(ctx.user, obj, DELETION, "MCP")  # before delete — obj.pk needed
-        obj.delete()
-        # Both spellings on the way out, so a caller that sent `pk` still finds it.
-        return {"deleted": True, "id": pk, "pk": pk}
+        from django.db import transaction
 
-    schema = _object_id_schema()
+        with transaction.atomic():
+            view_cls.on_delete(request, obj)
+            obj.delete()
+        # Both spellings on the way out, so a caller that sent `pk` still finds it.
+        out = {"deleted": True, "id": pk, "pk": pk}
+        # What else went with it (an on_delete hook may set this), so a caller
+        # learns about cascaded changes from the answer, not from a later read.
+        effects = getattr(request, "delete_effects", None)
+        if effects:
+            out["also_removed"] = effects
+        return out
+
+    schema = _object_id_schema(view_cls)
     desc = _action_description(view_cls, Action.DELETE)
     requires = "staff" if _has_staff_mixin(view_cls) else None
     return tool(name, desc, schema, write=True, requires_access=requires)(handler)
@@ -547,7 +632,11 @@ def register_mcp_tools_from_crudview(view_cls) -> list[str]:
         # handler's ``__name__`` — they differ, which previously dropped the list
         # tool from this function's reported names even though it registered fine.
         registered.append(f"list_{base}")
-    if Action.DETAIL in view_cls.actions and Action.DETAIL in selected_set:
+    # An explicit mcp_actions may ask for get_<singular> on a view with no HTML
+    # detail page (its own page lives elsewhere); the REST detail GET has the
+    # same read contract and doesn't depend on that page either.
+    wants_get = Action.DETAIL in view_cls.actions or view_cls.mcp_actions is not None
+    if wants_get and Action.DETAIL in selected_set:
         _build_get_tool(view_cls, singular=singular)
         registered.append(f"get_{singular}")
     if Action.CREATE in view_cls.actions and Action.CREATE in selected_set:

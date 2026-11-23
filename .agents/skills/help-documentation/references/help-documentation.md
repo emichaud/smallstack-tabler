@@ -60,12 +60,12 @@ static/smallstack/help/
 
 | URL | View | Template | Purpose |
 |-----|------|----------|---------|
-| `/help/` | `HelpIndexView` | `help_index.html` | Main index — shows all sections as card groups |
-| `/help/<section>/` | `HelpSectionIndexView` | `help_section_index.html` | Section index — shows pages as categorized card grids |
-| `/help/<slug>/` | `HelpDetailView` | `help_detail.html` | Root-level page detail |
-| `/help/<section>/<slug>/` | `HelpSectionDetailView` | `help_detail.html` | Section page detail with sidebar |
-| `/help/search-index.json` | `search_index_view` | — | JSON for client-side search |
-| `/help/slides/<deck>/` | `SlideView` | `slides.html` | Slide deck presentation |
+| `/smallstack/help/` | `HelpIndexView` | `help_index.html` | Main index — shows all sections as card groups |
+| `/smallstack/help/<section>/` | `HelpSectionIndexView` | `help_section_index.html` | Section index — shows pages as categorized card grids |
+| `/smallstack/help/<slug>/` | `HelpDetailView` | `help_detail.html` | Root-level page detail |
+| `/smallstack/help/<section>/<slug>/` | `HelpSectionDetailView` | `help_detail.html` | Section page detail with sidebar |
+| `/smallstack/help/search-index.json` | `search_index_view` | — | JSON for client-side search |
+| `/smallstack/help/slides/<deck>/` | `SlideView` | `slides.html` | Slide deck presentation |
 
 ### View Context Variables
 
@@ -88,6 +88,7 @@ static/smallstack/help/
 | `get_section_pages_grouped(section)` | `list[dict]` | Grouped page list — used for section index and sidebar |
 | `get_section_config(section)` | `dict` | Raw YAML config for a section |
 | `get_help_page(slug, section)` | `dict \| None` | Load and render a single page |
+| `get_help_bubble(slug, section)` | `dict \| None` | The same page as a modal fragment: no title, no heading anchors, plus its `related` / `guide` footer |
 | `get_all_sections()` | `list[dict]` | All sections with metadata |
 | `build_search_index()` | `list[dict]` | Full-text search index |
 
@@ -112,7 +113,44 @@ The app's `docs/` directory must contain a `_config.yaml` and `.md` files.
 > exist, work, and are linked from nowhere. Nothing errors and no test
 > catches it. `apps/blog/content/_config.yaml` is a minimal example;
 > `apps/runbook/content/` is currently missing one, which is why
-> `/help/runbook/` lists nothing despite shipping six pages.
+> `/smallstack/help/runbook/` lists nothing despite shipping six pages.
+
+## Help bubbles — a help page beside the thing it explains
+
+A feature with more than one moving part gets a small "?" next to its page
+title. It opens a help page in the global stat modal, without leaving the page:
+
+```django
+{% load help_tags %}
+<div class="title-with-help"><h1>Components</h1>{% help_bubble "dashboards" "component" %}</div>
+```
+
+- **`{% help_bubble "section" "slug" %}`** (one argument = a root page;
+  `label="…"` adds visible text). It draws an `<a>` to the full page that htmx
+  turns into a modal open (`hx-target="#stat-modal-body"`,
+  `data-stat-modal-size="reading"`), so it works without JavaScript too. A
+  page that doesn't exist draws nothing and logs a warning.
+- **The page is an ordinary help page**: a markdown file in the section,
+  listed in `_config.yaml`. The bubble and the full page are one source.
+- **The fragment** is `help:section_bubble` (`<section>/<slug>/bubble/`,
+  `views.help_bubble`). It drops the leading `# Title` (the modal's header
+  has it) and renders without heading ids, which could clash with the host
+  page's. Opened without htmx, it redirects to the full page.
+- **Two optional frontmatter keys fill the modal's footer**, both naming
+  pages of the same section: `related: [metric, dashboard]` (chips that open
+  in place, so the modal becomes a small viewer) and `guide: goals` (the
+  longer page to read next). Slugs that don't resolve are left out.
+- **`.title-with-help`** (theme.css) puts a heading and its bubble on one
+  line. The bubble sits outside the `<h1>`, so the heading's text stays the
+  page's name.
+
+**Writing one.** Keep it to a page to a page and a half (roughly 400–750
+words): what the thing is, what it represents, how it's set up, how to use it,
+and a short "good to know". Plain words, no code unless the reader will type
+it. One bubble per page; pages about the same thing open the same one.
+`apps/dashboards/content/` is the worked example: its "In short" category
+(`how-it-fits`, `dataset`, `metric`, `component`, …) is the bubble set, and
+`apps/dashboards/tests/test_help_bubbles.py` shows how to keep one honest.
 
 ## Creating a New Help Page
 
@@ -142,7 +180,7 @@ Code blocks, tables, etc.
 
 **File naming:**
 - Use lowercase with hyphens: `my-new-page.md`
-- The filename (without `.md`) becomes the URL slug: `/help/my-new-page/`
+- The filename (without `.md`) becomes the URL slug: `/smallstack/help/my-new-page/`
 
 ### Step 2: Add to _config.yaml
 
@@ -333,15 +371,15 @@ In FAQ pages, each `## Heading` becomes a collapsible question, and the content 
 - **Lists:** Ordered and unordered
 - **Code:** Inline `` `code` `` and fenced blocks with syntax highlighting
 - **Tables:** GitHub-flavored markdown tables
-- **Links:** `[text](url)` - internal links use `/help/slug/`
+- **Links:** `[text](url)` - internal links use `/smallstack/help/slug/`
 - **Blockquotes:** `> quoted text`
 - **Images:** `![alt](url)`
 
 **Internal links example:**
 
 ```markdown
-See the [Docker Deployment](/help/smallstack/docker-deployment/) guide.
-Check the [FAQ](/help/smallstack/faq/) for common questions.
+See the [Docker Deployment](/smallstack/help/smallstack/docker-deployment/) guide.
+Check the [FAQ](/smallstack/help/smallstack/faq/) for common questions.
 ```
 
 ## Navigation Structure

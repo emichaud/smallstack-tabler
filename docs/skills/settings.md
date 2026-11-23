@@ -92,7 +92,7 @@ USE_HTTPS = config("USE_HTTPS", default=False, cast=bool)
 SMALLSTACK_COLOR_PALETTE = config("SMALLSTACK_COLOR_PALETTE", default="django")
 # Options: django, high-contrast, dark-blue, orange, purple
 
-# Show/hide bundled SmallStack reference docs in /help/
+# Show/hide bundled SmallStack reference docs in /smallstack/help/
 SMALLSTACK_DOCS_ENABLED = config("SMALLSTACK_DOCS_ENABLED", default=True, cast=bool)
 
 # Show/hide Login/Sign Up in topbar
@@ -251,6 +251,7 @@ See `docs/skills/background-tasks.md` → Reliability.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORKER_INLINE` | `true` | Run `db_worker` inside the web container. Set `false` when using a separate worker service/role. |
+| `WORKER_WEBHOOKS` | `1` | Extra inline workers for the outbound `webhooks` queue only; the main worker then skips that queue. Each is one more Python process. `0` runs everything on one worker. |
 
 ### Email (smallstack.py)
 
@@ -260,6 +261,11 @@ EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.conso
 ```
 
 For production SMTP, set `EMAIL_BACKEND=django.core.mail.backends.smtp.SmtpBackend` and configure `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`.
+
+| Env var / setting | Default | Purpose |
+|---|---|---|
+| `EMAIL_TIMEOUT` | `10` | Seconds before a stalled SMTP connection gives up. `0` means no timeout, which lets a hung mail server hold a web thread or the task worker indefinitely. |
+| `SMALLSTACK_ACCOUNTS_EMAILS_INLINE` | unset (follows `DEBUG`) | Invite and sign-in-code emails are queued on the `email` task queue and need a worker. `True` sends them in the request instead; `False` always queues. |
 
 ### Static Files (base.py)
 

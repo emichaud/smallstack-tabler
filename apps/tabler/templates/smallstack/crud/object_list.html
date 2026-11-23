@@ -1,4 +1,5 @@
 {% extends "tabler/base.html" %}
+{% load static %}
 {% load theme_tags crud_tags %}
 
 {% block title %}{{ object_verbose_name_plural }}{% endblock %}
@@ -61,6 +62,13 @@
     </div>
     {% endif %}
     <div class="card-body">
+        {# Accessories a CRUDView puts above its list (the dashboards' tag bar, …) #}
+        {% for acc_html in list_accessories_html %}{{ acc_html|safe }}{% endfor %}
+
+        {# Framework toolbar: ?q= search, the declared filters, export #}
+        {% include "smallstack/crud/includes/list_toolbar.html" %}
+        {% if enable_bulk %}{% include "smallstack/crud/includes/bulk_actions_bar.html" %}{% endif %}
+
         <div id="crud-list-content">
         {% if display_template %}
             {% include "smallstack/crud/includes/display_palette.html" %}
@@ -84,4 +92,18 @@
 </div>
 {% include "smallstack/crud/includes/delete_modal.html" %}
 {% include "smallstack/crud/includes/field_preview_modal.html" %}
+{% if enable_bulk %}
+{% include "smallstack/crud/includes/bulk_delete_modal.html" %}
+{% if "update" in bulk_actions %}
+{% include "smallstack/crud/includes/bulk_update_modal.html" %}
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if available_displays|length > 1 %}
+<script src="{% static 'smallstack/js/templates/crud/object_list.js' %}"
+        data-url-base="{{ url_base }}"
+        data-active-display="{{ active_display }}"></script>
+{% endif %}
 {% endblock %}

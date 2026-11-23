@@ -23,7 +23,7 @@ uv run python manage.py createsuperuser
 
 ## How do I change the primary color?
 
-Edit `static/smallstack/css/theme.css` and update the `--primary` variable (or add overrides in `static/css/project.css`):
+Add a palette (see [Theming](/smallstack/help/smallstack/theming/)): it reaches every page and survives upgrades. Editing `static/smallstack/css/core.css` works too, until the next upgrade replaces it. A palette sets the same variables:
 
 ```css
 :root {
@@ -36,18 +36,30 @@ Don't forget to update the dark mode version too in `[data-theme="dark"]`.
 
 ## How do I add a new page to the sidebar?
 
-Edit `templates/smallstack/includes/sidebar.html`:
+Register it from your app's `AppConfig.ready()`; don't edit `sidebar.html`, which is SmallStack's and is replaced on every upgrade. The registry orders the link, hides it from people who can't open the page, and puts it in the sidebar and the topbar:
 
-```html
-<li class="nav-item">
-    <a href="{% url 'your_url_name' %}" class="nav-link {% nav_active 'your_url_name' %}">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <!-- Your icon SVG path -->
-        </svg>
-        <span>Your Page</span>
-    </a>
-</li>
+```python
+# apps/myapp/apps.py
+from django.apps import AppConfig
+
+
+class MyAppConfig(AppConfig):
+    name = "apps.myapp"
+
+    def ready(self):
+        from apps.smallstack.navigation import nav
+
+        nav.register(
+            section="main",            # or "resources", "admin"
+            label="Your Page",
+            url_name="myapp:index",
+            icon_svg='<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="..."/></svg>',
+            order=20,
+            auth_required=True,        # staff_required=True for staff-only pages
+        )
 ```
+
+See [Navigation](/smallstack/help/smallstack/navigation/) for sections and submenus.
 
 ## How do I reset my password?
 
@@ -99,7 +111,7 @@ uv run pytest apps/profile/
 
 ## How do I deploy to production?
 
-We recommend Docker for simple deployments. See the [Docker Deployment](/help/smallstack/docker-deployment/) guide.
+We recommend Docker for simple deployments. See the [Docker Deployment](/smallstack/help/smallstack/docker-deployment/) guide.
 
 For production, remember to:
 
@@ -131,7 +143,7 @@ For production, remember to:
 
 5. Run migrations
 
-See [Project Structure](/help/smallstack/project-structure/) for details.
+See [Project Structure](/smallstack/help/smallstack/project-structure/) for details.
 
 ## How do I disable public signup?
 
@@ -141,7 +153,7 @@ Add to your `.env` file:
 SMALLSTACK_SIGNUP_ENABLED=False
 ```
 
-This hides the Sign Up button from the topbar and login page, and returns 404 on `/accounts/signup/`. Login and admin are unaffected. See [Authentication](/help/smallstack/authentication/) for more options.
+This hides the Sign Up button from the topbar and login page, and returns 404 on `/accounts/signup/`. Login and admin are unaffected. See [Authentication](/smallstack/help/smallstack/authentication/) for more options.
 
 ## How do I hide the login button?
 
@@ -176,7 +188,7 @@ In Docker, media files are stored in the `media_data` volume for persistence.
 
 ## How do I add a new help page?
 
-See [Using the Help System](/help/smallstack/help-system/) for complete instructions. Quick steps:
+See [Using the Help System](/smallstack/help/smallstack/help-system/) for complete instructions. Quick steps:
 
 1. Create a `.md` file in `apps/help/content/`
 2. Add the page to `_config.yaml`

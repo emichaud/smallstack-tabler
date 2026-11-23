@@ -129,9 +129,15 @@ Before writing any templates, CRUDView's generic templates handle:
 
 - **List page** — card layout with sortable table, pagination, and an "Add" button
 - **Create/Edit form** — styled form with labels, help text, error messages, Save and Cancel buttons
-- **Delete confirmation** — "Are you sure?" prompt with Delete and Cancel buttons
+- **Delete confirmation** — "Are you sure?" with what the delete would also remove (rows that cascade, per model), and no Delete button when a protected row stops it
+- **An audit trail** — every create, edit and delete writes a Django `LogEntry`, on these pages and over REST, MCP and `sc`; set `enable_history = True` for a History page per row
 - **Breadcrumbs** — automatic Home / Model Name / Action breadcrumbs
 - **Context collision protection** — if your model is named `User`, the context variable becomes `crud_user` to avoid shadowing Django's `request.user`
+
+Who may use the pages is up to `mixins` (logged in by default, `[StaffRequiredMixin]` for staff) and
+the per-row hooks (`can_update`, `can_delete`, `check_object_permission`). Set `model_permissions = True`
+and every surface also checks Django's model permissions (`view`, `add`, `change`, `delete`), the ones
+you grant with groups for Django admin.
 
 This is enough for many internal tools. You only need custom templates when you want the title bar pattern, stat cards, search, or other enhancements.
 
@@ -301,41 +307,36 @@ The search bar lets users filter the table without a page reload. It requires th
 {% endif %}
 ```
 
-**The view override** — add to your CRUDView class:
+**The view override**: put it in a mixin and attach it to the list view with `view_mixins`.
 
 ```python
-@classmethod
-def _make_view(cls, base_class):
-    from apps.smallstack.crud import _CRUDListBase
+from django.db.models import Q
 
-    view_class = super()._make_view(base_class)
+from apps.smallstack.crud import Action, CRUDView
 
-    if base_class is _CRUDListBase:
-        def get_queryset(self):
-            qs = super(view_class, self).get_queryset()
-            q = self.request.GET.get("q", "").strip()
-            if q:
-                from django.db.models import Q
-                qs = qs.filter(
-                    Q(name__icontains=q) | Q(category__icontains=q)
-                )
-            return qs
 
-        def get_context_data(self, **kwargs):
-            context = super(view_class, self).get_context_data(**kwargs)
-            context["search_query"] = self.request.GET.get("q", "")
-            return context
+class WidgetListMixin:
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(category__icontains=q))
+        return qs
 
-        def get_template_names(self):
-            if self.request.headers.get("HX-Request"):
-                return ["myfeature/_widget_table.html"]
-            return super(view_class, self).get_template_names()
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["search_query"] = self.request.GET.get("q", "")
+        return context
 
-        view_class.get_queryset = get_queryset
-        view_class.get_context_data = get_context_data
-        view_class.get_template_names = get_template_names
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request"):
+            return ["myfeature/_widget_table.html"]
+        return super().get_template_names()
 
-    return view_class
+
+class WidgetCRUDView(CRUDView):
+    model = Widget
+    view_mixins = {Action.LIST: [WidgetListMixin]}
 ```
 
 **In the list template** — add the search bar and wrap the table:
@@ -374,7 +375,7 @@ Stat cards show aggregate counts above the table. They can be plain display or c
 <div class="card stat-card-clickable"
      hx-get="{% url 'myfeature:stat-detail' 'total' %}"
      hx-target="#stat-modal-body"
-     onclick="openStatModal('All Widgets')">
+     data-stat-modal="All Widgets">
     <div class="card-body" style="text-align: center; padding: 14px 8px;">
         <div style="font-size: 1.75rem; font-weight: 700;
              color: var(--primary);">{{ stats.total }}</div>
@@ -385,7 +386,7 @@ Stat cards show aggregate counts above the table. They can be plain display or c
 
 For clickable cards, you need:
 
-1. Add `{% include "smallstack/includes/stat_modal.html" %}` at the bottom of your content block
+1. Nothing to include: `smallstack/base.html` already has the modal. (On a base template of your own, put `{% smallstack_modal %}` near the end of `<body>`.)
 2. Create a view that returns an HTML table fragment for the drilldown content
 3. Wire the URL (e.g., `path("manage/widgets/stats/<str:stat_type>/", stat_detail_view, name="myfeature:stat-detail")`)
 
@@ -445,8 +446,10 @@ The User Manager demonstrates this — its edit form has three tabs (Account, Pr
 | `detail_fields` | list | `None` | Detail view fields (falls back to `admin_class.fields`/`fieldsets` or `fields`) |
 | `url_base` | str | model name | URL prefix (e.g., `"manage/widgets"`) |
 | `paginate_by` | int | None | Rows per page (falls back to `admin_class.list_per_page`) |
+| `page_sizes` | tuple[int] | `()` | Let people choose rows per page: `page_sizes = PAGE_SIZE_CHOICES` (15, 25, 50, 100 from `apps.smallstack.pagination`). The first is the default; the list's pager shows a "Rows per page" control and the choice stays in the address (`?per_page=`) |
 | `mixins` | list | `[]` | View mixins applied to all views |
 | `column_widths` | dict | `None` | Custom column proportions, e.g. `{"name": "30%", "description": "50%"}`. Unlisted compact fields (booleans, dates, numbers, choice fields) get a type-derived pixel default; users can also drag any column header to resize (persisted per browser). See `tables.md` |
+| `wrap_fields` | list | `None` | Table columns that wrap instead of clipping with an ellipsis, e.g. `["title"]`; pair it with a `column_widths` entry so the column has room to wrap in. Other columns stay on one line, with the full text as a tooltip while clipped |
 | `ordering_fields` | list | `[]` | Fields allowed for column sorting (defaults to sortable list_fields) |
 | `form_class` | Form class | auto | Custom ModelForm (auto-generated if None) |
 | `actions` | list | all 5 | Which CRUD actions to generate |
@@ -634,7 +637,7 @@ When adding a new CRUD management page:
 - [ ] URLs in `apps/<appname>/urls.py` using `*MyCRUDView.get_urls()`
 - [ ] App registered in `INSTALLED_APPS`
 - [ ] URL include in `config/urls.py`
-- [ ] Sidebar link in `templates/smallstack/includes/sidebar.html`
+- [ ] Sidebar link: `nav.register()` in your app's `AppConfig.ready()` (don't edit `sidebar.html`)
 - [ ] Migrations created and applied
 - [ ] Tests for access control and table rendering
 - [ ] Custom list template (optional — only if you want the title bar pattern)

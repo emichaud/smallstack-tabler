@@ -17,10 +17,7 @@ out STAFF-tier hits before returning.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
-from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 
 from apps.mcp.server import TOOL_HANDLERS, ToolContext, reset_context, set_context
@@ -47,19 +44,11 @@ def _ensure_search_tools_registered():
     register_search_tools()
 
 
-def _call_async(coro):
-    """Run an async MCP handler from a sync test."""
-    return async_to_sync(lambda: coro)()
-
-
 def _call_handler(name, args, *, user, token=None):
     """Invoke an MCP tool handler with the given calling user."""
     ctx = set_context(ToolContext(user=user, token=token))
     try:
-        handler = TOOL_HANDLERS[name]
-        if asyncio.iscoroutinefunction(handler):
-            return async_to_sync(handler)(args)
-        return handler(args)
+        return TOOL_HANDLERS[name](args)
     finally:
         reset_context(ctx)
 
@@ -102,6 +91,11 @@ def test_staff_caller_still_sees_results_on_staff_only_search_tool():
     User = get_user_model()
     User.objects.create_user(username="staff-target-charlie")
     staff = User.objects.create_user(username="staff-caller", is_staff=True)
+    # Users are read with accounts.view_user (S2-1); search follows the list.
+    from django.contrib.auth.models import Permission
+
+    staff.user_permissions.add(Permission.objects.get(content_type__app_label="accounts", codename="view_user"))
+    staff = User.objects.get(pk=staff.pk)
 
     # Rebuild the FTS index so the User we just created is findable.
     from apps.search.backends import get_backend
@@ -229,6 +223,9 @@ def test_search_users_visible_in_tools_list_for_staff_token(db):
     from apps.smallstack.models import APIToken
 
     bob = User.objects.create_user(username="bob-tlist", password="x", is_staff=True)
+    from django.contrib.auth.models import Permission
+
+    bob.user_permissions.add(Permission.objects.get(content_type__app_label="accounts", codename="view_user"))
     _, raw = APIToken.create_token(user=bob, name="bob-tlist-staff", access_level="staff")
 
     resp = Client().post(

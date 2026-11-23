@@ -24,7 +24,7 @@ Each HTTP request is captured with the following data:
 
 | Field | What it records |
 |-------|-----------------|
-| **Path** | The URL path requested (e.g., `/about/`, `/blog/my-post/`) |
+| **Path** | The URL path requested (e.g., `/about/`, `/blog/my-post/`). A one-time token in the path (a password-reset, invite or newsletter link) is replaced with `***` before it is stored, so the log never holds a usable link |
 | **Method** | HTTP method — GET, POST, PUT, DELETE, etc. |
 | **Status code** | Response status (200, 301, 404, 500, etc.) |
 | **User** | The authenticated user, if logged in (null for anonymous visitors) |
@@ -226,7 +226,7 @@ The dashboard overview uses htmx to load detail data into a modal when stat card
 <div class="card stat-card-clickable"
      hx-get="{% url 'activity:stat_detail' 'requests' %}"
      hx-target="#stat-modal-body"
-     onclick="openStatModal('Recent Requests')">
+     data-stat-modal="Recent Requests">
 ```
 
 ## Performance Notes

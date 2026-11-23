@@ -32,6 +32,66 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+## [0.32.2-tabler.1] - 2026-11-22
+
+Carries upstream **v0.32.2**, up from v0.29.0: the Access app (groups in code,
+every access change recorded, the least-privilege review), the access-control
+audit's permission fixes, dashboards (metrics, grids, reports, goals, playlists,
+app-shipped defaults), help bubbles, CRUDView model permissions + audit + delete
+previews, the showcase app, and a CSP with no `'unsafe-inline'`. See
+[`CHANGELOG.md`](CHANGELOG.md) and [`UPGRADING.md`](UPGRADING.md) for those.
+
+### Changed
+- **The Tabler shell loads upstream's behaviour layer.** Upstream removed every
+  inline handler from its templates (v0.30.0): buttons are `data-ss-action` /
+  `data-confirm` / `data-stat-modal` attributes that `smallstack/js/theme.js`
+  carries out. `tabler/base.html` now loads `config.js` + `theme.js`, so the
+  delete modal, bulk bar, cookie banner, help bubbles and copy buttons work in
+  45 upstream templates that render inside Tabler chrome. `config.js` says
+  `data-authenticated="false"` on purpose: `tabler_theme.js` keeps owning the
+  theme and its profile sync, where theme.js would re-POST on every page load.
+- **`base.html` carries no inline `<script>`.** The two first-paint blocks and
+  the Bootstrap alias moved to `tabler/js/tabler_init.js`,
+  `tabler_body_init.js` and `bootstrap_alias.js`. The head also loads upstream's
+  `theme-init.js`, and both first-paint scripts read the profile's theme first
+  (profile → this browser → dark, the order upstream's tests hold a shell to),
+  so a new browser opens in the saved theme. `tabler_theme.js` mirrors the mode
+  to `data-theme`, which upstream's per-page CSS keys its dark rules on.
+- **The stat modal is upstream's.** The Bootstrap-modal override of
+  `stat_modal.html` is gone; `{% smallstack_modal %}` in the shell renders
+  upstream's markup once per page, styled by the `.stat-modal` port in
+  `tabler_overrides.css` (now with the `narrow` and `reading` sizes). The three
+  hand `{% include %}`s of it were removed.
+- **CRUD overrides catch up with upstream's templates:** the list page renders
+  `list_accessories_html`, the framework toolbar, the bulk bar and modals, and
+  the display-palette script; the detail page has the History link, the delete
+  button through the modal, `related_tabs.html` and the delete modal; the
+  confirmation page shows what a delete takes with it and no Delete button when
+  it is blocked.
+- **Navbar:** pages apps register for signed-in users (nav section `main`:
+  Calendar, Dashboards ▾, Goals ▾, My blogs) render in the navbar, a dropdown for
+  an item with children; "My dashboards" joins the user menu (`#user-dropdown`);
+  showcase links reverse quietly so `apps/showcase` can be deleted; the brand is
+  a `<div>`, so a page's own `<h1>` is its first.
+- **User Manager:** the Invite User button is back on the list, gated on
+  `add_user` like Add User; the Timezones page uses upstream's static JS and
+  shows the Staff filter and the Users crumb only to `view_user` holders.
+- **`tabler_overrides.css`:** ported the v0.30–v0.32 `components.css` rules the
+  shell needs (help bubbles, `.title-with-help`, the stat-list rows, modal
+  sizes, `.md-table`, `.view-bar`, page tabs, the Activity resource pages,
+  `.crud-delete-summary`) and the `--transition-*` aliases.
+- The settings panel's reset button reads "Restore defaults" (upstream's tests
+  assert "Reset to default" is absent from a page).
+- `AGENTS.md` keeps the Tabler framing, takes upstream's Access row and adds the
+  inline-JavaScript anti-pattern. `apps/website/` keeps only `home` and this
+  fork's `changelog` page; the demo pages are upstream's `apps/showcase/`.
+
+### Known debt
+- `CONTENT_SECURITY_POLICY["script-src"]` keeps `'unsafe-inline'` (+
+  `cdn.jsdelivr.net` for Tabler): 16 templates under `apps/tabler/templates/`
+  still carry inline `<script>` blocks. Move them to `static/` and drop the
+  stopgap; the pattern is `docs/skills/templates.md`.
+
 ## [0.29.0-tabler.1] - 2026-11-02
 
 Carries upstream **v0.29.0**, up from v0.23.1: blogs and newsletters, the

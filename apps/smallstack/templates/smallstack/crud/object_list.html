@@ -1,4 +1,5 @@
 {% extends "smallstack/base.html" %}
+{% load static %}
 {% load theme_tags crud_tags %}
 
 {% block title %}{{ object_verbose_name_plural }}{% endblock %}
@@ -46,7 +47,7 @@
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         {% comment %}h1, not h2: this branch runs when no page_header supplied one, so
         this is the page's only top-level heading. A document whose first heading
-        is an h2 is what a screen-reader user landing here gets. (F-55){% endcomment %}
+        is an h2 is what a screen-reader user landing here gets.{% endcomment %}
         <h1 class="crud-title">{{ object_verbose_name_plural }}</h1>
         <div style="display: flex; align-items: center; gap: 8px;">
             {% if available_displays|length > 1 %}
@@ -92,27 +93,8 @@
 
 {% block extra_js %}
 {% if available_displays|length > 1 %}
-<script>
-(function() {
-    var key = 'ss_display_{{ url_base|escapejs }}';
-    document.querySelectorAll('.display-palette-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-            localStorage.setItem(key, this.dataset.display);
-            document.querySelectorAll('.display-palette-btn').forEach(function(b) {
-                b.classList.remove('active');
-            });
-            this.classList.add('active');
-        });
-    });
-    var params = new URLSearchParams(window.location.search);
-    if (!params.has('display')) {
-        var saved = localStorage.getItem(key);
-        if (saved && saved !== '{{ active_display|escapejs }}') {
-            params.set('display', saved);
-            window.location.replace(window.location.pathname + '?' + params.toString());
-        }
-    }
-})();
-</script>
+<script src="{% static 'smallstack/js/templates/crud/object_list.js' %}"
+        data-url-base="{{ url_base }}"
+        data-active-display="{{ active_display }}"></script>
 {% endif %}
 {% endblock %}

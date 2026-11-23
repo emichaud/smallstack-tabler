@@ -38,6 +38,8 @@ import logging
 import time
 from typing import Any
 
+from .redaction import redact_path, redact_text
+
 __all__ = [
     "JSONFormatter",
     "TextFormatter",
@@ -226,11 +228,16 @@ def safe_message(record: logging.LogRecord) -> str:
     ``logger.info("%d items", "seven")`` raises inside ``getMessage()``. A
     formatter that propagates that loses the log line entirely — and the line
     is usually the clue you need. Degrade to the raw template plus the args.
+
+    One-time credentials in the text (a reset or invite link's token, a
+    ``?token=`` query value) are replaced by ``***``: ``django.request`` and
+    ``django.security.csrf`` log the request path, and the log reaches the
+    staff log viewer (G3-1).
     """
     try:
-        return record.getMessage()
+        return redact_text(record.getMessage())
     except Exception as exc:  # pragma: no cover - defensive
-        return f"<unformattable log message: {exc!r} msg={record.msg!r} args={record.args!r}>"
+        return redact_text(f"<unformattable log message: {exc!r} msg={record.msg!r} args={record.args!r}>")
 
 
 def extract_extra(record: logging.LogRecord) -> dict[str, Any]:
@@ -255,14 +262,16 @@ def _redact_request(value: Any) -> Any:
     string — so a feed URL's ``?token=<raw key>`` was written verbatim into
     JSON log lines and the ``LogRecord.extra`` column on any 4xx/5xx. The path
     is what's useful for debugging; the query is where credentials ride.
-    (Audit 2026-09-13, C3.) Duck-typed so this module never imports Django's
+ Duck-typed so this module never imports Django's
     HTTP machinery.
     """
     if hasattr(value, "method") and hasattr(value, "path") and hasattr(value, "GET"):
         try:
-            return f"<{type(value).__name__}: {value.method} {value.path!r}>"
+            return f"<{type(value).__name__}: {value.method} {redact_path(value.path)!r}>"
         except Exception:  # pragma: no cover - defensive
             return f"<{type(value).__name__}>"
+    if isinstance(value, str):
+        return redact_text(value)
     return value
 
 
@@ -323,9 +332,9 @@ class JSONFormatter(logging.Formatter):
             # formatException() is not cheap and every handler sees the record.
             if not record.exc_text:
                 record.exc_text = self.formatException(record.exc_info)
-            payload["exc"] = record.exc_text
+            payload["exc"] = redact_text(record.exc_text)
         elif record.exc_text:
-            payload["exc"] = record.exc_text
+            payload["exc"] = redact_text(record.exc_text)
 
         if record.stack_info:
             payload["stack"] = self.formatStack(record.stack_info)
@@ -362,7 +371,7 @@ class TextFormatter(logging.Formatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        line = super().format(record)
+        line = redact_text(super().format(record))
         suffix = " ".join(
             f"{key}={getattr(record, key)}" for key in ("request_id", "trace_id") if getattr(record, key, "")
         )

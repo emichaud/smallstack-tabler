@@ -18,6 +18,8 @@
  *
  * Widths persist in localStorage per `data-table-key` (the view's url_base +
  * its field list, so a changed `list_fields` never replays stale widths).
+ * Tables on one page that share a key move together: resizing (or resetting)
+ * one applies to the rest, so a table split into sections stays aligned.
  * Everything re-initialises after an htmx swap — sort/search/filter/paginate
  * all replace the table — and is idempotent per table element.
  *
@@ -170,6 +172,17 @@
         syncResetButton(table);
     }
 
+    // Other tables on the page sharing this one's key — a page that splits one
+    // table into several (a goal list's sections) keeps their columns lined up.
+    function siblings(table) {
+        var key = table.getAttribute('data-table-key');
+        if (!key) return [];
+        return Array.prototype.filter.call(
+            document.querySelectorAll('table.crud-table[data-table-key]'),
+            function (other) { return other !== table && other.getAttribute('data-table-key') === key; }
+        );
+    }
+
     function persist(table) {
         var widths = {};
         dataHeaders(table).forEach(function (th) {
@@ -178,9 +191,11 @@
         saveWidths(table, widths);
         table.classList.add('is-resized');
         syncResetButton(table);
+        siblings(table).forEach(applySaved);
     }
 
-    function resetWidths(table) {
+    function resetWidths(table, alone) {
+        if (!alone) siblings(table).forEach(function (other) { resetWidths(other, true); });
         saveWidths(table, null);
         dataHeaders(table).forEach(function (th) {
             // Restore whatever the server emitted (column_widths / type default), else free.
@@ -321,11 +336,41 @@
         });
     }
 
+    // ---- cell tooltips ---------------------------------------------------
+
+    // The server puts each cell's full text in `title`, which the browser
+    // shows on hover whether or not the cell is clipped. Keep it only where
+    // it adds something: on hover, a cell that fits parks its title in
+    // `data-title`; a cell that clips (or clips again after a resize) gets
+    // it back. The no-script fallback is unchanged.
+    function armTitle(td) {
+        var clipped = td.scrollWidth > td.clientWidth;
+        if (clipped) {
+            if (!td.hasAttribute('title') && td.hasAttribute('data-title')) {
+                td.setAttribute('title', td.getAttribute('data-title'));
+            }
+        } else if (td.hasAttribute('title')) {
+            td.setAttribute('data-title', td.getAttribute('title'));
+            td.removeAttribute('title');
+        }
+    }
+
+    function bindTitles(table) {
+        table.addEventListener('mouseover', function (event) {
+            var td = event.target.closest('td');
+            if (td && td.parentNode && table.contains(td) && !td.classList.contains('cell-wrap')
+                && (td.hasAttribute('title') || td.hasAttribute('data-title'))) {
+                armTitle(td);
+            }
+        });
+    }
+
     function initTable(table) {
         if (table.dataset.resizeInit === '1') {
             return;
         }
         table.dataset.resizeInit = '1';
+        bindTitles(table);
 
         dataHeaders(table).forEach(function (th) {
             // Remember the server-emitted width so "Reset columns" can restore it.

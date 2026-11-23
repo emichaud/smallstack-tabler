@@ -1,0 +1,62 @@
+{% extends "smallstack/base.html" %}
+{% load static dashboard_tags %}
+{% load help_tags %}
+
+{% block title %}{{ report.name }}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'dashboards/css/dashboards.css' %}">{% endblock %}
+
+{% block page_header %}
+<div class="page-header-bleed page-header-with-actions">
+    <div class="page-header-content">
+        <div class="title-with-help"><h1>{{ report.name }}</h1>{% help_bubble "dashboards" "report" %}</div>
+        {% if report.description %}<p class="page-subtitle">{{ report.description }}</p>{% endif %}
+        <nav style="margin-top: 0.5rem; font-size: 0.8rem;">
+            <a href="{% url 'website:home' %}" style="color: var(--body-quiet-color); text-decoration: none;">Home</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
+            <a href="{% url 'goals_index' %}" style="color: var(--body-quiet-color); text-decoration: none;">Goals</a>
+            <span style="color: var(--body-quiet-color); margin: 0 0.3rem;">/</span>
+            <span style="color: var(--body-fg);">{{ report.name }}</span>
+        </nav>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+        {% if report.is_shared %}<span class="dash-badge dash-badge--shared">Shared</span>{% else %}<span class="dash-badge">Personal, {{ report.owner }}</span>{% endif %}
+        <a href="?{% if order %}order={{ order }}&amp;{% endif %}format=csv" class="btn-outline btn-sm" id="rp-csv" download>Download CSV</a>
+        {% if matrix.rows %}<a href="{% url 'dashboards_report_print' report.slug %}?{% if order %}order={{ order }}&amp;{% endif %}auto=1" class="btn-outline btn-sm" id="rp-print" title="A document of this report for the printer">Print</a>{% endif %}
+        <a href="{% url 'dashboards_duplicate' 'report' report.pk %}" class="btn-outline btn-sm" hx-get="{% url 'dashboards_duplicate' 'report' report.pk %}" hx-target="#stat-modal-body" hx-swap="innerHTML" data-stat-modal="Duplicate {{ report.name }}?" aria-haspopup="dialog" title="Make a copy of this report: see what the copy will be, then open its form">Duplicate</a>
+        {% if can_edit %}{% include "dashboards/partials/archive_button.html" with kind="report" obj=report %}<a href="{% url 'dashboards/reports-update' report.pk %}" class="btn-primary btn-sm">Edit report</a>{% elif report.is_archived %}<span class="dash-archived">Archived</span>{% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="rp-page">
+{% if matrix.rows %}
+{% if order %}<p class="rp-sorted"><a href="{{ request.path }}" hx-get="{{ request.path }}" hx-select="#rp-page" hx-select-oob="#rp-csv,#rp-print" hx-target="#rp-page" hx-swap="outerHTML" hx-push-url="true">Back to the report's order</a></p>{% endif %}
+<p class="rp-lede">{{ matrix.lede }}{% if matrix.partial %} The first column is still running, so each change compares part of this period with all of the last.{% elif matrix.compare %} Under each first value is its change from the next column.{% endif %}</p>
+
+{% include "dashboards/includes/report_table.html" with sortable=True %}
+
+<div class="md-foot">
+    <section aria-labelledby="rp-read-title">
+        <h2 id="rp-read-title">Reading it</h2>
+        <p class="dash-muted">Each column re-runs every metric for that period. A row with a target is coloured by it: on target, at risk or missed. Other rows take their colours from the metric's own rules. The change is the first column against the second; whether up is good depends on the metric. Click any value for the rows behind it.</p>
+    </section>
+    <section aria-labelledby="rp-use-title">
+        <h2 id="rp-use-title">Use it</h2>
+        <dl class="md-uses">
+            <dt>As a file</dt>
+            <dd><a href="?{% if order %}order={{ order }}&amp;{% endif %}format=csv" download>{{ report.slug }}.csv</a></dd>
+            <dt>Over REST</dt>
+            <dd><code>GET {{ api_url }}</code></dd>
+            <dt>From an agent</dt>
+            <dd><code>report_values {"report": "{{ report.slug }}"}</code></dd>
+        </dl>
+    </section>
+</div>
+{% else %}
+{% include "smallstack/includes/empty_state.html" with title="This report has no rows yet" body="Add metrics as rows and pick the periods to compare as columns." %}
+{% if can_edit %}<p style="text-align: center;"><a href="{% url 'dashboards/reports-update' report.pk %}" class="btn-primary">Add metrics</a></p>{% endif %}
+{% endif %}
+</div>
+{% endblock %}

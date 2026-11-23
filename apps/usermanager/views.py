@@ -1,11 +1,13 @@
 """User Manager views — CRUDView config + bespoke overrides."""
 
+import logging
 from datetime import timedelta
 from typing import Any
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
 from django.db.models import Avg, Count, Max
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -16,6 +18,7 @@ from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 
 from apps.activity.models import RequestLog
+from apps.smallstack.audit import CHANGE, log_action
 from apps.smallstack.crud import Action, CRUDView
 from apps.smallstack.mixins import StaffRequiredMixin
 from apps.smallstack.stat_lists import render_stat_list, stat_list_row
@@ -23,6 +26,41 @@ from apps.smallstack.stat_lists import render_stat_list, stat_list_row
 from .forms import UserAccountForm, UserCreateForm, UserProfileForm
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+
+
+def _record_account_action(request, target, message: str) -> None:
+    """Audit and log a staff action on someone's account (a reset link, an
+    unlock): who did it, to whom, and what happened. Never raises, so the
+    record can't break the action it describes."""
+    logger.info("usermanager: %s by %s for %s (pk=%s)", message, request.user, target.get_username(), target.pk)
+    try:
+        log_action(request.user, target, CHANGE, message)
+    except Exception:  # noqa: BLE001 — the action already happened; say the audit row didn't
+        logger.exception("usermanager: couldn't write the audit entry for %r on user pk=%s", message, target.pk)
+
+
+CHANGE_USER = "accounts.change_user"
+VIEW_USER = "accounts.view_user"
+
+
+def can_edit_account(actor: Any, target: Any) -> bool:
+    """Whether ``actor`` may change ``target``'s account here (fields, the
+    staff and active flags, a reset link, an unlock): ``accounts.change_user``,
+    the permission the shipped *User manager* group grants, and only a
+    superuser may change a superuser's account. Superusers hold every perm."""
+    if not actor.has_perm(CHANGE_USER):
+        return False
+    return not target.is_superuser or actor.is_superuser
+
+
+def sign_in_refusal(actor: Any, target: Any) -> str:
+    """Why ``actor`` may not change ``target``'s password, email or username
+    or send it a link, beyond :func:`can_edit_account` ("" when they may):
+    the subset rule in :func:`apps.access.services.sign_in_refusal`."""
+    from apps.access.services import sign_in_refusal as rule
+
+    return rule(actor, target)
 
 
 def _active_superuser_count(exclude_pk=None) -> int:
@@ -55,12 +93,18 @@ class UserCRUDView(CRUDView):
     url_base = "manage/users"
     paginate_by = 10
     mixins = [StaffRequiredMixin]
+    # Every page asks for Django's model permissions (view_user to read,
+    # add_user / change_user / delete_user to write; superusers hold all
+    # four), as Django admin and Explorer do. Search follows the same check.
+    model_permissions = True
     form_class = UserAccountForm
     actions = [Action.LIST, Action.CREATE, Action.UPDATE, Action.DELETE]
 
     # List rendering — TableDisplay + per-row action filter (was UserTable
     # + UserActionsColumn pre-v0.12, when django-tables2 was still around).
     list_fields = ["username", "email", "name", "timezone", "is_staff", "is_active"]
+    # An address is the longest thing on a row; the username (the link) needs less.
+    column_widths = {"username": "180px", "email": "280px", "timezone": "170px"}
     link_field = "username"   # clickable username → goes to update view
     field_transforms = {
         "first_name": "preview",
@@ -141,12 +185,16 @@ class UserCRUDView(CRUDView):
             view_class.get_context_data = get_context_data
 
         elif base_class is _CRUDUpdateBase:
-            # Add profile form + activity stats to edit view
+            # Add profile form + activity stats to edit view. The page opens
+            # with view_user (read-only without change_user); post() below
+            # refuses the write.
+            view_class._model_permission = "view"
 
             def get_context_data(self, **kwargs):
                 context = super(view_class, self).get_context_data(**kwargs)
                 user_obj = self.object
                 profile = getattr(user_obj, "profile", None)
+                context["can_edit_account"] = can_edit_account(self.request.user, user_obj)
 
                 # Profile form
                 if "profile_form" not in context:
@@ -166,10 +214,36 @@ class UserCRUDView(CRUDView):
                 # Activity stats
                 context["activity_stats"] = _get_user_activity_stats(user_obj)
 
+                # The Access tab: groups, counts, recent changes; the full
+                # explanation lives at /smallstack/access/users/<pk>/.
+                from apps.access.services import user_access_summary
+
+                context["access_summary"] = user_access_summary(user_obj)
+                context["sign_in_refusal"] = sign_in_refusal(self.request.user, user_obj)
+
+                if not context["can_edit_account"]:
+                    for each in (context.get("form"), context.get("profile_form")):
+                        for field in getattr(each, "fields", {}).values():
+                            field.disabled = True
+
                 return context
 
             def post(self, request, *args, **kwargs):
+                from django.http import HttpResponseForbidden
+
                 self.object = self.get_object()
+                if not can_edit_account(request.user, self.object):
+                    if self.object.is_superuser and request.user.has_perm(CHANGE_USER):
+                        return HttpResponseForbidden("Only a superuser can change a superuser account.")
+                    return HttpResponseForbidden(f"Changing an account needs the {CHANGE_USER} permission.")
+                refusal = sign_in_refusal(request.user, self.object)
+                if refusal:
+                    from apps.access.services import SIGN_IN_FIELDS
+
+                    for name in SIGN_IN_FIELDS:
+                        posted = request.POST.get(name)
+                        if posted is not None and posted.strip() != (getattr(self.object, name) or ""):
+                            return HttpResponseForbidden(refusal)
                 # Capture the ORIGINAL flag values before form validation —
                 # form.is_valid() runs construct_instance(), which mutates
                 # self.object to the submitted values, so reading them after
@@ -350,7 +424,10 @@ def _user_list_row(u):
 
 @staff_member_required
 def user_stat_detail(request, stat_type: str) -> HttpResponse:
-    """HTMX endpoint returning HTML for stat card drill-down modals."""
+    """HTMX endpoint returning HTML for stat card drill-down modals. Lists
+    accounts, so it asks what the list page asks (``accounts.view_user``)."""
+    if not request.user.has_perm(VIEW_USER):
+        raise PermissionDenied(f"Listing accounts needs the {VIEW_USER} permission.")
     now = timezone.now()
     thirty_days_ago = now - timedelta(days=30)
     users = User.objects.filter(is_active=True).order_by("username")
@@ -403,13 +480,21 @@ def send_user_link(request, pk: int) -> HttpResponse:
     from apps.accounts.views import send_setup_or_reset
 
     user = get_object_or_404(User, pk=pk)
+    if not can_edit_account(request.user, user):
+        raise PermissionDenied(f"Sending a link needs {CHANGE_USER} (and a superuser, for a superuser's account).")
+    refusal = sign_in_refusal(request.user, user)
+    if refusal:
+        raise PermissionDenied(refusal)
     kind = send_setup_or_reset(request, user)
     if kind == "invite":
         messages.success(request, f"Invite link sent to {user.email}.")
+        _record_account_action(request, user, "Sent an invite link")
     elif kind == "reset":
         messages.success(request, f"Password reset link sent to {user.email}.")
+        _record_account_action(request, user, "Sent a password reset link")
     else:
         messages.error(request, "Couldn't send a link — this user has no email address on file.")
+        logger.warning("usermanager: no link sent for user pk=%s (no email address) by %s", user.pk, request.user)
     return redirect("manage/users-update", pk=pk)
 
 
@@ -418,11 +503,16 @@ def send_user_link(request, pk: int) -> HttpResponse:
 def unlock_user(request, pk: int) -> HttpResponse:
     """Clear django-axes failed-login lockouts for a user."""
     user = get_object_or_404(User, pk=pk)
+    if not can_edit_account(request.user, user):
+        raise PermissionDenied(f"Unlocking needs {CHANGE_USER} (and a superuser, for a superuser's account).")
     try:
         from axes.utils import reset
 
         reset(username=user.get_username())
-        messages.success(request, f"Cleared login lockouts for {user.get_username()}.")
     except Exception:
+        logger.exception("usermanager: clearing login lockouts failed for user pk=%s by %s", user.pk, request.user)
         messages.error(request, "Couldn't clear lockouts for this account.")
+    else:
+        messages.success(request, f"Cleared login lockouts for {user.get_username()}.")
+        _record_account_action(request, user, "Cleared login lockouts")
     return redirect("manage/users-update", pk=pk)

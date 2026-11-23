@@ -194,34 +194,27 @@ Your public pages use a custom theme (Bootstrap, Tailwind, plain CSS). SmallStac
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {# Blocking script — prevents theme flash #}
-    <script>
-    (function() {
-        var t = localStorage.getItem('smallstack-theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', t);
-        var p = localStorage.getItem('smallstack-palette') || '{{ color_palette }}';
-        document.documentElement.setAttribute('data-palette', p);
-    })();
-    </script>
+    {# Sets the theme before first paint — no flash #}
+    <script src="{% static 'smallstack/js/theme-init.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-palette="{{ color_palette }}" data-default-palette="django"></script>
     <title>{% block title %}{% endblock %} | {{ brand.name }}</title>
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
     {% block content %}{% endblock %}
 
-    {# SmallStack config object — before theme.js #}
-    <script>
-    window.SMALLSTACK = {
-        userTheme: {% if user.is_authenticated %}'{{ user.profile.theme_preference }}'{% else %}null{% endif %},
-        userPalette: {% if user.is_authenticated %}'{{ user.profile.color_palette }}'{% else %}null{% endif %},
-        colorPalette: '{{ color_palette }}',
-        isAuthenticated: {{ user.is_authenticated|yesno:"true,false" }},
-        sidebarEnabled: false,
-        sidebarOpen: false,
-        topbarNavEnabled: false
-    };
-    </script>
-    <script src="{% static 'smallstack/js/theme.js' %}" defer></script>
+    {# theme.js's settings; data-theme-url / data-palette-url are where the toggle saves the choice #}
+    <script src="{% static 'smallstack/js/config.js' %}"
+            data-user-theme="{% if user.is_authenticated and user.profile %}{{ user.profile.theme_preference }}{% endif %}"
+            data-user-palette="{% if user.is_authenticated and user.profile %}{{ user.profile.color_palette }}{% endif %}"
+            data-color-palette="{{ color_palette }}"
+            data-authenticated="{% if user.is_authenticated %}true{% else %}false{% endif %}"
+            data-theme-url="{% url 'theme_preference' %}"
+            data-palette-url="{% url 'palette_preference' %}"></script>
+    <script src="{% static 'smallstack/js/htmx.min.js' %}" defer></script>
+    <script src="{% static 'smallstack/js/theme.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
@@ -433,7 +426,7 @@ That's it. Explorer autodiscovers `explorer.py` files on startup. No URL wiring 
 | `explorer_enable_api` | `False` | Generate REST API endpoints |
 | `explorer_export_formats` | `[]` | `["csv", "json"]` for export |
 
-See `docs/skills/explorer.md` and `apps/explorer/content/admin-api.md` for the full API.
+See `docs/skills/explorer.md` and `apps/smallstack/docs/explorer-admin-api.md` for the full API.
 
 ### 5.2 CRUDView — Custom CRUD Pages (Most Control)
 
@@ -491,10 +484,10 @@ path("", include("apps.inventory.urls")),
 
 | Option | Purpose |
 |--------|---------|
-| `displays` | List view displays (TableDisplay, CardDisplay, AvatarCardDisplay, Table2Display, or custom) |
+| `displays` | List view displays (TableDisplay, CardDisplay, AvatarCardDisplay, or custom) |
 | `detail_displays` | Detail view displays (DetailTableDisplay, DetailCardDisplay, or custom) |
 | `form_class` | Custom ModelForm (auto-generated from `fields` if not set) |
-| `table_class` | django-tables2 Table for sortable columns |
+| `list_fields` / `link_field` | The list table's columns / the column linking to each row |
 | `queryset` | Base queryset (default: `model.objects.all()`) |
 | `search_fields` | Fields for API `?q=` search |
 | `filter_fields` | Fields for API query-param filtering |
@@ -979,7 +972,7 @@ See `docs/skills/help-documentation.md` for the full guide.
 | `/accounts/login/` | Login (alias) | Public |
 | `/status/` | Public status page | Public |
 | `/health/` | Health check (JSON) | Public |
-| `/help/` | Documentation | Public |
+| `/smallstack/help/` | Documentation | Public |
 | `/admin/` | Django admin | Superuser |
 
 ## Quick Reference: Common Commands

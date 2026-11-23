@@ -514,6 +514,170 @@ class TestRunner:
         assert Heartbeat.objects.filter(monitor_key="all_bad", status="fail").exists()
 
 
+class TestConcurrentRun:
+    """run_all_monitors probes network-bound monitors in parallel, DB work stays put.
+
+    Concurrency is proven with a barrier, not a stopwatch: each pooled check
+    waits for all the others to arrive, so a serial runner breaks the barrier
+    and records fails instead of passing slowly.
+    """
+
+    @staticmethod
+    def _pooled(key: str, check):
+        from apps.smallstack.monitors import Monitor
+
+        class Pooled(Monitor):
+            concurrent_check = True
+
+            def check(self):
+                return check()
+
+        return Pooled(key=key, service="s")
+
+    def test_pooled_checks_run_at_the_same_time(self, db, monkeypatch, settings):
+        import threading
+
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult
+
+        settings.HEARTBEAT_MAX_CONCURRENT_CHECKS = 8
+        barrier = threading.Barrier(3, timeout=5)
+
+        def meet():
+            barrier.wait()
+            return CheckResult.up()
+
+        mons = [self._pooled(f"par_{i}", meet) for i in range(3)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        res = run_all_monitors()
+        assert [r["status"] for r in res.values()] == ["ok", "ok", "ok"]
+        assert list(res) == ["par_0", "par_1", "par_2"]  # registry order kept
+
+    def test_pool_of_one_runs_them_serially(self, db, monkeypatch, settings):
+        import threading
+
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult
+
+        settings.HEARTBEAT_MAX_CONCURRENT_CHECKS = 1
+        barrier = threading.Barrier(2, timeout=0.2)
+
+        def meet():
+            barrier.wait()
+            return CheckResult.up()
+
+        mons = [self._pooled(f"ser_{i}", meet) for i in range(2)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        res = run_all_monitors()
+        assert {r["status"] for r in res.values()} == {"fail"}  # nobody to meet
+
+    def test_probe_past_the_deadline_is_a_fail_and_the_rest_still_record(self, db, monkeypatch, settings):
+        import threading
+        import time as _time
+
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult
+
+        settings.HEARTBEAT_RUN_DEADLINE_SECONDS = 1
+        release = threading.Event()
+
+        def hang():
+            release.wait(10)
+            return CheckResult.up()
+
+        mons = [self._pooled("hangs", hang), self._pooled("quick", CheckResult.up)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        started = _time.monotonic()
+        try:
+            res = run_all_monitors()
+        finally:
+            release.set()
+        assert _time.monotonic() - started < 5  # abandoned, not waited on
+        assert res["quick"]["status"] == "ok"
+        assert res["hangs"]["status"] == "fail"
+        assert "deadline" in res["hangs"]["note"]
+        assert Heartbeat.objects.get(monitor_key="hangs").status == "fail"
+
+    def test_a_check_never_started_records_nothing_rather_than_a_fail(self, db, monkeypatch, settings):
+        # Queued behind two hanging checks on a pool of two, "quick" never ran:
+        # recording it as a fail was a false outage on a healthy endpoint.
+        import threading
+
+        from apps.heartbeat import services
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult
+
+        settings.HEARTBEAT_RUN_DEADLINE_SECONDS = 1
+        settings.HEARTBEAT_MAX_CONCURRENT_CHECKS = 2
+        release = threading.Event()
+
+        def hang():
+            release.wait(10)
+            return CheckResult.up()
+
+        mons = [self._pooled("hang_a", hang), self._pooled("hang_b", hang), self._pooled("queued", CheckResult.up)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        monkeypatch.setattr(services.random, "sample", lambda seq, k: list(seq))  # submit in registry order
+        try:
+            res = run_all_monitors()
+        finally:
+            release.set()
+        assert res["hang_a"]["status"] == "fail"
+        assert res["queued"]["status"] == "skipped"
+        assert not Heartbeat.objects.filter(monitor_key="queued").exists()
+
+    def test_db_monitors_and_all_recording_stay_on_the_calling_thread(self, db, monkeypatch):
+        import threading
+
+        from django.db.models.signals import post_save
+
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult, Monitor
+
+        caller = threading.get_ident()
+        seen: dict[str, int] = {}
+
+        class DbBacked(Monitor):
+            key = "db_backed"
+            service = "s"
+
+            def check(self):
+                seen["check"] = threading.get_ident()
+                return CheckResult.up()
+
+        writers: set[int] = set()
+
+        def on_save(sender, **kwargs):
+            writers.add(threading.get_ident())
+
+        mons = [DbBacked(), self._pooled("net_a", CheckResult.up), self._pooled("net_b", CheckResult.up)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        post_save.connect(on_save, sender=Heartbeat)
+        try:
+            run_all_monitors()
+        finally:
+            post_save.disconnect(on_save, sender=Heartbeat)
+        assert seen["check"] == caller
+        assert writers == {caller}
+        assert Heartbeat.objects.filter(monitor_key__in=["db_backed", "net_a", "net_b"]).count() == 3
+
+    def test_one_run_stamps_every_beat_with_the_same_minute(self, db, monkeypatch):
+        from apps.smallstack import monitors as registry
+        from apps.smallstack.monitors import CheckResult
+
+        mons = [self._pooled(f"min_{i}", CheckResult.up) for i in range(3)]
+        monkeypatch.setattr(registry, "get_monitors", lambda service=None: mons)
+        run_all_monitors()
+        stamps = set(Heartbeat.objects.filter(monitor_key__startswith="min_").values_list("timestamp", flat=True))
+        assert len(stamps) == 1
+
+    def test_endpoint_monitor_opts_in_and_builtins_do_not(self):
+        from apps.heartbeat.monitors import EndpointMonitor, SiteMonitor
+
+        assert EndpointMonitor.concurrent_check is True
+        assert SiteMonitor.concurrent_check is False
+
+
 class TestMonitoredEndpoint:
     """The user-created endpoint model + its dynamic monitor source."""
 
@@ -1726,18 +1890,38 @@ class TestPublicStatusFlag:
         # Default on — the board renders.
         assert client.get(reverse("public_status")).status_code == 200
 
-    def test_overview_hides_public_links_when_disabled(self, staff_client, db):
+    def test_overview_links_to_the_public_page_section_not_the_page(self, staff_client, db):
+        """The overview's "Public page" is the staff section about it (which says
+        whether it's published), never a direct link out; so it's there whether
+        the public page is on or off."""
         from django.test import override_settings
 
-        with override_settings(SMALLSTACK_PUBLIC_STATUS_ENABLED=False):
-            body = staff_client.get(reverse("heartbeat:status_overview")).content.decode()
-        assert ">Public page<" not in body
-        # ...and the staff overview itself still works.
-        assert "All systems operational" in body or "Status" in body
+        settings_url = reverse("heartbeat:public_settings")
+        for enabled in (True, False):
+            with override_settings(SMALLSTACK_PUBLIC_STATUS_ENABLED=enabled):
+                body = staff_client.get(reverse("heartbeat:status_overview")).content.decode()
+            assert f'href="{settings_url}"' in body and ">Public page<" in body
+            assert f'href="{reverse("public_status")}"' not in body
 
-    def test_overview_shows_public_links_when_enabled(self, staff_client, db):
-        body = staff_client.get(reverse("heartbeat:status_overview")).content.decode()
-        assert ">Public page<" in body
+    def test_the_public_page_section_describes_the_page(self, staff_client, client, db):
+        from django.test import Client, override_settings
+
+        url = reverse("heartbeat:public_settings")
+        assert Client().get(url).status_code == 302  # staff only
+        body = staff_client.get(url).content.decode()
+        assert reverse("public_status") in body and reverse("public_status_json") in body
+        assert "published" in body and "BRAND_LOGO_DARK" in body
+        assert "shown publicly" in body
+        with override_settings(SMALLSTACK_PUBLIC_STATUS_ENABLED=False):
+            assert "switched off" in staff_client.get(url).content.decode()
+
+    def test_the_public_page_carries_the_brand_lockup(self, client, db, settings):
+        body = client.get(reverse("public_status")).content.decode()
+        assert 'class="brand-mark"' in body and "brand-word-accent" in body  # the stock mark, drawn live
+        settings.BRAND_LOGO = "brand/acme.svg"
+        settings.BRAND_LOGO_DARK = "brand/acme-dark.svg"
+        body = client.get(reverse("public_status")).content.decode()
+        assert "brand/acme.svg" in body and "brand/acme-dark.svg" in body and 'class="brand-mark"' not in body
 
 
 class TestApiMcpFlags:
@@ -2007,9 +2191,19 @@ class TestStandaloneStatusCssFallback:
         "name", ["public_status", "public_maintenance", "public_maintenance_calendar"]
     )
     def test_no_bare_body_quiet_color(self, client, db, name):
+        import re
+
+        from django.contrib.staticfiles import finders
+
         body = client.get(reverse(name)).content.decode()
-        assert "var(--body-quiet-color)" not in body  # bare = undefined off admin pages → invisible
-        assert "var(--body-quiet-color, " in body  # the fallback form is present
+        # The page's own CSS: inline, plus every stylesheet it links from its templates' static files.
+        css = body
+        for href in re.findall(r'href="/static/([^"]+/css/templates/[^"]+\.css)"', body):
+            found = finders.find(href)
+            assert found, href
+            css += open(found).read()
+        assert "var(--body-quiet-color)" not in css  # bare = undefined off admin pages → invisible
+        assert "var(--body-quiet-color, " in css  # the fallback form is present
 
 
 class TestIncrementalPruneSummaries:
@@ -2463,3 +2657,15 @@ class TestMidFoldDay:
         day = day_start.date()
         row = HeartbeatDaily.objects.get(date=day, monitor_key="site")
         assert _daily_uptime_map("site", day, day)[day] == round(float(row.uptime_pct), 2)
+
+
+def test_a_heartbeat_that_cant_be_recorded_is_logged(caplog):
+    """The result says "fail"; the log says why (the probe ran, the save didn't)."""
+    from apps.heartbeat import services
+    from apps.heartbeat.monitors import SiteMonitor
+
+    with caplog.at_level("ERROR", logger="apps.heartbeat.services"):
+        result = services._recording_failed(SiteMonitor(), RuntimeError("database is locked"))
+    assert result["status"] == "fail" and "database is locked" in result["note"]
+    record = next(r for r in caplog.records if r.name == "apps.heartbeat.services")
+    assert "Couldn't record heartbeat" in record.getMessage() and record.exc_info[1].args == ("database is locked",)

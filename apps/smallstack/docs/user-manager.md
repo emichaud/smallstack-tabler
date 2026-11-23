@@ -163,17 +163,23 @@ class UserCRUDView(CRUDView):
 
 This generates four URL patterns, four views, and wires up the form, pagination, and access control. The built-in `TableDisplay` handles sortable column headers, pagination, and themed styling automatically. The `_make_view` method is overridden to inject search filtering, profile form handling, and self-delete protection.
 
-See the [Building CRUD Pages](/help/smallstack/building-crud-pages/) guide for the full CRUDView pattern documentation.
+See the [Building CRUD Pages](/smallstack/help/smallstack/building-crud-pages/) guide for the full CRUDView pattern documentation.
 
 ## Access Control
 
-All user manager views require staff status:
+Every user manager view needs a staff account, and then Django's user permissions:
 
-- **List, Create, Update, Delete** — `StaffRequiredMixin` via CRUDView
-- **Stat detail endpoint** — `@staff_member_required` decorator
-- **Timezone dashboard** — `StaffRequiredMixin`
+- **The list, an account's page and the stat modals** need `accounts.view_user` (read-only without `change_user`)
+- **The Timezones dashboard** is open to every staff account, with its own *Timezones* sidebar link: it's a team scheduling tool. Without `accounts.view_user` it shows names, avatars and time zones only (no staff badge or *Staff only* filter, no link to the edit page, and search doesn't match email)
 
-The sidebar shows the Users link only inside the `{% if user.is_staff %}` block.
+- **Create** needs `accounts.add_user`; ticking *Staff* there also needs `accounts.change_user` (the box isn't offered otherwise, as on the invite page)
+- **Edit** (the fields, the staff and active flags, *Send link*, *Unlock*) needs `accounts.change_user`; only a superuser changes a superuser's account
+- **Delete** needs `accounts.delete_user`; nobody deletes their own account, only a superuser deletes a superuser's, and the last active superuser can't be deactivated or deleted
+- **Another account's username, email, or a password link** also needs every permission that account holds (you can't take over an account wider than your own); the fields are locked, with the reason, otherwise
+
+Django admin (`/admin/`) and Explorer apply the same rules to the staff and active flags and to deleting: a superuser's account opens read-only for anyone but a superuser.
+
+The sidebar shows the Users link only to staff holding `accounts.view_user`. The shipped *User manager* group grants view, add and change; *Access reviewer* grants view.
 
 ## Extending Downstream
 

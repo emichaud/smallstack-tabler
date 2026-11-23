@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import math
 from typing import TYPE_CHECKING, Any, cast
 
@@ -26,12 +27,15 @@ from django.urls import URLPattern, path
 from django.views.decorators.csrf import csrf_exempt
 
 from .audit import ADDITION, CHANGE, DELETION, log_write
-from .crud import Action, BulkAction, _apply_ordering_fields
+from .crud import Action, BulkAction, _apply_admin_filters, _apply_ordering_fields
 from .exceptions import FeatureDisabled
+from .model_permissions import METHOD_PERMISSION
 
 if TYPE_CHECKING:
     from django import forms
     from django.db.models import Model, QuerySet
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # API registry — populated by build_api_urls() for schema introspection
@@ -298,10 +302,10 @@ def api_view(methods=None, require_auth=True, require_staff=False, require_auth_
             # used to escape into Django's HTML 404 handler, so a JSON client
             # doing `await res.json()` threw a syntax error instead of seeing
             # "not found". Translate it into the standard envelope here so every
-            # @api_view endpoint gets it, present and future. (F-17.)
+            # @api_view endpoint gets it, present and future.
             # PermissionDenied and FeatureDisabled get the same treatment for the
-            # same reason: `check_object_permission` (F-27) and a feature's master
-            # switch (F-31) are both raised from code an endpoint *calls*, often in
+            # same reason: `check_object_permission` and a feature's master
+            # switch are both raised from code an endpoint *calls*, often in
             # another app, so translating them per-endpoint does not scale and
             # leaves the uncaught case as a 500.
             try:
@@ -313,7 +317,7 @@ def api_view(methods=None, require_auth=True, require_staff=False, require_auth_
             except FeatureDisabled as exc:
                 # The subclass's own `code` — declared on FeatureDisabled and,
                 # until now, read by nothing, while its docstring promised it
-                # reached the envelope. (F-54)
+                # reached the envelope.
                 return _error(
                     str(exc) or "This feature is disabled",
                     503,
@@ -371,11 +375,13 @@ def _token_from_authorization(auth_header: str) -> str | None:
     return None
 
 
-def _authenticate_api_request(
+def authenticate_api_request(
     request: HttpRequest,
 ) -> tuple[Any, JsonResponse | None]:
     """Authenticate via an API token (``Bearer`` or ``Basic``) or the existing
-    session. API views only.
+    session. API views only — public for apps writing their own JSON views
+    (dashboards, calendar, datasets); returns ``(user, None)`` or ``(None,
+    401 response)``.
 
     The user slot is the swappable ``AUTH_USER_MODEL`` instance (``Any``) when
     the second element is ``None``; ``None`` otherwise.
@@ -400,7 +406,7 @@ def _authenticate_api_request(
                     return None, _error(f"Token expired at {expired_at}", 401)
                 if reason == APIToken.REJECT_USER_INACTIVE:
                     # Offboarding (is_active=False) invalidates every token the
-                    # account holds, even un-revoked ones. (F-10.)
+                    # account holds, even un-revoked ones.
                     return None, _error("Account is deactivated", 401)
                 # Found but rejected for some other reason — treat as inactive.
                 return None, _error("Token inactive", 401)
@@ -423,6 +429,9 @@ def _authenticate_api_request(
 # ---------------------------------------------------------------------------
 
 
+_authenticate_api_request = authenticate_api_request  # the name this module uses
+
+
 def _check_api_permissions(request, crud_config, method="GET"):
     """Translate CRUDView mixins to API responses (JSON, not redirects)."""
     from apps.smallstack.mixins import StaffRequiredMixin
@@ -432,24 +441,61 @@ def _check_api_permissions(request, crud_config, method="GET"):
             if not request.user.is_staff:
                 return _error("Staff access required", 403)
 
+    # Django model permissions, when the view opts in: the method names the
+    # action (GET view, POST add, PUT/PATCH change, DELETE delete).
+    needed = METHOD_PERMISSION.get((method or "GET").upper(), "view")
+    if not crud_config.has_model_permission(request, needed):
+        return _error(f"You need the {needed} permission on this model", 403)
+
     # Enforce read-only regardless of token_type. OAuth tokens minted with
     # scope=read carry token_type="oauth", access_level="readonly" — they must
     # be blocked from writes here exactly as the MCP channel blocks them
     # (apps/mcp/auth.py gates on access_level, not token_type). Gating on
     # token_type="manual" let a read-scoped OAuth bearer POST/PUT/DELETE on the
-    # REST surface. Login tokens carry access_level="" and stay unaffected. (Audit H2/H3.)
+    # REST surface. Login tokens carry access_level="" and stay unaffected.
     token = getattr(request, "_api_token", None)
     if token and token.access_level == "readonly" and method not in ("GET", "HEAD", "OPTIONS"):
         return _error("Token is read-only", 403)
     return None
 
 
-def _require_auth_token(request):
-    """Check that the request uses a manual token with access_level='auth'."""
+def _require_auth_token(request, action: str | None = None, target: Any = None):
+    """Check that the request may use the ``/api/auth/`` account endpoints.
+
+    The token must be a manual one with ``access_level='auth'``, and its owner
+    must be able to do the same thing on the User Manager: an active staff
+    account (or a superuser), holding the user model's ``action`` permission
+    (``view`` to read, ``add`` / ``change`` / ``delete`` to write). Only a superuser may act
+    on a superuser ``target``. A token's level is a label chosen when it is
+    minted; what it may do is still bounded by the account that holds it.
+    """
     token = getattr(request, "_api_token", None)
     if not token or token.token_type != "manual" or token.access_level != "auth":
         return _error("Auth-level token required", 403)
+    owner = token.user
+    if not (owner.is_active and (owner.is_staff or owner.is_superuser)):
+        return _error("The token's owner is not staff; the account endpoints need a staff account", 403)
+    if action is not None:
+        from django.contrib.auth import get_user_model
+
+        opts = get_user_model()._meta
+        perm = f"{opts.app_label}.{action}_{opts.model_name}"
+        if not owner.has_perm(perm):
+            return _error(f"The token's owner lacks {perm}", 403)
+    if target is not None and getattr(target, "is_superuser", False) and not owner.is_superuser:
+        return _error("Only a superuser may change a superuser's account", 403)
     return None
+
+
+def _require_sign_in_rule(request, target: Any):
+    """Refuse (403, with the reason) a change to ``target``'s password, email
+    or username unless the token's owner holds every permission ``target``
+    holds: whoever controls the sign-in acts as the account. Asked after
+    :func:`_require_auth_token`, so the owner is known to be staff."""
+    from apps.access.services import sign_in_refusal
+
+    refusal = sign_in_refusal(request._api_token.user, target)
+    return _error(refusal, 403) if refusal else None
 
 
 # ---------------------------------------------------------------------------
@@ -650,7 +696,10 @@ def _build_filter_fields_spec(model, filter_fields: list[str]) -> dict[str, list
     """Convert a flat filter_fields list to a dict with smart lookups.
 
     Date and DateTime fields automatically get range lookups (gte, lte, gt, lt)
-    in addition to exact match. Other fields keep exact match only.
+    in addition to exact match. Other fields keep exact match only. A name
+    that is not a model field is left out: only the CRUDView's own
+    ``apply_filter`` can serve it (``?dashboard=`` on the components list),
+    and the FilterSet would refuse a Meta.fields entry it can't resolve.
     """
     from django.db import models as django_models
 
@@ -659,15 +708,15 @@ def _build_filter_fields_spec(model, filter_fields: list[str]) -> dict[str, list
     for name in filter_fields:
         try:
             field = model._meta.get_field(name)
-            if isinstance(field, (django_models.DateField, django_models.DateTimeField)):
-                spec[name] = _DATE_LOOKUPS
-                has_dates = True
-            else:
-                spec[name] = ["exact"]
         except Exception:
+            continue
+        if isinstance(field, (django_models.DateField, django_models.DateTimeField)):
+            spec[name] = _DATE_LOOKUPS
+            has_dates = True
+        else:
             spec[name] = ["exact"]
     # Only return dict if we found date fields; otherwise keep list for simplicity
-    return spec if has_dates else filter_fields
+    return spec if has_dates else list(spec)
 
 
 # ---------------------------------------------------------------------------
@@ -760,12 +809,17 @@ def _serialize(
     from decimal import Decimal
     from uuid import UUID
 
+    from django.db.models import Manager
     from django.db.models.fields.files import FieldFile
 
     data: dict = {"id": obj.pk}
     all_fields = list(fields) + list(extra_fields or [])
     for f in all_fields:
         val: Any = getattr(obj, f, None)
+        if isinstance(val, Manager):
+            # A reverse or generic relation that ended up in the default fields.
+            # It has no value to give, and str() on it is a Python repr.
+            continue
         if isinstance(val, FieldFile):
             # A File/ImageField is not JSON-serializable, and JsonResponse has no
             # `default=` fallback — so any CRUDView carrying one in `fields` or
@@ -787,6 +841,11 @@ def _serialize(
                 except (ValueError, NotImplementedError):
                     # No MEDIA_URL, or a storage backend without URL support.
                     val = val.name
+        elif hasattr(val, "model") and hasattr(val, "values_list") and not isinstance(val, (list, tuple)):
+            # A many-to-many (a related manager): the related rows' primary keys.
+            # The manager itself isn't JSON, and a CRUDView whose detail fields are
+            # the model's own hit it as soon as the model gained an M2M.
+            val = list(val.values_list("pk", flat=True))
         elif isinstance(val, UUID):
             # A UUIDField. DjangoJSONEncoder would stringify this for REST, so
             # the wire format is unchanged — but plain json.dumps will not, and
@@ -1077,7 +1136,7 @@ def _make_api_detail_view(crud_config):
         # Tenancy: get_detail_queryset is the single-object read scoper (it
         # defaults to get_list_queryset). Without it a row hidden from
         # GET /api/<base>/ was readable and editable at /api/<base>/<pk>/.
-        # (Audit 2026-09-13, C5.)
+        #.
         qs = crud_config.get_detail_queryset(crud_config._get_queryset(), request)
         expand_fields = _resolve_expand_fields(request, crud_config)
         if expand_fields:
@@ -1088,11 +1147,17 @@ def _make_api_detail_view(crud_config):
             return _error("Not found", 404)
         # Authorization: the second half of the single-object contract. Views that
         # opt out of the read scoper express ownership here instead, and the hook
-        # must hold on every surface or it is not a gate. PermissionDenied /
-        # Http404 are translated to the envelope by api_view.
+        # must hold on every surface or it is not a gate. Its PermissionDenied /
+        # Http404 become the JSON error envelope here (this view isn't wrapped
+        # by api_view, so left alone they would render Django's HTML pages).
         _check = getattr(crud_config, "check_object_permission", None)
         if _check:
-            _check(obj, request)
+            try:
+                _check(obj, request)
+            except PermissionDenied as exc:
+                return _error(str(exc) or "Permission denied", 403)
+            except Http404:
+                return _error("Not found", 404)
 
         if request.method == "GET":
             fields = crud_config._get_detail_fields() or crud_config.fields
@@ -1110,8 +1175,16 @@ def _make_api_detail_view(crud_config):
                 return _error("Method not allowed", 405)
             if not crud_config.can_delete(obj, request):
                 return _error("Permission denied", 403)
+            try:
+                crud_config.check_cascade_permission(obj, request)
+            except PermissionDenied as exc:
+                return _error(str(exc) or "Permission denied", 403)
             log_write(request.user, obj, DELETION, "REST API")  # before delete
-            obj.delete()
+            from django.db import transaction
+
+            with transaction.atomic():
+                crud_config.on_delete(request, obj)
+                obj.delete()
             return HttpResponse(status=204)
 
         return _error("Method not allowed", 405)
@@ -1142,9 +1215,12 @@ def _apply_list_search(request, qs, search_fields):
 
     from django.db.models import Q
 
+    from .crud import split_search_field
+
     query = Q()
-    for field in search_fields:
-        query |= Q(**{f"{field}__icontains": q})
+    for entry in search_fields:
+        field, lookup = split_search_field(entry)
+        query |= Q(**{f"{field}__{lookup}": q})
     return qs.filter(query)
 
 
@@ -1165,7 +1241,7 @@ def _apply_list_filter(request, qs, crud_config):
     # from the FilterSet so it cannot re-apply the stored-column meaning on top.
     # The REST list is a *separate* filter path from the HTML one (django-filter
     # vs _apply_list_filters), so the hook has to be honoured in both or
-    # ?status=pending means two different things on two surfaces. (F-29.)
+    # ?status=pending means two different things on two surfaces.
     params = request.GET
     consumed: list[str] = []
     for field_name in filter_fields:
@@ -1228,6 +1304,7 @@ def _api_list(request, crud_config):
     qs, err = _apply_list_filter(request, qs, crud_config)
     if err:
         return err
+    qs = _apply_admin_filters(qs, request, crud_config)
 
     # Export runs on the searched + filtered set, before ordering/pagination.
     export_fmt = request.GET.get("format")
@@ -1267,6 +1344,17 @@ def _api_list(request, crud_config):
     return JsonResponse({**page_meta, "results": results, **agg_extra})
 
 
+def _with_ignored(payload: dict, raw: Any, form) -> dict:
+    """Name the body keys this write didn't take (read-only, unknown, misspelt)
+    as ``ignored``, so a 200 isn't read as "everything I sent was applied":
+    ``{"archived_at": …}`` or ``{"ownr": 3}`` used to vanish without a word."""
+    if isinstance(raw, dict):
+        ignored = sorted(k for k in raw if k not in form.fields and k != "id")
+        if ignored:
+            return {**payload, "ignored": ignored}
+    return payload
+
+
 def _api_create(request, crud_config):
     """Handle POST on list endpoint: create a new object."""
     from .form_bridge import build_form, merge_form_payload
@@ -1294,7 +1382,7 @@ def _api_create(request, crud_config):
         expand_fields = _resolve_expand_fields(request, crud_config)
         fields = crud_config._get_detail_fields() or crud_config.fields
         return JsonResponse(
-            _serialize(obj, fields, crud_config.api_extra_fields, expand_fields),
+            _with_ignored(_serialize(obj, fields, crud_config.api_extra_fields, expand_fields), raw, form),
             status=201,
         )
     return JsonResponse({"errors": form.errors}, status=400)
@@ -1332,7 +1420,9 @@ def _api_update(request, obj, crud_config):
         log_write(request.user, obj, CHANGE, "REST API")
         expand_fields = _resolve_expand_fields(request, crud_config)
         fields = crud_config._get_detail_fields() or crud_config.fields
-        return JsonResponse(_serialize(obj, fields, crud_config.api_extra_fields, expand_fields))
+        return JsonResponse(
+            _with_ignored(_serialize(obj, fields, crud_config.api_extra_fields, expand_fields), raw, form)
+        )
     return JsonResponse({"errors": form.errors}, status=400)
 
 
@@ -1409,7 +1499,7 @@ def _make_api_bulk_delete_view(crud_config):
             return _error("ids must be a non-empty list", 400)
 
         try:
-            ids = crud_config._coerce_pks(ids)  # pk-type aware, not int-only (F-38)
+            ids = crud_config._coerce_pks(ids)  # pk-type aware, not int-only
         except (ValueError, TypeError, DjangoValidationError):
             return _error(f"ids must be valid {crud_config.model._meta.pk.get_internal_type()} values", 400)
 
@@ -1427,15 +1517,20 @@ def _make_api_bulk_delete_view(crud_config):
                 errors[str(pk)] = "Permission denied"
                 continue
             # A bulk action is a write to N single objects, so the per-object
-            # hook applies here as much as on the detail route (F-50).
+            # hook applies here as much as on the detail route.
             try:
                 crud_config.check_object_permission(obj, request)
+                crud_config.check_cascade_permission(obj, request)
             except (PermissionDenied, Http404):
                 errors[str(pk)] = "Permission denied"
                 continue
             try:
                 log_write(request.user, obj, DELETION, "REST API (bulk)")  # before delete
-                obj.delete()
+                from django.db import transaction
+
+                with transaction.atomic():
+                    crud_config.on_delete(request, obj)
+                    obj.delete()
                 deleted_ids.append(pk)
             except (ProtectedError, RestrictedError) as e:
                 protected = getattr(e, "protected_objects", None) or getattr(e, "restricted_objects", set())
@@ -1446,6 +1541,8 @@ def _make_api_bulk_delete_view(crud_config):
             except IntegrityError:
                 errors[str(pk)] = "Cannot delete — a database constraint prevented this action."
             except Exception:
+                # The client gets a generic message; the traceback goes to the log.
+                logger.exception("Bulk delete of %s pk=%s failed", crud_config.model.__name__, pk)
                 errors[str(pk)] = "Delete failed — an unexpected error occurred."
 
         return JsonResponse(
@@ -1486,7 +1583,7 @@ def _make_api_bulk_update_view(crud_config):
             return _error("fields must be a non-empty dict", 400)
 
         try:
-            ids = crud_config._coerce_pks(ids)  # pk-type aware, not int-only (F-38)
+            ids = crud_config._coerce_pks(ids)  # pk-type aware, not int-only
         except (ValueError, TypeError, DjangoValidationError):
             return _error(f"ids must be valid {crud_config.model._meta.pk.get_internal_type()} values", 400)
 
@@ -1511,7 +1608,7 @@ def _make_api_bulk_update_view(crud_config):
                 errors[str(pk)] = "Permission denied"
                 continue
             try:
-                crud_config.check_object_permission(obj, request)  # see bulk-delete (F-50)
+                crud_config.check_object_permission(obj, request)  # see bulk-delete
             except (PermissionDenied, Http404):
                 errors[str(pk)] = "Permission denied"
                 continue
@@ -1696,7 +1793,7 @@ def api_auth_register(request: HttpRequest) -> JsonResponse:
     user, err = _authenticate_api_request(request)
     if err:
         return err
-    perm_err = _require_auth_token(request)
+    perm_err = _require_auth_token(request, "add")
     if perm_err:
         return perm_err
 
@@ -1860,6 +1957,9 @@ def api_auth_user_password(request: HttpRequest, user_id: int) -> JsonResponse:
         target_user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
         return _error("User not found", 404)
+    perm_err = _require_auth_token(request, "change", target_user) or _require_sign_in_rule(request, target_user)
+    if perm_err:
+        return perm_err
 
     try:
         validate_password(new_password, user=target_user)
@@ -1913,6 +2013,9 @@ def api_auth_user_deactivate(request: HttpRequest, user_id: int) -> JsonResponse
         target_user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
         return _error("User not found", 404)
+    perm_err = _require_auth_token(request, "change", target_user)
+    if perm_err:
+        return perm_err
 
     target_user.is_active = False
     target_user.save(update_fields=["is_active"])
@@ -1940,7 +2043,7 @@ def api_auth_users(request: HttpRequest) -> JsonResponse:
     user, err = _authenticate_api_request(request)
     if err:
         return err
-    perm_err = _require_auth_token(request)
+    perm_err = _require_auth_token(request, "view")
     if perm_err:
         return perm_err
 
@@ -1995,6 +2098,9 @@ def api_auth_user_detail(request: HttpRequest, user_id: int) -> JsonResponse:
         return _error("User not found", 404)
 
     if request.method == "GET":
+        perm_err = _require_auth_token(request, "view")
+        if perm_err:
+            return perm_err
         return JsonResponse(_user_json(target, extended=True))
 
     # PATCH
@@ -2007,6 +2113,17 @@ def api_auth_user_detail(request: HttpRequest, user_id: int) -> JsonResponse:
     if unknown:
         errors = {f: [f"Field '{f}' is not allowed"] for f in unknown}
         return JsonResponse({"errors": errors}, status=400)
+
+    # Changing an account (its staff and active flags included) needs
+    # change_user, and only a superuser changes a superuser's account.
+    perm_err = _require_auth_token(request, "change", target)
+    if perm_err:
+        return perm_err
+    # A new email takes the password-reset link: the subset rule.
+    if "email" in data and (data["email"] or "") != (target.email or ""):
+        perm_err = _require_sign_in_rule(request, target)
+        if perm_err:
+            return perm_err
 
     update_fields = []
     for field, value in data.items():
@@ -2118,7 +2235,6 @@ def build_served_spec(server_url: str | None = None) -> dict[str, Any]:
     CRUDView routes *and* ``register_api_path`` custom endpoints. api_doctor and
     the validity tests call this rather than ``build_openapi_spec`` directly —
     they used to omit ``custom_paths`` and so validated a spec nobody served.
-    (Audit 2026-09-13, D5.)
     """
     from django.urls import get_resolver
 
@@ -2139,7 +2255,7 @@ def _api_docs_response(request, template):
     response = HttpResponse(html, content_type="text/html")
     response["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: https:; "

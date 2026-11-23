@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from apps.calendar import calendar_dataset
+from apps.calendar.datasets import EVENTS_KEY
 from apps.calendar.models import SavedCalendarView
 from apps.calendar.registry import unregister
 from apps.datasets.registry import unregister as unregister_dataset
@@ -73,11 +74,15 @@ def test_page_requires_login(client):
     assert resp.status_code == 302 and "login" in resp["Location"]
 
 
-def test_page_lists_calendars_and_starts_empty(client, staff):
+def test_page_lists_calendars_and_opens_on_events(client, staff):
+    """First visit shows the calendar people type into, so an entry just added is
+    there; "None" (an explicit empty selection) still clears the grid."""
     resp = client.get(PAGE)
     assert resp.status_code == 200
     keys = {p["key"] for p in resp.context["picker"]}
     assert {MW, BK} <= keys
+    assert resp.context["selected_keys"] == [EVENTS_KEY]
+    resp = client.get(PAGE, {"ds": ""})
     assert resp.context["selected_keys"] == [] and resp.context["event_count"] == 0
     assert "Nothing selected" in resp.content.decode()
 
@@ -544,3 +549,11 @@ def test_ics_feed_subscribes_with_basic_auth(client, staff, seeded):
     # The JSON routes accept the same credentials but never challenge.
     assert client.get(API_LIST, HTTP_AUTHORIZATION=header).status_code == 200
     assert "WWW-Authenticate" not in client.get(API_LIST)
+
+
+def test_new_saved_view_prefills_datasets_from_the_query(client, staff):
+    """The calendar page's "Save this view" opens the create form with
+    ?datasets= ticked (SavedViewPrefillMixin, via CRUDView.view_mixins)."""
+    html = client.get(reverse("calendar/views-create"), {"datasets": MW}).content.decode()
+    assert f'name="datasets" value="{MW}" checked' in html
+    assert f'name="datasets" value="{BK}" checked' not in html

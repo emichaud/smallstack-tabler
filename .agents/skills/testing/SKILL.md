@@ -69,6 +69,10 @@ Don't scrape the dev console — read `mail.outbox`, and pull the link/code stra
 from django.core import mail
 
 def test_invite_emails_a_set_password_link(client, staff_user):
+    from django.contrib.auth.models import Permission
+
+    # Inviting needs accounts.add_user, not just the staff flag.
+    staff_user.user_permissions.add(Permission.objects.get(codename="add_user", content_type__app_label="accounts"))
     client.force_login(staff_user)
     client.post(reverse("accounts:invite"), {"email": "new@acme.com"})
 
@@ -198,7 +202,7 @@ routing divergence existed to dodge an upstream performance bug).
 
 - `apps/accounts/test_invite_passwordless.py` — invite, passwordless, email login.
 - `apps/accounts/tests.py` — password-reset email (HTML alternative, no enumeration).
-- `apps/usermanager/tests.py` — CRUD, create-with-password, guardrails, account actions, the tabbed-form regression guard.
+- `apps/usermanager/tests/test_usermanager.py` — CRUD, create-with-password, guardrails, account actions, the tabbed-form regression guard.
 - `conftest.py` (root) — session-scoped DB setup for the MCP test-only tables.
 
 ## Related skills

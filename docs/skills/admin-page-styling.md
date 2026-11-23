@@ -4,7 +4,7 @@ This is the definitive reference for building admin pages in SmallStack. Every a
 
 ## Quick Start
 
-Copy the starter template from `templates/smallstack/starter.html` and modify it for your page. It includes the correct layout structure, CSS classes, and block usage.
+Copy the starter template from `apps/showcase/templates/showcase/includes/starter_content.html` and modify it for your page. It includes the correct layout structure, CSS classes, and block usage.
 
 ## Template Structure
 
@@ -410,6 +410,10 @@ sentence that fits inline. First shipped on the webhooks event-filter picker.
 - `.help-pop-examples` renders `<code>` + `<span>` pairs as an aligned
   pattern/description list.
 
+For help about a whole page or feature (what a thing is and how to use it, a
+page of prose), use a **help bubble** instead: `{% help_bubble "section" "slug" %}`
+opens a help page in the stat modal. See help-documentation.md.
+
 ## Forms
 
 All forms use the `.crud-form` class. This handles input styling, labels, error states, and layout.
@@ -460,7 +464,7 @@ All forms use the `.crud-form` class. This handles input styling, labels, error 
 
 All text inputs, selects, and search fields use `min-height: var(--control-height)` (default `36px`). This ensures dropdowns and inputs are tall enough to display text without clipping, and that adjacent controls (e.g. a search box next to filter dropdowns) align at the same height.
 
-The `--control-height` variable is defined in `theme.css` and referenced in `components.css`. To make all controls taller or shorter across the app, override the single variable:
+The `--control-height` variable is defined in `core.css` (imported by `theme.css`) and referenced in `components.css`. To make all controls taller or shorter across the app, override the single variable:
 
 ```css
 :root {
@@ -473,6 +477,41 @@ This applies to:
 - `.crud-form` inputs and selects (CRUD create/edit forms)
 - `.form-group select` (profile and auth forms)
 - Toolbar search and filter controls
+
+### Number Fields
+
+A browser's own spin buttons on `<input type="number">` are a few pixels wide and
+drawn in its colours. SmallStack replaces them everywhere, with nothing to add in
+markup:
+
+- **Every number input gets − and + buttons the theme draws** (`theme.js`,
+  `SmallStack.numberStepper`; styles in `components.css`). Inputs are wrapped as
+  the page loads and whenever one is added later, by htmx or by a script.
+- **The buttons fit the room.** A field 10rem or wider gets − and + side by
+  side, each the height of the field. A narrower one (a table cell, a rule row)
+  gets a slim stacked pair, + over −. A narrow fixed-width field keeps its width
+  for the value and the pair sits beside it.
+- **They behave like the field.** They step by its `step`, `min` and `max`, fire
+  `input` and `change`, disable at the limits, and go away with a field that is
+  `hidden` or disabled. An empty field starts from its placeholder when that's
+  a number. They're outside the tab order: the arrow keys still step the field.
+- **Opt out** with `data-no-stepper` on the input or on any element around it.
+
+```django
+<input type="number" name="limit" min="1" max="12" value="5" class="vTextField">  {# stepped #}
+<input type="number" name="code" data-no-stepper>                                  {# left alone #}
+```
+
+Two things to know when laying a form out:
+
+- The input ends up inside a `<span class="num-stepper">` that takes its place
+  and its width. A rule written as `td > input` or `.row > input` stops matching
+  once it's wrapped; write `td input`, or size the cell.
+- In a narrow cell, leave room for the stacked pair (1.7rem) beside the value.
+
+In the dark theme, a number input that isn't wrapped (opted out, or JavaScript
+off) still follows the dark scheme (`color-scheme: dark`), so its native spin
+buttons are never a white block on a dark field.
 
 ### File Inputs
 
@@ -811,9 +850,11 @@ These are the theme variables available in any template. Use `var(--name)` in cu
 
 | File | Contains |
 |------|----------|
-| `static/smallstack/css/theme.css` | CSS variables, base layout, `.page-header-bleed`, `.stat-card-clickable`, `.stat-modal` |
-| `static/smallstack/css/components.css` | All component classes (buttons, tables, forms, cards, badges, tabs, action cards, filter toggles, stat cards, search, modals) |
+| `static/smallstack/css/core.css` | The CSS variables (design tokens, light + dark) and `.sr-only`; `theme.css` imports it |
+| `static/smallstack/css/theme.css` | Base layout and the page shell, `.page-header-bleed` |
+| `static/smallstack/css/components.css` | All component classes (buttons, tables, forms, cards, badges, tabs, action cards, filter toggles, stat cards, search, modals, the drill-down modal and help bubbles) |
+| `static/smallstack/css/embed.css` | What `{% smallstack_assets %}` loads on a project's own theme: core, palettes and components in a cascade layer |
 | `templates/smallstack/base.html` | Base template with all blocks |
-| `templates/smallstack/starter.html` | Copy-paste starter template |
-| `templates/smallstack/includes/stat_modal.html` | Reusable stat card drill-down modal |
+| `apps/showcase/templates/showcase/includes/starter_content.html` | Copy-paste starter template |
+| `templates/smallstack/includes/stat_modal.html` | The stat card drill-down modal, rendered once per page by `{% smallstack_modal %}` |
 | `templates/smallstack/crud/includes/delete_modal.html` | Reusable delete confirmation modal |

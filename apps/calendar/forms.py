@@ -16,6 +16,7 @@ from django import forms
 
 from .core import assign_series, iter_calendars, visible_calendars
 from .models import Event, SavedCalendarView
+from .recurrence import REPEAT_CHOICES
 
 
 class CalendarKeysField(forms.MultipleChoiceField):
@@ -66,6 +67,17 @@ class SavedCalendarViewForm(forms.ModelForm):
     def clean_datasets(self) -> list[str]:
         return [str(k) for k in self.cleaned_data.get("datasets") or []]
 
+    def clean_name(self) -> str:
+        # The owner isn't a form field, so ModelForm's unique check skips
+        # (owner, name) and a repeat reached the database as an IntegrityError.
+        name = self.cleaned_data["name"]
+        owner = self.instance.owner if self.instance.owner_id else self.user
+        if getattr(owner, "pk", None) is not None:
+            clash = SavedCalendarView.objects.filter(owner=owner, name=name).exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise forms.ValidationError(f"You already have a saved view called “{name}”.")
+        return name
+
     def save(self, commit: bool = True) -> SavedCalendarView:
         """Stamp the signed-in owner on a create. Done here, not in
         ``on_form_valid``, because that hook fires *after* the insert and the
@@ -94,6 +106,8 @@ class EventForm(forms.ModelForm):
             "all_day",
             "start_time",
             "end_time",
+            "repeat",
+            "repeat_until",
             "category",
             "location",
             "url",
@@ -107,6 +121,7 @@ class EventForm(forms.ModelForm):
             "end_date": forms.DateInput(attrs={"type": "date"}),
             "start_time": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
             "end_time": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
+            "repeat_until": forms.DateInput(attrs={"type": "date"}),
             "category": forms.TextInput(attrs={"class": "vTextField"}),
             "location": forms.TextInput(attrs={"class": "vTextField"}),
             "url": forms.URLInput(attrs={"class": "vTextField"}),
@@ -116,6 +131,18 @@ class EventForm(forms.ModelForm):
     def __init__(self, *args: Any, user: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.user = user
+        repeat = self.fields["repeat"]
+        assert isinstance(repeat, forms.ChoiceField)
+        repeat.choices = [("", "Doesn't repeat"), *REPEAT_CHOICES]
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or self.cleaned_data
+        # A start time means it's timed. The page disables the time inputs while
+        # All day is ticked, so this only decides for REST and MCP callers, whose
+        # all_day defaults to true: they'd get a meeting with its time hidden.
+        if cleaned.get("start_time"):
+            cleaned["all_day"] = False
+        return cleaned
 
     def save(self, commit: bool = True) -> Event:
         obj = super().save(commit=False)

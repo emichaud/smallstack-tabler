@@ -432,7 +432,7 @@ For high-stakes production, self-host (see "Switching to local build").
 - **Bootstrap 5 utility classes can be customized** via [Bootstrap's utilities API](https://getbootstrap.com/docs/5.3/utilities/api/), but that requires a SCSS build. Easier: write a one-off class in `tabler_overrides.css`.
 - **Adding a new font** via Google Fonts: add the `<link>` to `tabler/base.html` `<head>`, then set `--tblr-font-sans-serif` to use it. Don't forget to add it as a `data-bs-theme-font` option if you want runtime switching.
 - **Removing CDN dependence** breaks updates — pin the version, document the update process, schedule periodic checks for security advisories.
-- **The blocking script in `base.html`** reads `localStorage`. If you change the storage prefix (`smallstack-`), update all six places it appears in `base.html` and `tabler_theme.js`.
+- **The first-paint scripts** (`tabler/js/tabler_init.js` in `<head>`, `tabler/js/tabler_body_init.js` at the top of `<body>`) read `localStorage`. If you change the storage prefix (`smallstack-`), update it there and in `tabler_theme.js`. Keep them as `<script src>`: the CSP is heading for `script-src 'self'`, so no inline `<script>` in `base.html`.
 
 ## Related skills
 

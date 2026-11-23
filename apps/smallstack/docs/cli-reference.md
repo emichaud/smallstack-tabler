@@ -20,6 +20,7 @@ Every command-line tool SmallStack provides — `manage.py` commands, Make targe
 | Tasks | `manage.py db_worker` / `reap_tasks` | Run the task worker (with worker heartbeat) / fail tasks whose worker died |
 | Webhooks | `manage.py webhook` / `webhook_doctor` / `run_due_deliveries` | Webhook ops (status/test/replay/bulk-replay/pair) / diagnose / retry tick |
 | Visual | `manage.py screenshot_auth` + `shot-scraper` | Authenticated browser screenshots |
+| Templates | `manage.py template_hygiene` | List inline scripts, handlers and style blocks (CSP migration) |
 | Docs | `make skills-index` | Rebuild `docs/skills/index.json` from the README skill tables |
 | CLI | `manage.py sc` (`sc` shim) | Framework CLI: CRUD over any CRUDView (`ls/get/describe/new/set/rm`) + ops verbs (`doctor/backup/token/status/index/webhook/commands`) — see [`docs/skills/sc-cli.md`](../../../docs/skills/sc-cli.md) |
 | Deploy | `make deploy` / `make logs` | Kamal deploy + tail logs |
@@ -389,7 +390,7 @@ See [`webhooks.md`](../../../docs/skills/webhooks.md).
 
 #### `sync_help_index`
 
-Sync the help-article search index from the filesystem markdown (the bundled `/help/` docs), so help content is findable in search. Run it after editing help articles. No-ops on a non-SQLite database or when there are zero articles.
+Sync the help-article search index from the filesystem markdown (the bundled `/smallstack/help/` docs), so help content is findable in search. Run it after editing help articles. No-ops on a non-SQLite database or when there are zero articles.
 
 ```bash
 uv run python manage.py sync_help_index
@@ -414,6 +415,19 @@ uv run python manage.py skills_index            # regenerate (same as `make skil
 uv run python manage.py skills_index --check    # CI/lint mode
 ```
 
+#### `brand_logos`
+
+Write the SmallStack logo as SVG files, one set for each palette, into
+`apps/smallstack/static/smallstack/brand/palettes/`: `logo-<palette>-{dark,light}.svg` (mark and name)
+and `icon-<palette>-{dark,light}.svg` (the mark alone). Colours come from each palette's `--primary` in
+`palettes.css`; the palette list comes from `palettes.yaml`. Run it after adding or retuning a palette.
+Inside the app the stock logo needs no files: it is drawn live from the theme.
+
+```bash
+uv run python manage.py brand_logos            # write them
+uv run python manage.py brand_logos --check    # exit 1 if any is out of date
+```
+
 ### Visual / dev tooling
 
 #### `screenshot_auth`
@@ -433,6 +447,24 @@ shot-scraper http://localhost:8005/smallstack/ \
 | `--domain DOMAIN` | Cookie domain (default: `localhost`) — set when capturing prod |
 
 See [`screenshot-workflow.md`](screenshot-workflow.md) for visual-verification recipes.
+
+#### `template_hygiene`
+
+List the inline `<script>` blocks, `on…=` handlers and `<style>` blocks in the project's templates, by file and line. The CSP's `script-src` has no `'unsafe-inline'`, so the browser blocks the first two. Run it to size the move to static files, or to see what the `'unsafe-inline'` stopgap still covers.
+
+```bash
+uv run python manage.py template_hygiene              # every offender
+uv run python manage.py template_hygiene --summary    # counts per file
+uv run python manage.py template_hygiene --check      # exit 1 while a script or handler is left
+```
+
+| Flag | What it does |
+|---|---|
+| `--summary` | Counts per file instead of every line |
+| `--framework` | SmallStack's own templates only |
+| `--check` | Exit 1 if any inline script or handler is found |
+
+See [`templates.md`](../../../docs/skills/templates.md) ("Moving an existing project onto the policy").
 
 ---
 

@@ -53,12 +53,22 @@ git push origin main
 | `templates/website/*.html` | Keep `{% extends "tabler/base.html" %}` (upstream uses `website/base.html`) |
 | `uv.lock` | Accept upstream's version, then run `uv lock` to reconcile |
 | `config/settings/base.py` | Accept upstream structural changes; tabler-specific settings live in `apps/tabler/` |
+| `config/settings/base.py` — `CONTENT_SECURITY_POLICY` | Upstream's `script-src` is `'self'` only. Keep this fork's `'unsafe-inline'` + `cdn.jsdelivr.net` (the stopgap) until every inline `<script>` in `apps/tabler/templates/` has moved to `static/`; `grep -rn "<script>" apps/tabler/templates` lists what's left |
+| `apps/website/urls.py`, `views.py` | Upstream's demo pages live in `apps/showcase/` (namespace `showcase`) since v0.30.1. Keep upstream's `home_view` plus this fork's `changelog_view`; `templates/website/changelog.html` + `apps/website/github.py` are fork-only |
 | `config/deploy.yml` | Accept upstream docs/comments; keep tabler deploy config |
 | `AGENTS.md` / `CLAUDE.md` | `AGENTS.md` holds this fork's orientation; keep the Tabler guidance and take upstream's new rows. `CLAUDE.md` stays upstream's thin `@AGENTS.md` import |
 | `docs/skills/README.md` | Take upstream's, keep the short Tabler note and the two base-theme row labels. Fork skills go in `docs/skills/local.md` |
 | `docs/skills/index.json`, `.agents/skills/`, `.claude/skills/` | Generated: take upstream's, then run `make skills-index` |
 
 ### After Merging: Check the Tabler Side
+
+Upstream's templates carry no inline handlers: every button is a `data-ss-action` /
+`data-confirm` / `data-stat-modal` attribute that `smallstack/js/theme.js` carries out.
+`tabler/base.html` loads `config.js` + `theme.js` for that reason; if a merge brings a new
+`data-` behaviour, it lands in theme.js and the Tabler shell gets it for free. What does
+not come for free is CSS: new `components.css` rules need porting (the block at the end of
+`tabler_overrides.css`), and a new `{% block %}` in an upstream CRUD template needs the
+same block in `apps/tabler/templates/smallstack/crud/`.
 
 A clean merge can still leave the UI behind, because `apps/tabler/` shadows upstream's templates and `tabler/base.html` does not load `components.css`. After each merge, list the overridden templates upstream changed, and port any new `components.css` rules and CSS variables into `tabler_overrides.css`:
 

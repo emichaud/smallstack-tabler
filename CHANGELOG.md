@@ -9,6 +9,885 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-11-15
+
+### Fixed
+- **A wide table on a help page ran under the "On this page" sidebar.** A markdown table is as wide as its widest unbreakable cell (a setting name in `code`), and the article is 800px, with nothing to scroll a wider table: on the settings page three tables painted over the TOC, their row tints showing through its text. Both markdown renderers (the help app's, and `apps.smallstack.transforms.render_markdown` behind runbook documents, slides and steps, blog posts and newsletters, and the markdown dashboard card) now wrap every table in `<div class="md-table">`, which scrolls sideways inside its column (`components.css`, loaded by every themed page and the public blog); the table itself is unchanged, and a `<table>` typed as raw HTML into untrusted markdown stays escaped text. A runbook's `.runbook-content table` had the same overflow. A downstream page that renders either output under its own stylesheet should give `.md-table` `overflow-x: auto`.
+
+## [0.32.1] - 2026-11-15
+
+### Added
+- **`wrap_fields` on a CRUDView:** `wrap_fields = ["title"]` makes those table columns wrap onto more lines instead of clipping with an ellipsis, while the rest stay on one line; the table's "Wrap text" tool still wraps every column. Pair it with a `column_widths` entry so the column has room to wrap in.
+
+### Fixed
+- **Every table cell showed a tooltip on hover,** clipped or not, because each carried its full text as `title`. The script now keeps the title only while the cell is actually clipped (and restores it when a resize clips it again); a wrapped column, whose whole text is visible, gets none. Without the script every cell keeps its title as before.
+- **The sidebar starts where you left it.** Every sidebar link is a full page load, so the sidebar scrolled back to the top each time and the links low in the list (the Admin section) had to be scrolled to again. Its scroll offset is kept per tab (`sessionStorage`) and put back on the next page; in a new tab, the active link is brought into view by scrolling the sidebar alone, not the page.
+
+## [0.32.0] - 2026-11-15
+
+### Upgrading from 0.31.0
+- **Explorer now asks a ModelAdmin's per-object `has_change_permission(request, obj)` and `has_delete_permission(request, obj)`** (as Django admin does) for each row's edit and delete, on the pages, bulk actions, REST and MCP, whatever `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` says. A downstream ModelAdmin that overrides either one with a rule on `obj`, or that calls `super()` (Django's default checks the model permission), now has that rule enforced in Explorer, where staff could edit or delete those rows before. See `UPGRADING.md` (G3-2, E-dec 5).
+- **New app `apps.access` and middleware.** Add `"apps.access"` to `INSTALLED_APPS` (after `apps.usermanager`) and `"apps.access.context.ActorMiddleware"` to `MIDDLEWARE` right after `AuthenticationMiddleware`, mount `path("access/", include("apps.access.urls"))` in `apps/smallstack/site_urls.py` if your copy diverged, then `make migrate`: it creates the `access_accessevent` and `access_managedgroup` tables and SmallStack's five shipped groups. New settings `SMALLSTACK_ACCESS_DORMANT_DAYS` (90) and `SMALLSTACK_ACCESS_GROUPS_SYNC` (on). See `UPGRADING.md`.
+
+### Added
+- **Access control (`apps/access`, Admin → Access).** Django's groups and permissions stay the one model; this adds what they lack. **Groups declared in code:** `register_group()` in an app's `groups.py` ships a group with its permissions, created after each `migrate` and kept in step (a permission the code drops is removed, one an administrator added is kept and shown as drift). SmallStack ships Access reviewer, User manager, Log reader, Approver and Token manager. **Every change to access is recorded** from model signals, whichever surface made it (Django admin, the Access pages, the User Manager, a shell, a sync): group membership, direct and group permissions, the staff / superuser / active flags, accounts and groups created or deleted. Each goes to an `AccessEvent` row (kind, actor, subject, source, request id; names kept as text so it outlives a deleted user), to the log under `apps.access.record` (a grant at WARNING, so it reaches `/smallstack/logs/`), and to the account's History when a person made it. **Deactivating an account revokes its API tokens and ends its sessions.** **The Access pages:** an overview with least-privilege findings (superusers, dormant privileged accounts, direct permissions, deactivated accounts with live tokens, dormant accounts, staff with no group, group drift, empty groups, auth-level tokens) and drill-downs; a user page with everything the account can do and why (`via group:X` / `direct` / `superuser`), a **Check a permission** box answering as `has_perm` does with the reason, membership controls and token revocation; group pages with members, who added them, and drift; a filterable, exportable change log; **Export access (CSV)** (account × permission × source) and a dated **JSON snapshot**. `register_check()` adds a finding from any app; `acting_as(actor, source)` attributes changes made outside a request (a directory sync). `manage.py access_report [--rows|--json]` prints the findings and exits 1 on a warning, 2 on a danger, for a scheduled run. New skill `docs/skills/access-control.md` and help page.
+
+- **The Access user page is compact:** one strip for the account (flags, facts, actions), the permission check beside it, groups and tokens side by side, and every long list in a scrolling frame. The permission list has a filter box (app, codename, label or group) and sticky app headings; the change log opens in full with one click.
+- **Access has an API, MCP tools and a CLI, all on one service.** Every surface that changes membership (the Access pages, REST, an approved MCP request, the shell) calls `services.set_membership()`, which checks `accounts.change_user`, refuses nothing silently and records the change with the surface as its source (`web:/…`, `rest`, `mcp:approval:<id>`, `cli`). **REST** at `/smallstack/api/access/` (in the OpenAPI schema under *Access*): accounts with groups and counts, one account with every permission and its sources, `…/check/?perm=` answering as `has_perm` does with the reasons, groups with drift, the findings, the change log; `PUT`/`DELETE …/users/{user}/groups/{group}/` adds or removes membership, for an auth-level token holding `accounts.change_user`. **MCP:** `access_explain_user`, `access_check_permission`, `access_findings` (staff tier) and `access_request_membership`, which **does not change anything itself**: it files an `access.membership` approval that a person holding `accounts.change_user` decides in the approvals console (a card shows the change, the reason and the agent that asked); approving makes the change in the approver's name with the request's id in the record, rejecting changes nothing, and the agent learns the outcome by polling `get_approval`. New setting `SMALLSTACK_ACCESS_MCP_WRITES` (on) removes that tool when off. **CLI:** `manage.py access explain|check|grant|revoke|groups|findings` (`sc access …`), with `--user` naming the person a change is attributed to and `check` exiting 1 when the permission is not held.
+- **An Access tab on the User Manager's edit page:** groups (with when and by whom), permissions held, direct grants, live tokens and the account's recent access changes, with a link to the full Access page. The Activity user page links there too.
+
+### Fixed
+- **An API token can no longer be moved to another account.** In Explorer and Django admin a token's `user` was editable, so a staff account could mint a token, set its owner to a superuser and keep the key, which then authenticated as that superuser (with `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` on, a *Token manager* still could). The owner is now chosen when the token is made and read-only afterwards on both forms.
+- **Explorer always checks Django model permissions on the models that hold access itself:** accounts, groups, permissions, API tokens, the change history (`LogEntry`) and the Access app's events and managed groups, whatever `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` or a ModelAdmin's `explorer_model_permissions` says. With the setting off (the default) any staff account could edit or delete accounts there (deactivate the superuser, make members staff) and reassign tokens. The list is `ALWAYS_CHECKED_MODELS` in `apps/smallstack/model_permissions.py`.
+- **Explorer no longer deletes rows its ModelAdmin forbids deleting.** A read-only Explorer model (one whose ModelAdmin refuses add/change) still offered bulk delete, and the bulk route deleted, so any staff account could erase `AccessEvent` and `LogEntry` rows. Read-only models now get no bulk actions; a CRUDView's bulk delete/update also needs `Action.DELETE`/`Action.UPDATE` in its `actions`; and Explorer asks the ModelAdmin's own `has_view/add/change/delete_permission` overrides on every surface, as Django admin does.
+- **Explorer's example pages and widgets follow model permissions.** `/smallstack/explorer/examples/model/…` answered 200 with every row (usernames and emails, token owners, change messages) to a staff account the model's own Explorer list refuses; it now answers 403. The example group and app pages, and the Explorer index's widgets view, leave out models the viewer may not view, as the index already did. `get_group_context()` / `get_app_context()` / `get_dashboard_widgets()` / `get_widget_contexts()` take an optional `user` to filter the same way, and the `/smallstack/` dashboard passes it (so a staff account without `view_user` no longer sees the Users widget).
+- **Search honours a CRUDView's `model_permissions`.** A staff account the view's list page refuses (no `view` permission) still got its rows from the topbar search, `/search/`, the indexed-sources preview, the `search_*` MCP tools and `sc search --user`. Those now leave the view's hits out for a user without `view`, staff included; trusted internal calls (`user=None`) are unchanged.
+- **Datasets over accounts and API tokens need the model's view permission.** `smallstack_users` and `smallstack_api_tokens` (34 accounts with their flags, 50 tokens with owners and levels in the report) were readable by any staff account on the browse page, `/smallstack/datasets/<key>/`, MCP and in metrics and dashboards, after Explorer had refused those models. A dataset over a model that checks Django model permissions (the access models always; otherwise when its CRUDView sets `model_permissions`) now needs that model's `view` on every dataset surface; REST answers 404 without it.
+- **A REST delete refused because it would cascade into rows the caller can't delete answered with Django's HTML 403 page.** It now returns the JSON error envelope every other API refusal uses (`{"errors": {"__all__": [...]}}`), as does a `check_object_permission` refusal on the detail route.
+- **`sc --user` refuses a deactivated account.** With model permissions off it acted as an inactive staff account (a delete went through and its audit entry carried that name); every other surface already refused one.
+- **More pages fit a 320px phone.** The page body (`.main-content`) took its widest child's one-line width as its minimum, so a wide table in its own scroller or a row of tabs pushed the whole page sideways: the Access users, change-log and group pages (334px), the User Manager's edit page (349px, its tabs now tighten and wrap) and `/smallstack/status/public/` (343px) now measure 320. The public status page's staff-only "← Status overview" link wraps below the brand instead of widening the page to 449px at 320–390px.
+- **`docs/skills/django-apps.md` no longer prescribes django-tables2** (removed in 0.12.0: `tables.py`, `apps.smallstack.tables`, `table_class` and `{% load django_tables2 %}` all raised ImportErrors for an agent following it). It now builds the list with `list_fields` / `link_field` and the generic CRUD templates, and points at `crud-views.md`; its title-bar recipe uses `.page-header-bleed` instead of an inline `color-mix()`. Same stale rows fixed in `components.md` and `from-zero-to-running.md`. AGENTS.md's strict-typing list now matches `pyproject.toml`.
+- **The status area has one set of sections** (Overview · Site timeline · SLA · Public page) in every page header, instead of a different pair of buttons on each page. **Public page** is a new staff section at `/smallstack/status/public/`: whether the page is published, its addresses (board, maintenance, calendar, JSON), every monitor with its public flag and what visitors see it as, and the branding the page carries with the `BRAND_*` settings that drive it. The overview no longer links straight out to the public page; it opens from the section.
+- **The public status page shows the brand lockup** (the stock SmallStack mark drawn in the palette's colours, or a project's `BRAND_LOGO` / `BRAND_LOGO_DARK` swapped with the visitor's theme), the same as the sign-in page, instead of the square icon beside plain text. A project that has set those two settings gets its logo there with no other change.
+- **The status pages fit a phone:** a long monitor diagnostic shortens with an ellipsis (full text on hover) and rows wrap instead of pushing the overview to 1484px; the hour spark and the uptime timelines no longer size the page; the SLA page's grids stack and its tables scroll inside their cards.
+- **Status tables have preset column widths:** the SLA page's daily summaries (fixed, right-aligned numeric columns) and maintenance windows, the heartbeat log (time, status, response fixed; the note takes the rest), and the Monitored endpoints and Site monitors lists.
+- **Activity's Resources table has preset, even column widths:** the numbers take fixed columns, the URL pattern takes the rest, and the table scrolls before the pattern column collapses. The Last column shows a short relative time (`9h ago`, with the exact time on hover) instead of "9 hours, 24 minutes ago". The `ago` template filter is new in `theme_tags` for any table that needs the same.
+- **The User Manager's Top Pages cut long paths off with no way to see the rest.** Each path now shows in full on hover and links to the requests behind the number.
+- **Security: an `access.membership` approval could be forged.** Any signed-in account (no staff flag, any API token) could file the kind through the generic `POST /smallstack/api/approvals/requests/create/` or the MCP `request_approval` tool with itself as the target and a card naming someone else; approving added the *caller* to the group, and the `SMALLSTACK_ACCESS_MCP_WRITES` switch didn't close it. Approval kinds now take `remote_filing=False` ("only my own code files this"), which those two routes refuse with 403 / `not_permitted`; `access.membership` sets it, so only `access_request_membership` files it. The card now shows the account the approval will change (the request's target) and the group's live permission count, and the callback refuses a request whose context names a different account than its target.
+- **Security: holding `accounts.change_user` let a User manager grant any group,** including one carrying every permission, and including to themselves. `services.set_membership()`, which every surface calls (the Access pages, REST, an approved MCP request, the CLI), now refuses to **add** a member to a group that grants any permission the actor doesn't hold, naming the missing ones; superusers may add to any group, and removal is unchanged. An approval applies the approver's limits (a refused change shows as the request's `callback_error`). The CLI's `access grant|revoke --user` now also requires the named actor to be staff, as the other surfaces already did.
+- **Security: the User Manager's writes checked only the staff flag,** so any staff account (an *Access reviewer*, an *Approver*, staff with no permissions at all) could make a member staff, deactivate anyone (ending their tokens and sessions) or create and delete accounts. `/smallstack/manage/users/` now sets `model_permissions`: creating needs `accounts.add_user`, editing (fields, the staff and active flags, a reset link, an unlock) needs `accounts.change_user`, deleting needs `accounts.delete_user`; superusers hold all three. Only a superuser may change a superuser's account. Reading stays open to staff: without `change_user` the edit page is read-only, and buttons a user can't use are hidden. See `UPGRADING.md`.
+- **Security: in Django admin, anyone holding `accounts.change_user` could make themselves a superuser** (or give themselves any group or permission) from their own user form. `Superuser status`, `Groups` and `User permissions` are now read-only there for everyone but a superuser. The `User`, `AccessEvent` and `ManagedGroup` admins also set `explorer_model_permissions = True`, so Explorer checks Django model permissions on them whatever `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` says.
+- **The first `migrate` left declared groups without most of their permissions** (on a fresh install, Approver had 0 of 2, User manager 3 of 5), because the sync ran before later apps' permissions existed, and the names it couldn't find were dropped from the stored declaration, so drift and the review said all was well. The sync now creates every app's content types and permissions first, and a declared permission that doesn't exist is kept in the declaration, so it shows as *missing* drift on the group and in the review. A project that already ran a second `migrate` is unaffected.
+- **Access: three small holes in the pages and API.** A user or group id written with a non-ASCII digit (`²`) on REST, or a non-numeric one posted to the membership forms, was a 500; both are now 404. The group-members form followed any `next=` (an open redirect, and a 500 for `javascript:` after the change had been saved); it now accepts only a same-site path and settles it before changing anything. The CSV exports (`access.csv`, `events.csv`) now prefix `'` to a cell starting with `= + - @`, a tab or a return, so a username like `+1+x` or a group named `=HYPERLINK(…)` can't run as a formula in a spreadsheet.
+- **Access: changes the record missed.** A deleted account or group is now recorded with its name in the event's account / group column, so the change log's filter, search and CSV find "when was X removed". Granting from the permission's side (`perm.user_set.add(user)`, `perm.group_set.add(group)`), renaming a group (a new `group_renamed` event, migration `access.0002`) and the members a group loses when it is deleted are now recorded too. An audit row that fails to write is rolled back on its own savepoint instead of breaking the caller's transaction.
+- **The Access review overstated two things.** *Auth-level API tokens* said every such token "can manage accounts over the API"; it now counts the ones that can (the owner is active staff holding `accounts.change_user`) and marks them in the list. The dormancy all-clears said "every account has signed in within 90 days" while accounts had never signed in; they now say no account has gone that long without signing in and count the ones that never have.
+- **The MCP `request_approval` tool told agents to poll `get_approval` until `terminal` is true,** a field `get_approval` doesn't return, so an agent following it polled until its own cap. It now says to poll until `status` is no longer `pending` (the approvals skill said the same and is corrected too).
+- **Security: any staff account could mint an API token owned by someone else, a superuser included,** at `/smallstack/tokens/create/` and read its key on the reveal page (the key then worked on REST and MCP as that account, which also undid the token-owner lock above). A token's owner may now be someone other than the minter only for a superuser, or for active staff holding `smallstack.add_apitoken` (the *Token manager* group), and then only an active non-superuser holding no permission the minter lacks (the subset rule membership uses). The picker lists only those accounts, the form re-checks the choice server-side, and only a superuser may choose the `auth` level.
+- **Security: `/api/auth/users/*` and `/api/auth/register/` checked only that the token was auth-level,** so a non-staff member holding one could deactivate a superuser and make herself staff, and the changes were recorded with no actor. The token's owner must now be active staff and hold `accounts.add_user` (register) or `accounts.change_user` (update, the staff and active flags, deactivate, password); only a superuser's token may change a superuser's account. A token's `access_level`, like its owner, is now read-only after it is made in Explorer and Django admin, so a *Token manager* can't raise their own token to `auth`. Access changes made in a request authenticated by an API token are attributed to the token's owner (source `rest:<path>`); `ActorMiddleware` now reads `request.user` when the change is made.
+- **An approval read "approved" when nothing changed.** A User manager approving an `access.membership` request for a group granting permissions they lack got `status: approved`, membership unchanged, and a full Python traceback with server paths in `callback_error`, on the request page and in MCP `get_approval`, while agents are told to poll on `status`. Approval kinds take a new `check_approve(actor, req)` hook asked before the decision is recorded; a reason refuses the approval (`ApprovalRefused`, 403 / `not_eligible`, a message on the console) and the request stays pending. `access.membership` uses it for the approver's permissions, a vanished user or group, and a mismatched context. `callback_error` now stores one line (`ExcType: message`); the traceback goes only to the log, and migration `smallstack_approvals/0002` shortens existing rows to their last line.
+- **Security: the invite page let any staff account create an active staff account.** `/smallstack/accounts/invite/` checked only the staff flag, so a staff account holding no permissions could post `is_staff=on` and get a new active staff account whose set-password link went to an address it chose. Inviting now needs `accounts.add_user`, the same as the User Manager's *Add User* page; the *Grant staff access* box is offered only with `accounts.change_user` as well (a posted `is_staff` is ignored without it), and the *Invite User* button is hidden from staff who can't use it. An invite never creates a superuser (G2-1).
+- **Security: any staff account could revoke anyone's API token, the superuser's included, and nothing recorded it.** `/smallstack/tokens/<pk>/revoke/` asked only for the staff flag. Revoking your own token is unchanged; revoking another account's now needs `smallstack.change_apitoken` (the *Token manager* group), and only a superuser revokes a superuser's token, on the Token Manager, the Access page's *revoke all access*, Django admin's *Revoke selected tokens* action (which also now needs the change permission) and the active flag in Explorer and Django admin. Revoke buttons show only where they would work. Every revoke (those surfaces, REST logout, OAuth `/revoke`, `sc token revoke`, deactivation) is now recorded once as a `token_revoked` access event with its actor (G2-2).
+- **Security: a User manager could take over any account short of a superuser.** Holding `accounts.change_user`, they could set the password of an account holding every permission (`POST /api/auth/users/<id>/password/`), or point its email at their own address and send it a reset link, then sign in as it. Changing another account's password, email or username, or sending it a password-reset or set-password link, now also needs the actor to hold **every permission the account holds** (the subset rule group membership and minting use; an inactive account counts with what its groups would give back), on the User Manager (edit and *Send link*), `/api/auth/users/<id>/password/` and `PATCH /api/auth/users/<id>/` (`email`), Django admin (the password form; *Username* and *Email address* read-only) and Explorer's user form. A superuser's account stays superuser-only and your own is unaffected. Refusals give the reason and the missing permissions; the locked fields say why on the page. `apps.access.services.sign_in_refusal(actor, target)` is the rule (G2-3).
+- **The User Manager's create page let an `add_user` holder make a new staff account,** which the invite page (G2-1) already refused. Ticking *Staff* on `/smallstack/manage/users/new/` (and on Explorer's user create form) now needs `accounts.change_user` too; without it the box isn't offered and a posted `is_staff` is ignored. The rule lives in `apps.accounts.forms.AccountFormRulesMixin`, with the G2-3 username/email lock (D-1).
+- **`sc new` / `sc set` now build the form with `--user`** (through `form_bridge.build_form`, as REST and MCP do), so a form that scopes its choices or applies account rules per user sees who is acting. Without it the account forms above failed closed for everyone on the CLI, a superuser included.
+- **Security: the activity log kept password-reset and invite links, token included, for every staff account to read.** `RequestLog.path` stored `/accounts/reset/<uidb64>/<token>/` verbatim, so a staff account with no permissions could open `/smallstack/activity/requests/`, replay a link someone had opened but not finished, and set that account's password (a superuser's included). The middleware now replaces a one-time token with `***` before the row is written, keeping the route shape (`/smallstack/accounts/reset/MQ/***/`): any path segment captured by a URL parameter named `token` (reset, invite, newsletter confirm and unsubscribe), plus those shapes by pattern for paths that matched no route. Log capture gets the same treatment: `LogRecord` messages, tracebacks and `extra`, and the JSON and text formatters, redact token paths and credential query parameters (`?token=`, `code=`, `secret=` …), as does an `AccessEvent`'s `web:` source. Migrations `activity.0005` and `telemetry.0002` redact rows stored before the upgrade. Helpers in `apps/smallstack/redaction.py`. See `UPGRADING.md`.
+- **No shipped group could use the Access user page's *Revoke tokens & sign out*:** it needed `smallstack.change_apitoken`, and the page needs `accounts.view_user`, which only User manager holds, and User manager lacked the token permission. `accounts.change_user` now opens it too, with deactivation's rules (a User manager could deactivate the account, which revokes the same tokens and ends the same sessions): only a superuser acts on a superuser, and nobody acts on their own account, on either permission. The button and the POST ask one function, `apps.access.services.revoke_all_refusal`, so the button shows only where the POST succeeds, and every revoke is still a `token_revoked` event (E-dec 1).
+- **Security: the production access log printed password-reset and invite links, token included.** G3-1 redacted them from the activity log and the captured logs, but the shipped `gunicorn.conf` still logged the path (`GET /accounts/reset/MQ/<token>/`) and the referer to stdout, where `kamal app logs` and any log shipper read it. `gunicorn.conf` now sets `logger_class = "apps.smallstack.gunicorn_logging.RedactingLogger"`, which runs every access-log atom (path, request line, referer, query, header and environ atoms) through `apps.smallstack.redaction`, so the line reads `/accounts/reset/MQ/***/`. `runserver` and a proxy in front (kamal-proxy, nginx …) keep their own full-path logs: `logging-audit` and `kamal-deployment` say how to treat them (E-dec 6).
+- **Django admin and Explorer let a User manager deactivate a superuser or remove its staff flag,** which the User Manager and REST refuse; admin also let anyone deactivate or demote the last active superuser (themselves included), and a non-superuser holding every permission could delete a superuser in admin or Explorer. Both now follow the User Manager's rules, through `apps.access.services.account_flags_refusal`: only a superuser changes or deletes a superuser's account (admin opens it read-only for anyone else; `UserAdmin.has_change_permission(request, obj)` / `has_delete_permission(request, obj)`, which Explorer now asks per object), nobody deactivates, un-staffs or deletes their own account, and nobody deactivates, demotes or deletes the last active superuser (bulk *Delete selected* included). A wider non-superuser's flags stay editable with `change_user`, as on the User Manager.
+
+- **The MCP `access_request_membership` tool was a membership oracle** for a staff caller refused the read tools: it answered `unchanged: alice is already in Readers` for a member and filed a request for a non-member, listed every group on a miss, and looked an account up by email (the reply's title then named it). Without `accounts.view_user` the tool now files the request either way, doesn't list groups, resolves usernames and ids only, and stores no group permission count in the request; a request that would change nothing is refused when an approver decides it ("approving would change nothing"), so it stays pending until rejected. Callers holding `view_user` keep the precise `unchanged` answer (E-dec 2).
+
+### Changed
+- **Reading accounts, access and other accounts' API tokens needs the `view` permission, not just the staff flag.** A staff account holding no permissions read the whole Access area (every account's permissions, the change log, the review, the exports), the User Manager's list, pages and stat modals, `GET /api/auth/users/`, user search hits and every account's tokens, while Explorer and the datasets refused the same rows. The Access pages, `/smallstack/api/access/` reads and the `access_explain_user` / `access_check_permission` / `access_findings` MCP tools (now also hidden from `tools/list`) need `accounts.view_user`, as do the User Manager's reads and `GET /api/auth/users/` (the token's owner); the Access and Users sidebar links and the dashboard's Access widget are hidden without it. Other accounts' tokens on the Token Manager (list, detail, stat modals, counts, search hits) need `smallstack.view_apitoken`; your own are always visible. Superusers read everything. The shipped *Access reviewer* and *User manager* groups grant `view_user` and *Token manager* grants `view_apitoken`, so those roles keep working. New: `DashboardWidget.visible_to(user)`, and a CRUDView's `search_visibility_applies_to_staff = True` applies its `search_visibility` to staff too. See `UPGRADING.md` (S2-1). The User Manager's **Timezones dashboard** stays open to every active staff account (a team scheduling tool; it now has its own *Timezones* sidebar link): without `view_user` it shows names, avatars and time zones only, with no staff badge, *Staff only* filter, edit link or email match in its search (E-dec 3). The dashboard's **API Tokens** card also stays visible to all staff: it carries system-wide counts only (no token name, owner or label, on the card or in `/api/dashboard/widgets/`), now pinned by a test (E-dec 4).
+- **`staff_required` keeps the decorated view's own type** (it accepted only `Callable[..., HttpResponse]`; a streaming export is an `HttpResponseBase`).
+
+## [0.31.0] - 2026-11-14
+
+### Upgrading from 0.30.3
+- **A CRUDView's create, edit and delete pages now write the audit `LogEntry` themselves.** A view that added `AuditMixin` through `view_mixins`, or called `log_action()` from `on_form_valid` / `on_delete`, now records each web write twice: remove your own call. See `UPGRADING.md`.
+- **New setting `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS`** (default off: Explorer behaves as before). Turned on, staff accounts without Django model permissions lose access to Explorer models until granted them; grant permissions first.
+
+### Added
+- **A FAQ at `/faq/`** in the showcase pages (and the public site's top bar): what SmallStack can build, answered plainly, including where it isn't the right tool. Four groups: **system builders** (a blog, a website, an internal tool, a CRM, an API server, a headless backend for React/Vue/Next.js/Svelte, a mobile backend, a customer-facing app, dashboards, payments, what it's not for, adding it to an existing project), **components** (CRUD pages, Explorer, the embeddable template tags, using them on your own theme, styling, datasets and calendars, card types, approvals/notifications/scheduled jobs, versioned documents, permissions), **integrators** (API tokens, MCP and Claude, search, webhooks in and out, feeds, spreadsheets/BI/calendar apps, the `sc` CLI, logs from outside, coding agents) and **running it** (hosting, SQLite or PostgreSQL, updates, licence). Each answer is a `<details>` that works without JavaScript; a link to one question (`/faq/#crm`) opens it. It links the help FAQ for how-to questions. Answers are set for reading (about 17px, against the interface's 14px).
+- **Django model permissions on CRUDView, opt-in: `model_permissions = True`.** Every surface then also requires the user's `view` / `add` / `change` / `delete` permission on the model, the check Django admin makes: the generated pages, bulk actions, REST (by method), the MCP tools and `sc --user`. Buttons, row actions, bulk actions and related tabs follow the same answers, and a delete that would cascade into rows of an admin-registered model the user may not delete is refused, as in Django admin. `change` implies `view`; superusers hold all four. It adds to `mixins` and the per-row hooks, it doesn't replace them. `has_model_permission(request, action)` is the hook to override.
+- **Explorer can honour Django permissions: `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS`** (off by default, so any staff account keeps full access). On, Explorer's pages, REST and index follow each staff account's model permissions, granted with groups as for Django admin; a ModelAdmin's `explorer_model_permissions` overrides it per model. Until now every staff account could create, edit and delete every Explorer model whatever its permissions.
+- **A History page per row: `enable_history = True`** on a CRUDView (on for every Explorer model) adds `<pk>/history/` and a History button on the detail page, listing the row's `LogEntry` trail from every surface (these pages, bulk actions, REST, MCP, `sc` and Django admin) with who, when and what changed.
+- **Explorer reads more of a ModelAdmin, and means what Django admin means by it.** `list_display` methods, model methods and properties, plain callables and `"__str__"` are columns now, with Django admin's own header (`@admin.display(description=…)`) and value (✓ / — for `boolean=True`); they were dropped without a word. `readonly_fields` and `exclude` keep a field off the create and edit forms. `ordering` is the list's default order. `list_select_related` joins as in Django admin, and by default the foreign keys shown in the list are joined, one query instead of one per row. A ModelAdmin's own `list_per_page` sets the page size when `explorer_paginate_by` doesn't (it was always 10). `SimpleListFilter` classes in `list_filter` filter the list, REST and MCP with their own `lookups()` and `queryset()`; they were skipped.
+- **`search_fields` takes Django admin's prefixes on every CRUDView:** `^name` starts with, `=email` exact (case-insensitive), `@body` a substring match. A prefixed entry used to raise `FieldError` (a 500) on the list's search box, REST `?q=` and the MCP `q`. The search index takes the bare field path.
+- **`explorer_enable_mcp`, `explorer_enable_search`, `explorer_enable_webhooks`** turn those surfaces on for an Explorer model. Explorer registers the MCP tools (named from the verbose names, staff-only) and the search entry itself, since it builds its views after the MCP and search apps have looked. A model another CRUDView already serves keeps that view's surfaces; Explorer logs a warning instead of registering a second set.
+- **The delete confirmation says what goes with the row.** The delete page and the modal the list and detail pages open list what Django's deletion collector would cascade, per model with a count and, for staff, the first few rows by name. A row protected by a `PROTECT` / `RESTRICT` foreign key gets no Delete button and a list of what protects it. Before, both asked "Are you sure?" with no word of the cascade, and a protected row was found out only on submit.
+
+### Fixed
+- **Creates, edits and deletes made on a CRUDView's own pages left no audit record.** REST, MCP, `sc` and the bulk views wrote a `LogEntry`; the commonest way to change a row didn't. The pages now write one too, in Django admin's change-message format (create and edit name the fields that changed), and a delete's entry is written in the delete's transaction, so a refused delete leaves none.
+- **A delete page refused by `check_object_permission` answered "Delete failed — an unexpected error occurred."** It now answers 403 with the reason.
+- **Activity's resource page is laid out for a URL pattern.** The pattern now has the header's full width and wraps after a slash rather than mid-word, with its converters (`<slug:slug>`) highlighted. The stats, window picker and a new **Open page** button sit on a row below it; the button opens the most-used real path behind the pattern. "Most-used paths" lists each path with its hits and an ↗ link, keeping the end of a long path (where paths of one pattern differ) instead of cutting it off. A link is offered only for a path that answered a GET without an error and is on this site. The breadcrumb no longer repeats the URL truncated.
+- **Activity's pages scrolled sideways on a phone.** Three causes, each fixed where it lives, so other pages using the same pieces benefit too:
+  - **Tab bars (`.tab-bar`) widened the page** when their tabs didn't fit (five on Requests and Users). They now scroll sideways inside their own box; the active-tab underline is unchanged.
+  - **Tables in a `.crud-table-wrap` widened the page.** A cell's screen-reader-only text was positioned against the page instead of the table's scroll box (688px of content on a 420px screen on the resource page). The wrapper is now `position: relative`.
+  - **Fixed-width tables in Activity cards** ("Top resources", "Who uses it") scroll inside their card.
+  - **Logs** (520px on a 420px phone): the level selector scrolls inside the filter bar, which now takes its width from the card, and the log table's scroll box is contained so its width no longer sizes the page.
+  - **API Health and MCP Health** (558px): the diagnostics table scrolls inside its card instead of stretching the page for its longest route name.
+  - **The showcase pages' full-bleed wrapper (`.pf`)** overhung each side by 4px (24px against the page's 20px padding).
+  - **The public site's Login and Sign Up** ran off a 375px screen beside the wordmark ("Sign Up" wrapped). On a phone they're tighter and don't wrap, and the wordmark drops the margin that spaces it from a sidebar toggle the public site doesn't have.
+  - **Code blocks set the page width** on the home page (828px of content), the platform pages (608px, 554px), Search (667px) and About (512px). Code samples (`.pf-code`, the home page's pipeline card, the help pages' `.markdown-body pre`, the Starter page's setup steps) and the showcase wrappers (`.pf`, `.search-stage`) take their width from the page and scroll inside; Search's grids use `minmax(0, 1fr)` and its source rows wrap.
+  - **Forms on a 320px phone:** a file picker's built-in width pushed `.form-row-2col` off the screen; the picker now shrinks and the grid columns are `minmax(0, 1fr)`.
+  - **The public header on a 320px phone** shrinks the wordmark and the sign-in buttons a little more, so Sign Up stays on screen.
+  Every Activity page, Logs, API Health, MCP Health and every public page (home, About, Getting started, both platform pages, Prompts, FAQ, Search, the three Starter pages, the blog and the status page) now fit a 320px, 375px and 420px screen exactly; desktop layouts are unchanged.
+- **`adopting-smallstack.md` recommended laying SmallStack over an existing project,** which collides with that project's own choices for the same things, all at once: settings tuned for the platform (the user model, axes-first authentication, a CSP with no inline JavaScript, tasks, logging into the log viewer, ~90 `SMALLSTACK_*` switches), the database configuration (SQLite's WAL and `IMMEDIATE` tuning, the search index built after each migrate, the median function on each connection) and eighteen middleware classes in a deliberate order. It also cut the project off from upstream updates, and every setting bent to fit conflicted again on each merge. It's rewritten around the path that works: a fresh clone kept as `upstream`, your apps moved in one at a time (keeping each app's label so tables, content types and permissions don't change), a fresh migration history, sign-in and the CSP's inline-script rule, users and data moved with natural keys (tested end to end, including the blank-email collision `accounts.User`'s unique email causes), then a table of which SmallStack tools replace what. The FAQ's "add SmallStack to my project" answer says the same.
+- **The Starter page told readers to edit SmallStack's own `sidebar.html`** to add a link; step 3 now registers it with `nav.register()` from the app's `apps.py`. Its two-column demo, and the grid layout help page, use `repeat(auto-fit, minmax(240px, 1fr))`, which stacks on a phone; a plain `1fr 1fr` grid never does.
+- **The Explorer docs described an Explorer that no longer exists.** They said search and filters were detected from a model's fields (they come from `search_fields` and `list_filter`; a model with neither has none), showed `Table2Display` as the default display (it went with django-tables2 in v0.12; examples using it raised `ImportError`), named a `table_class`, an `ExplorerSite.discover()` and an `app_label` URL base that don't exist, and said to leave Explorer for a `CRUDView` to get an API. `docs/skills/explorer.md` and the help pages (`explorer.md`, `explorer-admin-api.md`, `explorer-composability.md`) now describe what the code does, and list what Explorer doesn't read (`inlines`, `actions`, `date_hierarchy`, …). `apps/explorer/content/`, an older copy of those help pages that nothing served, is removed.
+
+### Changed
+- **Explorer lists can look different after the upgrade,** because Explorer now honours more of each ModelAdmin: method columns appear, `ordering` changes the default order, a declared `list_per_page` changes the page size, and `readonly_fields` / `exclude` leave the form. Set `explorer_list_fields`, `explorer_paginate_by` or `explorer_fields` on the ModelAdmin to keep the old behaviour for a model.
+
+## [0.30.3] - 2026-11-14
+
+### Upgrading from 0.30.2
+- **The design tokens moved from `theme.css` to a new `core.css`,** which `theme.css` imports first, so every page loads the same CSS. A fork that edited token values in `theme.css` gets a merge conflict there: move those edits to `core.css`. The drill-down modal, help-bubble and stat-list rules moved from `theme.css` to the end of `components.css`.
+- **SmallStack's loggers are named by module now** (`apps.webhooks.services`, `apps.mcp.views`, …) instead of `smallstack.<app>`. Logging config, alerts or log searches keyed on `smallstack.*` names need the new ones; MCP's dedicated entry is now `apps.mcp`. A `smallstack` logger stays configured for code of your own on the old names. See `UPGRADING.md`.
+- **Using SmallStack's embeds on a base template of your own?** Add `{% smallstack_assets %}` to its `<head>` and `{% smallstack_modal %}` before `</body>`. See `UPGRADING.md`.
+
+### Added
+- **REST search: `GET /smallstack/search/api/?q=`.** The ranked, cross-model full-text search the omnibar and the `search_all` MCP tool run, now for REST clients with an API token, and in OpenAPI. It searches as the token's user, so `search_access` and `search_visibility` apply as everywhere else. `limit` (1–50), `model=app_label.Model`, and no `q` lists the searchable sources. Until now REST had only each list's `?q=`, a substring match over one model's `search_fields`.
+- **Account events are logged** (`apps.accounts`): sign-in, sign-out and failed sign-in for every route in, sign-ups, invites sent and accepted, sign-in codes issued and rejected, the hourly code cap (WARNING), and password resets requested and completed. Usernames and pks only; never a password, code or token. Password reset now runs through `LoggedPasswordResetView` / `LoggedPasswordResetConfirmView`, Django's views plus a log line.
+- **SmallStack's embeds work on a project's own theme.** `{% smallstack_assets %}` (in `theme_tags`) links `smallstack/css/embed.css`: the design tokens, palettes and components that `{% dashboard %}`, `{% metric_card %}`, `{% goal_list %}`, `{% card %}`, `{% report %}`, `{% calendar_card %}`, `{% stat_card %}` and `{% help_bubble %}` draw with, in a `smallstack` cascade layer. The host theme's own rules win wherever both style a class (Bootstrap's `.card`, `.btn-primary`), and `embed.css` sets no element styles, so it never restyles the host page. `{% smallstack_modal %}` renders the drill-down modal once per request; `smallstack/base.html` uses it too. Before this, an embed on a page that didn't extend `smallstack/base.html` drew without SmallStack's tokens (`--error-fg`, `--series-*`, radii) or `.sr-only`, and its drill-downs had no modal to open into. The theming guide's base template carries both tags and a section on embeds, and the dashboards and calendar skills say what a custom base needs.
+- **Plain Django on SmallStack** (`apps/smallstack/docs/plain-django.md`, linked from the README and `/smallstack/help/`): an app written the way you would in any Django project, a function view, a `ModelForm`, a template extending `smallstack/base.html`, a `nav.register()` and pytest tests, with nothing SmallStack-specific to learn first, then a table of when `CRUDView`, the API and MCP flags, search, datasets and the scheduler earn their place. Every snippet was run as a real app before it went on the page.
+- **`/starter/own-theme/`** in the showcase app: metric cards, a dashboard, a calendar and a help bubble on a stand-in theme that styles `body`, `.card` and `.btn-primary` itself.
+- **`apps/smallstack/tests/test_embeds_on_own_theme.py`** renders the embeds on a base that isn't SmallStack's, follows the fragments htmx loads, and fails if a class they use is styled only by `theme.css`, a token their stylesheets read is defined only there, the modal is missing or doubled, or `embed.css` leaves its layer or styles a bare element.
+
+- **Metrics can be a median.** `agg="median"` on a metric or a card over a dataset, computed in the database as datasets already did (`percentile_cont` on Postgres, a registered aggregate on SQLite). It works everywhere a metric does: cards, trends, goals, reports, snapshots, `metric_preview` and the agent tools. For skewed numbers (response times, deal sizes) it's the typical value where the average is pulled up by a few large ones. It needs a numeric column, and a database with no median (MySQL, MariaDB) doesn't offer it: the metric form, the card builder, card validation and the MCP schema all read `aggs_available()`. Migration `smallstack_dashboards.0015_median_aggregate` only adds the choice.
+
+### Changed
+- **SmallStack's own tests live in each app's `tests/` package,** as AGENTS.md always said: 59 modules moved from app roots (`apps/smallstack/test_*.py`, the `tests.py` files of help, smallstack, tasks, website, explorer, profile and usermanager) with `git mv`. `test_layout.py` keeps SmallStack's apps that way; a project's own apps may keep `startapp`'s layout.
+- **Comments say why, not which audit.** About 180 comments in application code cited internal audit and ticket codes (`F-026`, `OPS30`, `(Audit 2026-09-13, C6.)`) that mean nothing outside this repository. The codes are gone; the reasons they sat beside stay, rewritten in plain words where a comment leaned on one.
+
+### Fixed
+- **`{% approval_card %}` showed a request to anyone the page handed it to.** It checked who could decide, not who could see, so a page that rendered the card for the wrong person showed that person the request's title and description. It now checks `can_view` (staff, the requester, an assignee) and renders nothing otherwise.
+- **The User Manager's account actions left no trace.** Sending a set-password link and clearing a login lockout now write an audit entry (`LogEntry`: who, for whom) and a log line; a failed unlock logs its traceback instead of only flashing an error.
+- **`apps/help/tests_llms.py` never ran.** Its name matched none of pytest's `python_files` patterns, so its five tests were never collected. As `tests/test_llms.py` they run, and pass.
+- **Docs told readers to edit SmallStack's own templates and stylesheets.** The sidebar recipes in `theming.md`, `theming-system.md` and the FAQ pasted an `<li>` into `sidebar.html`, and the CRUD checklist said the same; they now use `nav.register()`. The customization guide listed `base.html` and `topbar.html` as the place for a logo and title (they're `BRAND_*` settings) and `static/css/project.css` as a project-wide override that nothing loads; `branding.md` put the `BRAND_*` settings in `base.py` (they're in `smallstack.py`); the adoption guide said to fix `topbar.html`. Each now points at the supported setting or API.
+- **The framework apps' INFO logs were dropped in production.** Most of them logged as `smallstack.<app>`, a name production's `LOGGING` didn't configure, so those records fell through to root at WARNING: a dashboard defaults sync, a scheduler run, a feed fetch never reached the console or `/smallstack/logs/` unless a capture window was open. All 70 now use Django's convention, `logging.getLogger(__name__)`, so the configured `apps` logger covers them. `test_every_app_logger_reaches_a_configured_logger_at_info` checks every logger name in `apps/` against both settings files, and `logging-audit.md` documents the rule.
+- **Five failures were swallowed without a trace.** A REST bulk delete that failed unexpectedly answered "Delete failed" and logged nothing; a broken approval-kind `can_decide` hook refused an approver silently; runbook sent subscriber mail and pruned versions inline, unannounced, when it couldn't queue them; a webhook challenge hook that raised was dropped before normal dispatch; a heartbeat that couldn't be saved showed "fail" with no traceback anywhere. Each now logs (error with the traceback, or a warning for the inline fallbacks), with a test. Expected misses in search previews, the help search index counts, dataset labels, links and value probes, the newsletter's SMTP close and token stats now log at DEBUG, so a capture window can see them. `logging-audit.md` has a section on choosing the level.
+- **Runbook pages carried two drill-down modals**, its own copy and the base template's, both `id="stat-modal"`, and its script replaced `theme.js`'s `openStatModal`, dropping the narrow and reading sizes. It now uses `{% smallstack_modal %}` and keeps only its table sorting.
+- **Four docs told readers to include `stat_modal.html` by hand** (`building-crud-pages.md`, `django-apps.md`, `components.md`, `dashboard-cards.md`), which doubles the modal on `smallstack/base.html`. They now say it's already there, and to use `{% smallstack_modal %}` on a base of your own.
+
+## [0.30.2] - 2026-11-14
+
+### Upgrading from 0.30.1
+- **Built your own base template from the theming guide?** Check its `config.js` tag for `data-theme-url` and `data-palette-url`. Without them the light/dark toggle never saves, and the choice flips back on the next page load. See `UPGRADING.md`.
+
+### Fixed
+- **The theming guide's base template couldn't save the light/dark choice.** Its `window.SMALLSTACK` config left out the save URLs, so on a theme built from it the toggle changed only the browser's copy, and on the next page load the profile's older choice won and the toggle flipped back. Its setup was also inline `<script>` blocks, which the CSP has refused since 0.30.0. `adding-your-own-theme.md` (both copies), `theme-scenarios.md`, `from-zero-to-running.md`, `templates.md` and the "public, no login" help page now show what `smallstack/base.html` does: `theme-init.js`, then `config.js` with both save URLs, htmx and `theme.js`, plus a check that the choice survives a fresh browser. SmallStack's own pages were not affected.
+- **A new browser could open dark for a user who saved light.** `theme-init.js` read only the browser's stored theme, so on a shell that loads `theme.js` late the page painted dark first. It now takes `data-user-theme` / `data-user-palette` and paints in theme.js's order: the profile's choice, then this browser's, then dark. `smallstack/base.html` passes them.
+- `apps/smallstack/test_theme_wiring.py` holds the shipped shell, every template loading `config.js` and every base template in the docs to the saving setup, and runs `theme-init.js` under node (skipped without node).
+
+## [0.30.1] - 2026-11-09
+
+### Upgrading from 0.30
+- **A dataset filter value that won't parse is now refused** (a ValueError, a 400 over REST) instead of ignored. That covers `<col>__gte=2026-13-45`, an unknown `__period`, or a non-number on a numeric column. It used to return every row.
+- **The entrypoint's worker restart loop is fixed.** Take the change if your project carries its own `docker-entrypoint.sh`.
+- **SmallStack's demo pages moved to a deletable `apps/showcase`,** the error pages became app defaults in `apps/smallstack/templates/`, and `README.md` became a short page that SmallStack rarely changes. Expect one round of conflicts on the files you rewrote, and keep yours. See `UPGRADING.md`.
+- **Carrying call_stats' extensions to `apps/datasets/core.py`?** `cells()`, `series(sort=)`, `median`, `@dataset(units=)` and the extra flat lookups are upstream now, so drop your copies. For `day_entries()`/`day_counts()`, see "Calendar datasets" in `docs/skills/datasets.md`. `has_detail`, `_fk_label_map` and the `previous` period key still answer, with a `DeprecationWarning` on the first two.
+
+### Added
+- **Datasets: two dimensions, ranked series, medians, units and more filter spellings** (from call_stats). `Dataset.cells(x, y)` (REST `<key>/cells/`, MCP `group_by2`) returns a complete x × y grid for a heatmap, with 0 or None where a combination has no rows. It refuses an axis of more than 30 values rather than cutting it. `series(sort={"by": "value", "dir": "desc"})` (REST/MCP `sort=-value`) ranks before `limit` applies, so it's a top N; a time grain keeps its most recent periods. `agg="median"` is computed in the database, grouped or not: `percentile_cont` on Postgres, an aggregate registered on SQLite connections. `@dataset(units={...})` puts a `unit` on each schema column (else a guess from `*_seconds` / `*_minutes`). Flat filters gain `__gt`/`__lte` and numeric comparisons, `__ne`, `__icontains` and `__period=<key>`. Each schema filter lists its `lookups`, and `filter_problems()` reports bad values without querying. See `docs/skills/datasets.md`.
+- **Keys and names from before the call_stats port still answer:** the `previous` period (now `yesterday`), `Dataset.has_detail` (now `has_links()`) and `_fk_label_map` (now `value_labels()`), the last two with a `DeprecationWarning`. `dateranges.py` lists how each period's meaning changed in the port.
+- **`manage.py template_hygiene`** lists the inline `<script>` blocks, `on…=` handlers and `<style>` blocks in your templates, by file and line (`--summary`, `--framework`, `--check`). Use it to size the move off inline scripts. See `docs/skills/templates.md`, which now also covers the nonce route (django-csp's `NONCE` plus `nonce="{{ request.csp_nonce }}"`) as a step between the stopgap and static files.
+
+### Changed
+- **SmallStack's demo pages are their own app, `apps/showcase`, so a project deletes them once instead of merging them every release.** That's about, getting started, prompts, both platform pages, the starter pages, `/components/` and the public search. Their URLs are unchanged, and their names are now `showcase:…`. `apps/website/` keeps the home page, the public `base.html` and the chart card types. The public topbar and the home page reverse showcase URLs quietly (`{% url … as x %}`), so they work with the app deleted. The starter pages' "Starter" breadcrumb now links (it named a route that never existed).
+- **The 400/403/404/500 pages are defaults in `apps/smallstack/templates/`.** A project's own `templates/404.html` overrides one, and upstream no longer ships files at those paths.
+- **`README.md` is short and carries nothing that changes per release.** SmallStack's full description, with the version badge, is `docs/smallstack.md`.
+
+### Fixed
+- **The inline worker came back after a crash only if it exited cleanly.** `docker-entrypoint.sh` runs under `set -e`, so a `db_worker` that exited non-zero (a database restart, say) ended the restart loop, and the container kept serving with no worker. The loop now catches the exit code and restarts. *Upgrade note:* if your project carries its own entrypoint, take this change.
+- **The `'unsafe-inline'` stopgap from 0.30.0 failed four framework tests.** The template sweeps now follow the policy in force. With `'unsafe-inline'` in `script-src`, only SmallStack's own templates are checked for inline scripts and handlers, and `test_csp_script_src_allows_no_inline_script` skips, naming how many of yours remain. The `<style>` sweep checks SmallStack's own templates only, since `style-src` allows inline styles. The rules moved to `apps/smallstack/template_hygiene.py`.
+- **Framework tests assumed where a project mounts datasets and dashboards.** The datasets tests and the case-insensitive ordering test reverse their URLs instead of using literal `/smallstack/datasets/…` paths, and the Datasets nav entry's highlight follows the mount.
+- **Tests that failed on Postgres or behind a downstream's first-request hook.** Two dashboards tests compared a filter tree as a JSON string (jsonb reorders keys), the case-insensitive ordering test expected SQLite's tie order for "Alpha" and "alpha", and the dashboards query-count test counted the first request after setup. The components-list sort test asserted on a three-way tie, which Postgres broke either way.
+- **A dataset bound that didn't parse was dropped, returning more rows than the filters said.** `?created_at__gte=2026-13-45` used to filter nothing. It's now a 400, and the dataset browser shows "These filters can't be applied" with no rows.
+- **`UPGRADING.md` had no section for 0.30.0's CSP change or the new dashboards app,** and two 0.30.0 settings (`HEARTBEAT_MAX_CONCURRENT_CHECKS`, `HEARTBEAT_RUN_DEADLINE_SECONDS`) were in no release note. Each release entry now opens with an "Upgrading from" block, and `downstream-release-migration.md` no longer describes v0.11 as the current release.
+
+## [0.30.0] - 2026-11-08
+
+### Upgrading from 0.29
+- **The CSP blocks inline scripts.** `script-src` drops `'unsafe-inline'`, so inline `<script>` blocks and `on…=` handlers in your own templates stop running.
+- **`apps.dashboards` is a new app in `INSTALLED_APPS`:** a nav item, MCP tools, 14 migrations, and shipped defaults synced after migrate (`SMALLSTACK_DASHBOARDS_ENABLED`, `SMALLSTACK_DASHBOARD_DEFAULTS_SYNC`).
+- **Webhooks get their own queue and worker** (`webhooks` in `TASKS`, `WORKER_WEBHOOKS`, `SMALLSTACK_WEBHOOK_QUEUE`).
+- **Invite and sign-in-code emails are queued** (`SMALLSTACK_ACCOUNTS_EMAILS_INLINE`), and `EMAIL_TIMEOUT` defaults to 10 seconds.
+- **New tuning settings:** `HEARTBEAT_MAX_CONCURRENT_CHECKS`, `HEARTBEAT_RUN_DEADLINE_SECONDS`, `SMALLSTACK_FEEDS_MAX_CONCURRENT_FETCHES`.
+- Each has a section in `UPGRADING.md` under v0.30.0, starting with "at a glance".
+
+### Added
+- **Every Dashboards and Goals piece on your own pages.** New template tags beside `{% dashboard %}`, `{% metric_card %}` and `{% playlist %}`: `{% goal_list %}` (a goal list judged), `{% card %}` (one saved card) and `{% report %}` (a report's table). Data tags hand a page the engine's results to draw its own way: `{% metric_value %}`, `{% metric_series %}`, `{% goal_values %}`, `{% report_values %}` and `{% dashboard_values %}`, with `{% dashboards_assets %}` for the stylesheet and scripts. All check access as the pages do. The starter page (`/starter/dashboard/`) shows each. The report page's table is now a shared include (`dashboards/includes/report_table.html`).
+- **Apps ship their own dashboard defaults.** An app declares metrics, saved cards, dashboards, reports, goal lists and playlists in a `dashboard_defaults.py` (`register_defaults(Defaults(...))`). They're created after every migrate, shared and marked **From <app>**. People edit them in place: the app updates a default only while nobody has changed it, a changed one offers **Reset to default**, a deleted one stays deleted, and an app's defaults are archived while it's turned off. `manage.py dashboard_defaults` (`--dry-run`, `--app`, `--restore`, `--adopt`) runs the same sync. `seed_dashboards` is now the framework's own bundle and no longer overwrites edits to the demo. Migration `smallstack_dashboards.0014_app_defaults` adds the provenance fields (additive). See `docs/skills/app-defaults.md`.
+- **Start from a saved metric on the dataset browser.** Above a dataset's filters, **Start from a metric** lists the metrics already made on it. Picking one loads its conditions and roll-up; change them or not, then **Make a metric** saves a copy ("Server errors (copy)", with its period column, format, thresholds, unit, description and tags) and leaves the original as it was.
+- **Archive, Delete and Duplicate ask first, and say what they mean.** Each opens a confirmation in the page's modal. **Archive** says it isn't a delete, what still uses the item and keeps working, and how to restore it. **Delete** says what goes and what stays: cards, playlists and goal lists now have their own confirmations (a deleted card stays on each dashboard as that dashboard's own; a goal list's week-by-week history goes with it), each suggesting Archive instead. **Duplicate** says what the copy will be ("Site health (copy)", personal, nothing saved until you save; for a dashboard, that its cards still share their metrics) before the form opens. Restore stays one click.
+- **Finding what's been archived.** Each list (metrics, goal lists, reports, dashboards, playlists, cards) shows **Show archived (N)** when it has archived rows, and **Back to the list** while showing them. The overviews' note names each kind with a count and links only those (“Archived: 2 metrics, 1 report”), not all three lists.
+- **What a metric means, on hover.** On the metric library, the Goals overview, a goal list and its weeks, hovering (or tabbing to) a metric or goal name shows its description in a hover box. A goal made from a saved card shows the card's description first. Any element with `data-about` gets the same box (`dashboards/js/about-info.js`).
+- **The demo has a rate.** `seed_dashboards` adds **Server error rate** (server errors ÷ requests, as a percent) and puts it in the Monthly KPIs report.
+- **Help beside every Dashboards and Goals page.** A "?" next to a page's title opens a short explainer in the modal without leaving the page: what the thing is, what it represents, how it's set up, how to use it. Nine new "In short" help pages (how it all fits together, dataset, metric, component, dashboard, goal list, report, playlist, weeks and history), each a page to a page and a half, with chips to the related ones and a link to the full guide. The piece is reusable: `{% help_bubble "section" "slug" %}` (`help_tags`) opens any help page this way (`help:section_bubble`; `related` and `guide` frontmatter fill the footer; the stat modal gains a `reading` size).
+- **Edit a card where it sits.** Every card on a dashboard has a ⋯ menu. **Edit card** opens the component builder for that one card in a dialog over the dashboard (`d/<slug>/cards/<id>/edit/`): a saved card is edited for every dashboard showing it, a card of this dashboard only is written back into its layout. Also **Move or resize**, **Open the metric**, **Edit the metric**, **Refresh this card** and **Remove from dashboard** (asks first). Viewers get Open the metric and Refresh.
+- **Make a unique copy.** A saved card that other dashboards show too is marked with a small link tab and a count. Its menu's **Make a unique copy** makes that placement the dashboard's own, where it sits, and can copy its metric as well ("Requests (Ops EU)") so its filter can change there alone; **Give it its own metric** does the same for a card that was never a saved one. Together with Duplicate they turn a copy of a dashboard into one with numbers of its own (`d/<slug>/cards/<id>/copy/`, `boards.make_card_unique`).
+- **Find things by tag, on every page.** Both overviews, all six lists and My dashboards have a **Tags** bar: every tag in use with how many rows carry it, and **Show everything**. The lists narrow to a tag (`?tag=`, REST too), show each row's tags, and keep the tag from page to page; an overview's "All N …" link carries it along. With nothing tagged yet, the bar says how to add the first one.
+- **The logo follows the palette.** The stock SmallStack logo (the four-square mark and the wordmark) is drawn from the theme in the top bar and on the sign-in pages, so it matches every palette in dark and light. A project with its own `BRAND_LOGO_TEXT` / `BRAND_LOGO` keeps its image. `manage.py brand_logos` writes the same logo as SVG files for every palette (`static/smallstack/brand/palettes/`: logo and icon, for dark and light backgrounds), and the Theming help page shows them.
+- **Number fields get − and + buttons.** Every `<input type="number">` is wrapped with theme-drawn buttons in place of the browser's few-pixel spin buttons: side by side on a wide field, a slim stacked pair on a narrow one. They step by the field's own `step`, `min` and `max` and disable at the limits; `data-no-stepper` opts a field out (`SmallStack.numberStepper`).
+- **A drill-down designer.** In the component builder, **Choose the columns** opens a dialog with every column of the metric's data in one list (tick, drag into order, set a heading and a format) beside the rows that design opens, redrawn as it changes. `GET dashboards/api/metrics/<key>/rows/` takes `?drill=<json>`.
+- **Pick calendars, don't type their keys.** The Calendar card's calendars are a tick-list of the ones you may see, in the builder and in a dashboard's Add card dialog. Card types can declare any option this way (`"type": "multichoice"`, with `choices` or `choices(user)`).
+- **Rates.** A metric's source can be *a rate*: one metric divided by another, read for the same period on both sides, in cards, goals, reports, weeks and trends. Each week or bucket divides its own two numbers. A zero or missing bottom shows no value, and parts that can't be compared show an error rather than a number.
+- **Metrics entered by hand.** A metric's source can be *entered by hand*: one value per date, typed on its page or set over REST (`dashboards/api/metrics/<key>/entries/`) or MCP (`metric_record_value`, `metric_delete_value`), rolled up by latest, sum, average, minimum or maximum. Nothing entered reads as no value, never 0. A value entered after a period was captured adds a new capture, keeping the targets it was saved with. The rows are scoped to people who can see the metric, so a shared one shows to non-staff.
+- **Printing.** Goal lists, single weeks and reports have a **Print** button that opens a clean document (`g/<slug>/print/`, `r/<slug>/print/`): dark on white whatever the palette, status in words, wide reports sideways.
+- **Repeating events.** An event can repeat every day, weekday, week, 2 weeks, month (same date or same weekday) or year, with an optional last date. Each date appears on the calendar and in the `.ics` feed. One date can be skipped and put back (`event_skip_date` over MCP).
+
+- **Snapshots at any cadence.** A goal list can be captured hourly, daily, weekly, monthly or quarterly, any combination, from its new History page, REST (`goals/<slug>/tracking/`, `goals/<slug>/snapshots/`) or MCP (`goal_list_tracking`, `goal_list_capture`, `goal_list_history`). Each tracked period is captured once it ends. A period keeps every capture, the newest being what pages show, so saving again and late values add rather than overwrite. New lists track weekly (`SMALLSTACK_SNAPSHOT_DEFAULT_CADENCES`), and old hourly and daily captures are pruned (`SMALLSTACK_SNAPSHOT_KEEP_DAYS`). `register_subject` lets other models be captured.
+
+- **Targets per cadence.** A goal can have its own target for any cadence, under **Targets by cadence** in the goal editor or as `targets` in its JSON. Without one, weekly and any number on the same scale at every length (an average, a rate, a latest reading) use the main target. A count or sum isn't judged, because a weekly target says nothing about one hour: it shows its value marked **No target**. Captures keep the target they were judged against.
+
+- **A compact view of the designs.** The builder's **Pick a design** step has a **Full / Compact** switch: full shows each design with what it draws; compact shows one chip per design in a line per group, with the description (and, for a dimmed one, the reason) on hover. A new card opens full; an existing one, on its page or in the Edit card dialog, opens compact, where the page is long enough already. The switch remembers your choice.
+- **Every card's settings, compact.** The builder's **What it shows** and **Style it** steps, the Edit card dialog and a dashboard's Add card now lay each setting out as wide as its control and flow them left to right: a stat's whole styling (format, unit, number size, number colour, title size and colour, alignment) is two short rows of pills and swatches instead of seven stacked selects; the colour rules pick their colour from swatches; a chart's kind, buckets, direction and order, a calendar's view, a menu's layout and a goals card's order are pills; the roll-up, its column and the period column share a row. Nothing stored changed.
+- **A note has a look of its own.** The Note card's builder offers **Text size**, **Alignment**, **Text colour** (plain, quiet, accent, success, warning, danger) and a **Background** (off by default; an accent tint, a raised surface, or a success / warning / danger / info tint), all the theme's own colours, so a note reads right on every palette. They're drawn as one compact row — size and alignment as pills, the colours as swatches — in the builder, the Edit card dialog and a dashboard's Add card alike; the builder's whole "What it shows" step now lays small settings side by side. Agents set the same as `options.size` / `align` / `color` / `background`. For your own types, a `choice` option may ask for `"widget": "segmented"` or `"swatches"`.
+- **Share a dashboard of your own.** **Share** on a personal dashboard lets everyone who can sign in open it, or people you pick by name (find them as you type; each gets a notification with the link). You still edit it; they read its cards as you do, including cards over your personal metrics, whose rows open by the card's place on the dashboard; data their own access doesn't reach stays restricted. Badges say who may open it (Shared with everyone, Shared with 3 people, Shared by alice), and My dashboards gains **Shared with you**. Agents: `dashboard_share`; REST reads `sharing`.
+- **The card-type API, documented.** `docs/skills/card-types.md` is the contract for publishing a card design from a project or a reusable app: registration, every `ComponentType` field, what `build` receives and returns, the data helpers and rows links, option types and your own editors, what the shared validation already does, scripts and the `dashboards:card-drawn` event, what agents see, and how to test one.
+- **Scripted cards draw everywhere, and bring their own editors.** A card type that draws with a script (a chart library in `media`) used to mount only on dashboards and embeds: the builder's preview, the Edit card dialog and the components gallery swapped HTML in without a word. `{% component_media %}` now writes `dashboards/js/cards.js` ahead of every type's files, and it fires `dashboards:card-drawn` on the element that holds a card's HTML on every surface, so one listener mounts a chart in all of them; the components page loads card files in its head. A type's `options_schema` entry can also be of a type of your own, drawn by an editor you register (`SmallStackDashboards.optionEditors[type]`) in the builder and the Add card dialog alike.
+- **A Menu card.** Links in your order (words, where it goes, and whether it opens a new window), laid out across or down, or fitted to the card's shape: across when it's wide, down when it's tall, re-laid as the card is resized. A way around, on the dashboard. The builder has a row editor for the links (move, remove, add); a dashboard's **Add card** takes them one a line (`words | address | new`). A link is a page of this site, an http(s) address or mail, never anything that runs. For your own card types, `links` is a new option type.
+- **Three more designs, no library: Bar chart, Gauge and Table.** *Bar chart* draws the filtered rows split by a column as columns (names under them) or horizontal bars, largest first or by name. *Gauge* puts one number on a half dial between a floor and a ceiling you set, with the card's (or the metric's) colour rules drawn as bands under the arc, so where the needle sits says how the number is doing; it takes a metric like a stat, so it's offered in a dashboard's Add card too. *Table* shows the filtered rows themselves, a page at a time (**Rows a page**), in the columns the builder's **Columns** step designs (the drill-down designer: tick, order, head and format them, pick the sort); its headers sort and its footer pages the card in place, columns resize, number columns can carry a **Totals** row of sums over every matching row, and **All rows** opens them in the rows window with a CSV. All three are in `apps/website/dashboard_cards.py`. For your own such type, `ComponentType(shows_rows=True)` turns the builder's Drill-down step into Columns, and `metrics.drill_rows` takes an `offset`.
+- **Two more charts, no library.** *Pie chart* (a count or total, each group's share of the whole) and *Ranked bars* (any metric's groups, largest first) join the trend chart in the component builder. Both are server-drawn SVG and CSS, and each group opens its rows. They live in `apps/website/dashboard_cards.py` beside the trend chart.
+- **The components page shows the components.** Hovering or focusing a row in the list shows the real card. The second view is now a gallery of live cards that load as they scroll into view, replacing the plain table.
+- **Find a card by its dataset, its design or its dashboard.** The components page has three dropdowns beside the search: **Dashboard** (the saved cards a dashboard shows, with a line naming it and the way back; a dashboard's header gains **Cards**, which opens this), **Dataset** (cards over it, by their own filter or their metric's) and **Design**; each offers only what your cards use. The same `?dashboard=`, `?dataset=` and `?type=` narrow the REST list. With the tags bar, search, and pages of 15 (Rows per page), a library of hundreds stays a click or two from any card.
+- **Try another design without losing this one's settings.** In the component builder, a trend's buckets and chart kind, a pie's group-by and limit, the styling and the drill-down are kept aside while another design is tried, and come back when the design does. Only the chosen design's settings are saved.
+- **A trend over all time fits its buckets to the data.** With no period, the trend chart's *Fit* bucket size now reads the span of the rows it draws (a week of data by day, three years by quarter) instead of always by month, which drew one bar for a new install's few days.
+- **More conditions on the dataset browser.** Under the quick filters, the same ALL/ANY condition editor the metric builder uses: any column, any operator, nested groups. It travels in the address as `?filter_tree=<json>` (what REST takes), narrows the rows, the roll-up and the CSV, and reads back in words. A condition that can't be applied shows its problem and no rows, never the unfiltered set.
+- **Make a metric, keep the roll-up as a card.** The dataset browser's **Make a metric** opens a modal with the dataset, every condition on screen as one filter tree (the quick filters included) and the roll-up's aggregate, named and previewed, ready to save (see *The dataset browser filters as you go*). A grouped roll-up also offers **keep this roll-up as a card** (Grouped stat, Ranked bars, or Pie chart for a count or sum): save the metric, and the component builder opens on that card with the group-by set. A metric's page has **Make a card** for the same thing later. The metric form and the component builder take these as query parameters, so a link can open either filled in.
+
+### Changed
+- **Only administrators change an address.** A dashboard's, report's, playlist's or goal list's address (the URL) shows read-only in its settings to everyone but a superuser or a member of the `admin` group; plain staff no longer get **Change the address**, and the form refuses their change over every surface (`models.can_change_address`).
+- **Webhooks get a queue and a worker of their own.** Outbound deliveries run on a `webhooks` task queue (`SMALLSTACK_WEBHOOK_QUEUE`, used when `TASKS` lists it, `default` otherwise), and the container starts a worker for it (`WORKER_WEBHOOKS`, default 1, `0` for none). A fan-out to slow or dead endpoints no longer holds up sign-in emails and scheduled jobs on the shared worker. See UPGRADING.
+- **Feed collection fetches sources in parallel** (`SMALLSTACK_FEEDS_MAX_CONCURRENT_FETCHES`, default 6), so several slow feeds cost about one timeout. Writes stay on the calling thread; a fetch still going after 60 seconds is reported for that source and skipped.
+- **Invite and sign-in-code emails no longer wait on the mail server inside the request.** They go out from the `email` task queue (inline under `DEBUG`, or with `SMALLSTACK_ACCOUNTS_EMAILS_INLINE=True`). The queued task holds only IDs: the worker mints the sign-in code (`LoginCode.rekey`) or invite token as it sends, so no credential is stored in the task table. Production needs a worker on `email`; see UPGRADING.
+- **SMTP gives up after 10 seconds by default** (`EMAIL_TIMEOUT`, `0` for none). Unset used to mean no timeout, so a hung mail server held a web thread until gunicorn killed it, or held the task worker, and everything queued behind it, indefinitely.
+
+### Migrations
+- `smallstack_dashboards.0014_app_defaults` is additive: provenance fields (`provided_by`, `provided_key`, `provided_spec`, `provided_hash`, `provided_parked`) on the owned tables, and `RemovedDefault`.
+- `smallstack_dashboards.0013_dashboard_sharing` is additive: `shared_with_everyone` and `shared_with` on `Dashboard`.
+- `smallstack_dashboards.0012_card_sources` adds a card's own source (`dataset`, `filter_tree`, `agg`, `measure`, `period_field`) to `Component` and copies each metric's definition into every chart and grouped card bound to one, in saved cards and dashboard layouts.
+- `smallstack_dashboards.0011_tags_archive` is additive: `tags` and `archived_at` on six tables.
+- `smallstack_dashboards.0010_snapshot_engine` replaces `GoalSnapshot` with `Snapshot` and `SnapshotTracker`. Saved weeks carry over as weekly captures, and every existing list keeps a weekly tracker.
+- `smallstack_dashboards.0009_metric_sources` and `smallstack_calendar.0003_event_repeat` are additive. Existing metrics become source `dataset` and existing events don't repeat.
+
+### Fixed
+- **`seed_dashboards` failed on a fresh database.** Its two grouped cards ("Requests by method/status") still pointed at a metric, which a grouped card no longer accepts, so saving the Site health dashboard raised. They filter the requests dataset themselves now.
+- **A trend chart said "no period field" with nowhere to set one.** The period field is the metric's (the date column it is read over), not the card's, and nothing said so. The builder now dims the Trend chart for such a metric and says, under the metric picker, where to set it, with a link to the metric's form; saving the card is refused with the same reason, and an existing card says it too. A trend over a hand-entered or rate metric was refused on save as "needs a metric over a dataset" though the builder offered it; it saves now.
+- **A dashboard's settings: one card for its name and picture.** The picture, with its screen-reader description, sits beside the name, address, description and tags instead of in a card of its own below.
+- **The Edit card dialog could stand taller than the window**, its head cut off above with no way to scroll back to it. Its height was `100vh`, which in Safari counts the toolbar; a modal dialog is sized against the viewport itself now (the Add card and drill-down dialogs too), and scrolling inside it no longer chains to the page.
+- **A note's colour held in the preview but not on the dashboard**, where a note is drawn flat and quiet and that rule outranked the chosen colour. The chosen colour wins now; a note that picked nothing stays quiet. The builder's Full / Compact design view is remembered per situation (choosing a new card, editing one), so picking Full once doesn't undo the compact default on edit pages.
+- **A playlist's timings read as two settings fighting.** The settings page now puts **Playing (the defaults for the show)** first, and each slide below shows **Default · 30 s** as a pill until you click it to give that slide its own time, with full-size − and + and a ↺ back to the default; the period's default reads "Dashboard's own". Before, a slide's blank field with a greyed number sat under tiny stacked spin buttons, with no way back once typed in.
+- **Linked cards: a click on one card narrows another.** Give a chart *Send clicks to* a channel and other cards *Listen to* it, in the builder's **What it shows** step (or `options.publish` / `options.listen` in a layout): clicking POST in a pie redraws the listening stat, bars and table to POST only, each with a "Showing POST ✕" chip that clears it. Cards chain (pie → bars → table reads *POST · 204*), cards over different data link through a column mapping, and it works on dashboards, `{% dashboard %}` embeds and playlist slides. A slice only ever narrows: it's checked against the listening card's own data and ANDed onto its filter, with its period and the viewer's access still applying; one it can't apply is refused with a reason, never quietly dropped. Rows links carry the slice, so a narrowed card's rows window opens narrowed too. A dashboard's **Add card** dialog has the fields too: *Send clicks to* on a calendar, *Listen to* on a card that draws data (a column mapping stays in the builder). A **calendar card** sends days: click one (or Tab to it and press Enter) and the listening cards show that day, read on their own period column unless they map the calendar's `date` to another; the calendar's events still open their own pages. For your own card types: `ctx.narrow`, `ComponentType(publishes=True)` for a card with no data that can still send clicks, and `dashboards.md` → *Linked cards*.
+- **Table columns, sized for what they hold.** The generic CRUD table never crushes a column any more: it gets a minimum width (every unsized column at least 140px) and its wrapper scrolls sideways past it, where a crowded table used to squeeze a free column to nothing (the posts list's Blog column was 1px wide, the approvals' Requested by 0px). Its link column gets 240px of its own rather than an equal slice, a local date and time gets room for "Oct 28, 2026 8:00 PM EDT" (240px), and takes `CRUDView.column_labels` for headers shorter than a field's verbose name. The dashboards lists use both (Metrics, Dashboards, Playlists, Reports, Goal lists: "Updated", "Roll-up", "Opens with", "Seconds"), load their stylesheet on the table view too (the tags bar was unstyled there), the components table's Source column shows "(metric)" in full, and an owner badge on the Goals overview wraps under a long dataset name instead of being cut. Elsewhere, percentage widths that starved a neighbour became px: Users (the email gets 280px), Blog posts, Approvals, Scheduler runs, and the Explorer's request log, heartbeats, heartbeat epochs, log entries, access attempts and monitored endpoints. A % column out-bids the unsized ones for the slack in a fixed-layout table, so prefer px (`crud-views.md` says why).
+- **A CRUD table drew Edit and Delete for rows the view refuses.** The generic table listed the two actions for every row; the edit and delete routes then answered 403 wherever `can_update` / `can_delete` said no (a staff member on someone else's personal playlist). The table now asks the same hooks before drawing an icon, as the library views already did.
+- **Someone else's personal row said only "Personal".** A staff member sees every row but changes only their own personal ones, so a row with no Edit looked broken. Every list and overview now says whose it is ("Personal · admin"), with why on hover.
+- **A card one row high made the layout unsaveable** ("'c1' and 'c2' overlap" with nothing overlapping on screen). The grid library's `save()` leaves out a width or height of 1 as "the default", the server then gave the card its design's default height, and that phantom row crossed the card below. The editor now reads each card's real place from the grid.
+- **A card's ⋯ menu button covered its heading's right end**: the calendar's event count, a grouped stat's total, a goals card's "5 of 8 on target". Every card's top row now stops short of the corner the button sits in; a card type of your own can use `.dash-cell-toprow`.
+- **A many-to-many field on a CRUDView's model returned 500 over REST**: the serializer handed the related manager to JSON. It now writes the related rows' primary keys.
+- **A `filter_fields` entry that isn't a model column broke the REST list.** `CRUDView.apply_filter` lets a view serve a filter of its own (`?dashboard=` on the components list names no column), but the generated FilterSet was still handed the name and refused it. Such a name is now left to the hook on REST, as it already was on the page.
+- **The saved-card gallery had no pager, and My dashboards had none at all**, so cards past the fifteenth couldn't be reached from the gallery and My dashboards loaded every dashboard you'd made. Both page like the other lists.
+- **Edit and Delete slid out of line on the components list, and Delete off the edge of the metrics list**, where a row has three actions and the column was sized for two.
+- **The tag a page was narrowed to was never highlighted**: the link colour rule outranked the "current" one.
+- **The top-bar mark stayed green on every palette**, with the four fills written into the template.
+- **A number field's spin buttons were a white block on a dark field**; number inputs now follow the dark colour scheme.
+- **The playlist editor's seconds unit was cut off** ("…" where the "s" belongs).
+- **Switching off dashboards or the calendar left their MCP tools working**, writes included, though the routes were gone and the docs say "no MCP tools". The tools now follow the switch, and the Monday snapshot does too.
+- **Reversing `0010_snapshot_engine` said OK and emptied the history.** It now refuses while there are captures to lose.
+- **A capture saved part-way through a period stopped the real one.** Click *Capture this week so far* on Wednesday and the job never saved that week when it ended, so Wednesday's numbers stood for the whole week. It now saves the finished period on top, and *Fill in* treats a part-way capture as missing too.
+- **`goal_list_add_goal` dropped `targets` and answered `ok: true`.** They're now kept, and bad ones refused, as `create_goal_list` does.
+- **An at-risk line pointing the wrong way was accepted**, so 3.4% against "under 1%, at risk above 0.5%" read as *At risk*. It must now point the same way as the target and be easier to meet.
+- **Goal lists answered with Python reprs** (`"snapshots": "<…GenericRelatedObjectManager object at 0x…>"`) over REST and MCP. A relation manager is left out of any CRUD response.
+- **History's CSV called every column "Week of …"**, hours and months included, and marked a value with no target as "No data".
+- **Saving an old week stored today's value** for a number that doesn't depend on time, where filling the same week in refused. Both now give no value.
+- **`goal_list_capture {fill: 0}` captured the current period.** It's refused, on REST too.
+- **Printed goal lists lost a change's direction** ("20% vs the week before"). They now say Up or Down.
+- **Skipping a date that's already skipped said it "isn't a date of this series", and restoring one that wasn't skipped reported success.** Each now says what's true, and `event_skip_date` takes the `<id>-<yyyymmdd>` that `calendar_events` gives.
+- **Moving a series left skips on dates it no longer has**, listed with a *Put back* that did nothing. They're dropped on save. A weekday series can no longer start on a weekend.
+- **`SMALLSTACK_BLOG_ENABLED=False` left the blog's MCP tools registered.** They follow the switch, like dashboards and the calendar.
+- **A trend chart refused a rate or a hand-entered metric**, saying it needed "to split it into groups", though neither a trend nor `metric_trend` does. Both now draw. Pie, ranked and grouped cards still refuse them, for that reason.
+- **A trend's points could be Decimals**, which `metric_trend` sent as strings and the chart didn't draw: any hand-entered metric, or a sum over a decimal column. They're numbers now.
+- **A card option nothing reads was saved and did nothing**: `dashboard_add_card {"options": {"period": "pmtd"}}` answered `ok` and the card, titled "last month", showed the dashboard's period. It's refused, naming what the card takes.
+- **`metric_delete_value` on a metric that isn't entered by hand answered `deleted: false`**; it's refused, like `metric_record_value`.
+- **CSV exports could run as formulas.** A report label or row value such as `=cmd|calc` reached the spreadsheet of whoever opened the download, in report, weeks, drill-down and dataset CSVs. Such cells now start with `'`; plain numbers are untouched.
+- **A weekly target scored against an all-time number.** A goal with its own period on a metric with no `period_field` was judged on the all-time value; it's now refused.
+- **A value a choices column can't hold reads as a clean zero** (`status = "failure"` where the value is `failed`), so a metric stayed green for ever. Saving and previewing now refuse it and list the valid values.
+- **Overlapping cards saved happily, and cards with no position all landed at 0,0.** A cell with no position now goes after the cards so far, and an overlap is refused.
+- **A list tool's `count` looked like the total.** List tools now answer `total` too, and refuse a `limit` under 1.
+- **Agents get the number they asked for.** Over MCP and REST a misnamed period (`this_week`) returned the metric's *all-time* value with no warning; a bad period, grain or week is now refused with the valid names. A metric with no `period_field` says so in `note` rather than quietly ignoring the period.
+- **MCP: every successful `metric_value` and `metric_trend` was flagged `isError: true`**, because the dispatcher tested for an `error` key rather than a truthy one (those tools answer `"error": null`).
+- **MCP: `list_datasets` returned nothing and `describe_dataset` refused every bundled dataset** on a default install, while `metric_preview` and `create_metric` accepted them, so an agent had to guess names. Both now cover every dataset the caller may read; `query_tool` says whether it also has a query tool.
+- **MCP: unknown arguments were dropped and the call reported success**, so `update_goal_list {"id": 1, "goal": "g1", "target": …}` changed nothing and said it had. Tools now hold callers to their schema's `additionalProperties: false`. Schemas no longer list fields a model default fills as required.
+- **An average, minimum or maximum over no rows read 0**, so a quiet week's "average response under 250 ms" counted as on target. It now has no value: the card shows "—" and the goal is *no data*. Counts and sums of nothing are still 0.
+- **A metric's delete left its saved cards behind**, drawing a metric that no longer exists, along with any goals on them; they now go with it. The delete page said "Nothing uses this metric" for a metric used only by goals, and never listed goal lists; `delete_metric` now answers with `also_removed`.
+- **Events with a `start_time` were saved as all-day over REST and MCP**, hiding the time. A start time now makes an event timed.
+- **A repeated saved-calendar-view name was an uncaught `IntegrityError`** (measured over MCP; the page and REST use the same form). It's now a field error. `dashboard_add_card {w: "abc"}` and `goal_list_weeks {weeks: "abc"}` are refusals rather than Python exceptions.
+- **A misspelt grouped-card column saved fine and only failed when drawn**; `card_preview` and every save now refuse it, and a note card needs its `markdown`.
+- **Dashboard stat cards drew a double border with the comparison line across it**: their cell rules had stopped matching when `.card-style` was added. Goal-board trend and change text wraps instead of being cut off.
+- **The bundled requests dataset can filter on `response_time_ms`** ("requests slower than 500 ms"), and generated labels read "IP address" and "API token".
+- **Help links work again.** About 130 links and URLs in the bundled docs still pointed at `/help/...`, which has returned 404 since SmallStack's routes moved under `/smallstack/`. They now use `/smallstack/help/...`, and a test keeps old-prefix links out of the bundled docs.
+- **A card of its own took any aggregate.** `agg: "median"` saved and drew the row count, and `count_distinct`, the spelling `dashboard_add_card` advertised, couldn't evaluate. An unknown aggregate is refused, and the description says `distinct`.
+- **`PATCH {"layout": null}` answered 200 and removed every card**, and a `null` inside the list was dropped along with its card. Both are refused.
+- **Linked-card options could be found only by sending bad values.** `list_dashboard_components` now names `publish`, `listen`, `style` and `thresholds` in `shared_options`, and `dashboard_add_card` says how to link cards.
+- **Archive and Share returned 500 on a row that had stopped validating** (a metric it draws went personal). Writing only bookkeeping columns skips the full check.
+- **A dashboard changing hands brought back the sharing a past owner chose.**
+- **A gauge's ceiling or floor of 0 was read as unset.**
+- **`this_month` / `this_year` were compared against all of last month without saying so.**
+- **A link channel with only one end was accepted silently**, so a typo in its name broke the click with no sign. `dashboard_add_card`, `dashboard_snapshot` and the board's `values/` name it in `warnings`.
+- **Groups of a choices column read their stored values** (`high`, `fail`); they read the labels (`High`, `Fail`), on charts and in `group_values`.
+- **Duplicating a dashboard shared with you failed on save** when it drew the owner's personal metrics, though Duplicate was offered. In the copy, such a card filters that metric's dataset itself (same filter, roll-up, format and colour rules); one over a hand-entered or rate metric is left out, and the form says how many of each.
+- **Another person's hand-entered metric read "—"** on a dashboard shared with you, as if nothing had been entered. It reads *restricted*, like other data you can't see.
+- **A member's card over a staff-only dataset listed that dataset's columns** in the refusal, and with a valid column it saved, then drew "no access". It is refused like a dataset that doesn't exist, as the builder already did. A member's dashboard holding such a card must drop it at its next edit (it never showed a number).
+- **A REST write dropped keys it doesn't take without a word** (`archived_at`, a misspelt field): the 200 read as "all applied". A create or update now lists them as `ignored`, only when there are some.
+- **REST and MCP couldn't archive.** `archived_at` was read-only and silently ignored, and `DELETE` destroys; an agent asked to archive did one or the other. Every owned kind (metric, card, dashboard, report, playlist, goal list) now takes `"archived": true` / `false` on update.
+- **The share dialog listed every account to any member** a letter at a time, staff included. Staff still search by any part of a name; anyone else finds a person by exact username. A person added, removed and added again is notified once.
+- **An all-time trend drew only its last 12 buckets**, labelled all time: a fortnight by day lost its first two days, ten weeks of data showed 12 bars. All time fits its grain to the data's span, so it now gets the same 400-bucket cap as any period.
+- **`dashboard_snapshot` gave a gauge no number**, though it is a one-number design; every single-value card now carries its `result`.
+- **`dashboard_share` with a username that doesn't exist answered `ok: true`** with only an `unknown` list; it also says so in `warning` (usernames are case-sensitive).
+- **The OpenAPI spec said nothing about a dashboard's `layout`** (`"layout": {}`). Every CRUD field's form help text is now its `description`, and the layout's names the cell keys, the three kinds of source, that a write replaces the whole list, and where the card types are listed.
+- **Sharing a dashboard with someone who can't read its cards answered `ok: true`**, and the person saw only dashes (the data was staff-only, or a rate over it). `dashboard_share` now answers `cant_read` (`{username: [card titles]}`) and a `warning` for each person added.
+- **A menu link to `/\host` drew as a page of this site.** A browser reads the backslash as a slash, so it went off-site with no external marker. It's refused.
+- **An app that ships default dashboards turned the framework's tests red** (29 failures for one `dashboard_defaults.py`): the after-migrate sync seeded every app's defaults into the test database. Test settings turn the sync off, and `SMALLSTACK_DASHBOARD_DEFAULTS_SYNC` is declared in `config/settings/smallstack.py`, settable from the environment.
+- **A heartbeat check the run's deadline reached before it started was written as a failure**, a false outage on a healthy endpoint, the same ones every run. It records nothing and reports `skipped`, and the order rotates. A feed source in the same spot says "not fetched" rather than "still running", and rotates too.
+- **Webhook deliveries no worker takes sat pending with the monitor up** (a worker started with `default,email` only). Past the grace period they trip it down. The docs' dev worker command is `db_worker --queue-name "*"`; a bare one leaves `email` and `webhooks` queued.
+- **`SMALLSTACK_ACCOUNTS_EMAILS_INLINE` was never read from the environment**, though UPGRADING's remedy for a deployment with no email worker is to set it, so sign-in codes stayed queued. An empty `EMAIL_TIMEOUT=` crashed settings import; it now takes the default, 10 seconds.
+- **A phone-width page scrolled sideways.** At 390px the top bar ran to 581px on every page, the dashboard header's controls stayed in one row, and the calendar's action cards sat side by side. The dashboards lists size by content on a phone, and every `.crud-table-wrap` scrolls.
+- **A dashboard's name broke over two lines beside empty space**, because the header's controls took as much room as they wanted. They keep to a column now, and Share and Edit layout match the buttons beside them.
+
+### Added
+- **Duplicate anything.** **Duplicate** on a metric's, dashboard's, report's, goal list's or playlist's page and in a card's builder opens the create form with the original's settings — the conditions, aggregate, period column, format, thresholds and tags of a metric; the type, metric, options and tags of a card; the layout, items, sections, periods and settings of the rest — named "(copy)", personal to you, and nothing is saved until you save. The copy gets its own key or a free slug from its name; the original is untouched. `?from=<key or slug>` on the create forms.
+- **Tags and archiving on every owned row.** Metrics, dashboards, cards, playlists, reports and goal lists take comma-separated **tags** in their forms (REST and MCP too), shown as chips on the Goals and Dashboards overviews; a chip narrows the overview to that tag (`?tag=`). **Archive** on a metric's, dashboard's, report's, goal list's or playlist's page (editors only) takes it out of every list and picker — overviews, CRUD lists, REST and MCP lists, the board editor, goal-add and rate pickers — while anything that draws it keeps working; **Restore** brings it back, and a CRUD list with `?archived=1` shows what's put away. An archived board or report no longer counts as using its metrics. Migration `smallstack_dashboards.0011_tags_archive` (two nullable/blank columns on six tables).
+- **Where each metric is used, and which aren't.** The Goals overview's metrics table has a **Used in** column ("2 boards, 1 report, 1 goal list"), sortable, with a **Not used** mark and a "N used nowhere" link (`?unused=1`) that shows only those, so the pile to clear is one click away. `usage_index(user)` works it out in one pass. Before a metric is saved from the dataset browser, the modal says when one already reads those rows that way, naming it, and lists the other metrics on the dataset (`same_metrics`).
+- **The dataset browser filters as you go, and makes metrics in place.** Filters apply as they change, with the row count at the right edge of the filter bar; Apply remains for a browser without scripts. **Make a metric** beside the count opens a modal with the filtered rows fixed: name it, say how the rows become a number, pick the period column, the format and who sees it, watch the value as you choose, save, then open it, make a card, or make another from the same rows. The roll-up's keep-as-card links go through the same modal and end on the component builder. The full metric page is a link away, prefilled. `dashboards/metrics/quick/` (`MetricQuickView`).
+- **One goal, week by week.** Every row of the week-over-week grid has a Trends button: a bar per week with its value over the 13 weeks up to the one shown, the last week's figure against the week before and the average before, the run it's on, and each week in a table. The same at `g/<slug>/goals/<goal id>/trends/?week=` as a page.
+
+### Changed
+- **A card filters a dataset of its own; a metric goes on a single stat.** The component builder's first step is where the numbers come from. *A dataset, filtered here* gives the card its own filter (the metric form's filter editor, the roll-up, the period column) and suits any design: one number, a split, a chart. *A saved metric* is a filtered result already rolled up to one number, for goals and thresholds, so it goes on the designs that show one number; a chart needs the rows, so it filters a dataset of its own. Picking a chart while on a metric switches to that metric's dataset with its filter copied in, and **Start from a metric's filter** does the same on request. Changing the dataset clears the column options and drill-down columns that aren't in the new one, and the builder says which. A dashboard's **Add card** offers a metric's number and the designs that draw nothing; splits and charts are built in the builder. REST and MCP take `dataset` + `filter_tree` + `agg`/`measure` + `period_field` on a card. Existing charts and grouped cards get a copy of their metric's definition (`0012_card_sources`) and no longer follow edits to the metric; a metric with no dataset (entered by hand, a rate) may still be charted as it is. See `UPGRADING.md`.
+- **Addresses are made from the name.** New dashboards, reports, playlists and goal lists no longer ask for an address: *Site health* becomes `site-health`, a second one `site-health-2`. Renaming never changes it, so links, embeds and wall screens keep working; the settings page shows it, and an administrator can change it on purpose (see *Only administrators change an address*). REST and MCP may still send a `slug` on create, or leave it out.
+- **A dashboard's controls are in its page header.** Updated / Refresh, Duplicate, Archive, Settings and Edit layout moved up beside the title (`includes/dashboard_controls.html`); only the period bar stays above the cards. `{% dashboard %}` is unaffected: it has always drawn cards without them.
+- **The components page opens on the gallery**; the table is one click away (`?display=library`). Components, Playlists and Goal lists have their own headers and descriptions in place of "Component records".
+- **"Past 7 days" is seven days.** The date preset on every filter bar and CRUD list now covers the 7 days ending today, as its name says; it used to reach back 8 and run into the future. Two periods join the vocabulary, `this_month` and `this_year` (the whole month or year, days to come included), so each quick preset on the dataset browser becomes the period that covers exactly the same days and a metric made from the browser counts what the browser showed.
+- **The week-over-week grid is tighter.** Column headings read both ends of the week ("Sep 7–13", "Sep 28 – Oct 4") instead of the Monday alone, the saved mark and the on-target count share one line, and the week, its line and Open · Trends sit on the same left edge as the values beneath. Rows are shorter.
+- **The pager is two rows.** Under every paged list, "Rows per page" sits at the left edge and "Showing x–y of n" at the right on one line, with the page controls centred beneath. On the dataset browser the **Save as metric** and keep-as-card links carry the accent so they stand out from the quiet row controls, and a long dataset description no longer pushes the CSV card under the text on a wide screen.
+- **A delivery reads as a receipt.** The newsletter delivery page (`blog/deliveries/<pk>/`) says what happened in a sentence (accepted, waiting, sending, rejected outright, gave up, skipped), lays out queued → claimed → sent with their times, shows the last error in full, and links to the issue, the blog and (for staff) the subscriber record. The framework field table is gone from that page. `Delivery` gains `verbose_name_plural = "deliveries"` (migration `smallstack_blog.0002_delivery_plural`, options only), so the list and breadcrumbs no longer say "Deliverys".
+- **One filter editor.** The ALL/ANY filter-tree editor moved out of the metric builder into a shared script, `datasets/js/filter-tree.js` (+ `filter-tree.css`), so any page that filters a dataset can mount it (`SmallStackFilterTree.create`). The metric form behaves as before.
+- **Clearer words.** A metric's *Period field* is **Date to count by**, and its empty choice says the number won't change over time. A repeating event's *Last day* says it's how long each one lasts, and *Repeats* starts on **Doesn't repeat**. On History, a number that can't exist at that length shows **n/a** rather than a red mark, and filling nothing says so. `goal_list_capture` takes `replace` with `fill`, to judge saved periods again after fixing a target, as `snapshot_goals --fill --replace` could. MCP descriptions now cover per-cadence `targets`, percent targets, `fill`'s limits and what `dashboard_snapshot` leaves out.
+- **The calendar opens on the Events calendar** when you've chosen nothing yet, so an entry you've just added is there. **None** still clears it, and a default saved view still wins.
+- **The period bar has This week and Last week**, for a weekly meeting, and **Last week now compares with the week before**: dashboards and goal lists opening on last week had no change column at all.
+- **The calendar's month and board chips show 24-hour times**, like its day panel, leaving room for the name.
+
+### Added
+- **Agent read-back and the last few UI-only actions.** `get_metric`, `get_dashboard`, `get_report`, `get_goal_list`, `get_playlist` and `get_component`, taking `key`/`slug` or `id` (as do their update and delete tools, via a new `mcp_lookup_field` on `CRUDView`); `goal_list_save_week` + `POST dashboards/api/goals/<slug>/weeks/<week>/save/`; `metric_rows` + `GET dashboards/api/metrics/<key>/rows/`; `metric_usage` (a look before a delete); `csv_url` on `report_values` and `?format=csv` on its REST route; `visibility` on read-backs; "did you mean" on an unknown tool. The evaluation routes are in the OpenAPI schema, the REST detail `GET` is advertised, and their 404s are JSON.
+- **A calendar on any page — `{% calendar_card %}` and the `calendar` dashboard
+  card.** The calendar counterpart of `{% metric_card %}` / `{% dashboard %}`:
+  name the calendars (keys, a list or a `SavedCalendarView`) and pick `month`,
+  `board` or the new `upcoming` list; the tag resolves access, loads
+  `/smallstack/calendar/embed/` lazily (or renders it now with `lazy=False`) and
+  navigates in place — the fragment's wrapper is `hx-boost`ed, so month arrows,
+  day cells and the board's toolbar swap the fragment without touching the host
+  page's URL. A viewer who may see none of the calendars gets nothing, as with
+  `{% dashboard %}`. The calendar app registers a **`calendar` card type** with
+  the dashboards registry from its `ready()` (the worked example of a downstream
+  `register_component_type`), with `calendars` / `mode` / `days` / `limit`
+  options; restricted viewers get the restricted card. Service:
+  `apps.calendar.embed` (`calendar_embed`, `embed_context`, `build_upcoming`);
+  fourth component `calendar/components/upcoming.html`. Skill: `calendar.md`.
+- **Goals (`GoalList`, migration `0007`).** Key numbers against their targets, in
+  titled sections, for reading down in an operations meeting. A goal is a metric or
+  a single stat card plus a target rule and an optional at-risk line, judged on
+  target, at risk or missed. Lists are shared or personal.
+  - **Meeting view:** `/smallstack/dashboards/g/<slug>/` opens with a summary (the
+    count, a bar, what needs attention), then each section's values, targets, distance
+    from target and change. `?period=` switches the period; `?present=1` drops the
+    site's chrome.
+  - **Editor:** sections and goals, moved by drag or ↑/↓, including across sections.
+  - **Add to goals:** a dialog on the metric page, form and list, and on single stat
+    cards in the components list and builder. Targets are prefilled from colour rules.
+  - **Elsewhere:** a `goals` dashboard card (up to 10 goals, optionally misses first),
+    goal lists as playlist slides (`{"goals": slug}`), a Goals section on the index, and
+    `ComponentType.single_value` so an app's own one-number card can be a goal.
+  - **Agents:** CRUD tools and REST, `goal_list_values`, `goal_list_add_goal`, and
+    `GET dashboards/api/goals/<slug>/values/`.
+- **Goal lists week by week (`GoalSnapshot`, migration `0008`).** The spreadsheet with a tab per week.
+  - **One week** (`g/<slug>/weeks/`): move with arrows or a picker; each goal shows its change from the week before.
+  - **Week over week:** goals down, eight weeks across, with a CSV download.
+    - **Sorting:** by goal, or by any week's value (`?order=goal`, `?order=-w2026-10-26`). Moving between weeks keeps the sort while that week is on screen, and "Back to the list's order" restores the sections. The CSV follows the sort.
+    - **Resizing:** columns resize, and the widths hold as you move between weeks.
+  - **Trends modal sorting:** sort by goal, this week's value, change against the week before, change against the average before, or run length (longest first). It sorts in place, offers "Back to the list's order", and its columns resize.
+  - **Trends:** a button on any week shows the weeks around it per goal: bars, change against the week before and against the average before, streak, best and worst week.
+  - **Saving:** every Monday the week just ended is saved with its values and targets as they were (`tasks.snapshot_goal_lists`; `manage.py snapshot_goals`). Editors can save the current week or fill in past weeks.
+  - **Agents:** `goal_list_weeks` (MCP) and `GET dashboards/api/goals/<slug>/weeks/`.
+  - **In playlists:** a goal-list slide can show its goals now, last week, or week over week (`{"goals": slug, "show": "week" | "weeks"}`).
+- **The goal list meeting view and the one-week view sort and resize.**
+  - **Sorting:** Goal (A to Z), Status (missed first) and Value sort each section's rows in place, so the sections stay in the order you set (`?order=`). The sort survives a period change, and "Back to the list's order" undoes it.
+  - **Resizing:** every column resizes, and the sections' tables keep their columns aligned. A widened table scrolls inside its card.
+  - **Unchanged:** slides and dashboard cards stay static.
+- **Tables sharing a resize key stay in step.** `table-resize.js` applies a resize or reset to every table on the page with the same `data-table-key`.
+- **Fixed:** on narrow screens the meeting view hid the Trend column instead of Change.
+- **Trends on goal lists.** Each goal shows its last six periods (weeks, months or quarters, following the list's period), each judged against the target, with a streak such as "Missed 3 weeks running". The trend also appears in `goal_list_values`.
+- **The component builder's drill-down columns are a sortable, resizable table.** Sorting by column, heading or format reorders the columns the drill-down and its CSV show, with a note, Undo and nothing changed until Save. Colour rules stay unsorted because the first match wins.
+- **Fixed: the metric form's "See them" rows sort and resize.** The headers had no address for an unsaved metric, so clicking one loaded the form page into the modal. They now sort by posting the unsaved metric again with an `order`, and the columns resize. Filters and colour rules stay as they are: a filter is a nested tree, and colour rules are first-match, so their order is their meaning.
+- **The dashboard form lists its cards.** A "Cards on this dashboard" table shows each card's name, design, metric, size and value, sortable and resizable. Values load as rows scroll into view; sorting by value works them all out. Sorting swaps only the table, so unsaved form edits are safe, and it never moves a card. A card whose metric is gone says so.
+- **The report form's rows are a sortable, resizable table.** Each row now shows Metric (with its label), Target and At risk. Sorting reorders the report's rows, with a note, Undo and nothing changed until Save; moving, adding or removing a row clears the sort.
+- **The goal list form's sections are sortable, resizable tables.** Each goal is now a row: Goal, Target, At risk, Period. Sorting reorders that section's goals, because the rows are the reading order; a note says so and offers Undo, nothing changes until Save, and moving, adding or removing a goal clears the sort. Resizing a column applies to every section.
+- **The playlist form's slides are a sortable, resizable table.** Sorting by slide, seconds or period reorders the slides themselves, because the rows are the play order. A note says so and offers Undo, nothing changes until Save, and moving a row by hand clears the sort.
+- **The Dashboards overview's sections are sortable, resizable tables.** The List view sorts dashboards by name, cards, opens on and updated (`?dash=`), and the Cards view has a Sort select. Playlists sort by name, round length and updated (`?playlists=`), and components by name, design, metric and updated (`?components=`). Each table sorts on its own. Sorting by anything other than name or updated loads that section's rows, only when asked.
+- **Fixed:** the Dashboards overview's Cards button did nothing from the List view when no other options were in the URL.
+- **The Goals overview's sections are sortable, resizable tables.** Goal lists sort by name, goals and updated (`?lists=`), metrics by name, source and value (`?metrics=`), and reports by name, movement and updated (`?reports=`). Each table sorts on its own, and the sorts and the period survive one another. A metric's value sorts the metrics shown (up to 24).
+- **Fixed:** the metrics filter box stopped working after a period change swapped it in place.
+- **Fixed:** at phone width, the Goals overview's header buttons and the weekly grid made the page scroll sideways.
+- **The reports list sorts by movement.** The movement summary ("▲ 2 up, ▼ 5 down") has its own Movement column. `?ordering=movement` puts the most fallen reports first and `-movement` the most risen; reports with nothing to compare go last. Sorting by movement evaluates every report and then pages the result (`reports.sort_by_movement`). Otherwise each row still loads as it scrolls into view.
+- **Targets on reports.** A report row can take a target and an at-risk line. Its values are then coloured on target, at risk or missed, a Target column appears, the CSV gains status columns, and REST/MCP values carry each status. The editor sets a target per row, or starts from the metric's colour rules.
+- **The component builder asks for a card's required choice instead of reporting it as an error.** An info card with no widget picked says "Choose a widget to see the card." The validation message no longer lists every widget key.
+- **Goals is its own area of the sidebar.**
+  - **Goals:** Overview, Goal lists, Metrics, Reports. The overview at `/smallstack/goals/` shows goal lists with live summaries, metrics with live values, and reports.
+  - **Dashboards:** Overview, My dashboards, Components, Playlists. Its overview now shows dashboards, playlists and saved cards.
+  - URLs are unchanged. Breadcrumbs for metrics, reports and goal lists now read "Goals".
+- **Nav items can match several paths.** `nav.register(active_prefix=...)` takes a tuple, for an area whose pages don't share one path.
+- **The component builder shows what a card takes from its metric.** It shows the format, unit and colour rules, marks anything the card overrides, and offers "Use the metric's" to reset it. Settings left alone follow later edits to the metric.
+- **My dashboards as a table.** A Cards/Table switch (`?view=table`); the table's
+  headers sort and its columns resize.
+- **Saved cards and a component builder (`Component`, migration `0006`).** A metric
+  is *what* number; a component is *how it's drawn*: a card type, its metric and the
+  type's options. The key is made from the name.
+  - **Builder:** `/smallstack/dashboards/components/new/` (Dashboards → Components)
+    lays out a palette of every registered card type, grouped. Designs the chosen
+    metric's data can't support are dimmed, with the reason. Each type's form is
+    drawn from its `options_schema`, with a live preview rendered by the same
+    `render_cell` a dashboard uses.
+  - **Placement:** dashboards place a card with `{"component": key}` (the editor's
+    Add card → Saved card). Every placement follows the card's edits; deleting the
+    card leaves the copies as ordinary cards.
+  - **Agents:** `create_component`, `card_preview`,
+    `dashboard_add_card {component}`, and `POST dashboards/api/card-preview/`.
+  - **The extension seam for charts:** `ComponentType` gains `group` (palette
+    section), `icon` and `media` (JS/CSS a card needs). `{% component_media %}`
+    loads `media` once on every page that shows cards. `cell_title(cell)` is the
+    title helper for card types.
+  - **Thresholds and styling on cards.** Single stats, grouped stats, and any app type
+    that sets `stylable=True` take:
+    - `options.thresholds`: the card's own colour rules, replacing the metric's
+      (`[]` = none);
+    - `options.style`: number format, unit, number size and colour, title size and
+      colour, and alignment, from a fixed vocabulary of theme tokens
+      (`components.CARD_STYLE`, no literal colours).
+
+    The builder's **Style it** step edits both, with a live preview. Helpers for
+    app types: `card_style(cell)`, `styled_value(...)`, and the `cs-…` CSS hooks.
+    `apps/website`'s Trend chart opts in as the reference:
+    - each bucket is coloured by the card's rules (else the metric's), and line
+      charts get a dot per bucket;
+    - a chosen colour paints the series and the headline;
+    - the format and unit apply to every bucket and the headline;
+    - success and muted states now colour bars too.
+  - **Info cards take colour rules and styling** (size, colour, title, alignment).
+    - Rules compare the widget's numeric `value`, else the headline's first number,
+      and replace the app's status colour.
+    - A placement's title now shows on the card: `smallstack/widgets/card.html`
+      reads an optional `ctx.title`.
+  - **Drill-downs.**
+    - **Design:** a `drillable` card (Single stat, Grouped stat, Trend chart) can
+      choose what its rows modal shows: up to 12 columns, each with a heading and a
+      format (number, compact, decimal, percent, currency, duration, date,
+      datetime, yes/no), a sort, and how many rows. The builder's **Drill-down** step
+      edits it; tap the number in the preview to try it.
+    - **Export:** every rows modal has **Download CSV**, with the same columns, up
+      to 10,000 rows.
+    - **Sorting:** clicking a column header re-sorts the rows on the server
+      (`?order=`; the modal shows only the first rows of all that match). A
+      second click flips the direction, dates and numbers start newest or largest
+      first, and the CSV follows the chosen order.
+    - **Resizing:** columns can be dragged wider or narrower, resized from the
+      keyboard, or double-clicked to fit, through the framework's
+      `table-resize.js`, as CRUD and dataset tables use it. Widths are remembered
+      per card.
+- **The metric page's "Rows behind the number" table sorts and resizes.**
+  - **Sorting:** the drill-down's header sorting (`?order=`, newest or largest
+    first for dates and numbers, a second click flips it), swapping the page in
+    place. Changing the period keeps the sort.
+  - **Resizing:** columns resize through the framework's `table-resize.js`, with
+    widths remembered per metric.
+- **The metrics, dashboards and reports lists are sortable, resizable tables.**
+  Their library views keep what they showed (a metric's filter in words, data
+  source, use and live value; a dashboard's picture, cards and health; a report's
+  columns and movement), as `crud-table`s.
+  - **Sorting:** Name and Updated sort on all three, and metrics also by Data
+    (`?ordering=`, `{% sortable_th %}`). The metrics period bar and the sort keep
+    each other.
+  - **Resizing:** every column resizes with `table-resize.js`.
+  - The old row-list CSS is gone.
+- **The components list is a sortable, resizable table.**
+  - **Sorting:** Name, Design (type), Metric and Updated sort through the CRUD
+    list's `?ordering=` (`metric` joins `ordering_fields`).
+  - **Resizing:** every column resizes with `table-resize.js`.
+  - **Placed on** shows how many dashboards use each card.
+  - A card you can't edit shows its name as text, not a dead link.
+- **The playlists list is a sortable, resizable table.** Its library view keeps the
+  dashboard strip and Play, but as a `crud-table`.
+  - **Sorting:** Name, Each (seconds per dashboard) and Updated sort through the
+    CRUD list's `?ordering=` (`{% sortable_th %}`; `seconds` joins
+    `ordering_fields`).
+  - **Resizing:** every column resizes with `table-resize.js`.
+- **The report table sorts and resizes.**
+  - **Sorting:** clicking Metric sorts A–Z and clicking a period column sorts
+    largest first; a second click flips it. Rows without a number (a deleted
+    metric, restricted, an error) stay last.
+  - **How:** server-side (`?order=metric` / `-c0` …;
+    `reports.report_order` / `sort_report`), swapped in place, with a "Back to
+    the report's order" link. Both CSV links follow the order.
+  - **Resizing:** columns resize through the framework's `table-resize.js`, and
+    the readings still wrap.
+- **The dataset browser sorts in place.** A header click swaps just the rows
+  card (with the address following), like its pager, instead of reloading the
+  page. Its columns were already resizable.
+    - **Carrying the design:** it travels on the rows URL (`?drill=`), validated
+      against the dataset, so it follows the card onto any page.
+    - **For app types:** set `drillable=True` and use `with_drill()` /
+      `drill_params()`.
+  - **Built-in labels:** Single stat, Grouped stat, Info card, Note.
+    `apps/website`'s Trend chart is the downstream example, under Charts.
+- **The dashboards overview stays fast as things grow.** Each section shows the most
+  recently changed few (8 dashboards, 6 playlists, 8 reports, 24 live metrics),
+  with an "All N" link to the paged list. Counts use `count()`, so the page runs
+  the same queries at 10 dashboards or 10,000. Dashboards switch between Cards
+  and a denser List (`?boards=list`), and the period links keep that choice.
+
+### Changed
+- **Playlist slides carry a `kind`** (`dashboard` or `goals`) in `playlist_slides` and
+  the REST/MCP payloads. A goal slide's `dashboard` is `None`, so code reading
+  `slide["dashboard"]` needs to check `kind`. Playlist lists now count "slides".
+- **Name sorting is case-insensitive on every list.** Text columns now sort with
+  lowercase and capitals together ("alpha" beside "Alpha", not after "Zeta" as
+  a byte-order sort put it), with the raw value as a tie-break so the order stays
+  stable.
+  - **Where:** `crud._apply_ordering_fields`, the one place `?ordering=` becomes a
+    query, so it covers the HTML CRUD lists, the REST API and MCP, the dataset
+    browser, the drill-down modal and the metric page's rows.
+  - **Which columns:** Char, Text, Slug, Email and URL fields count as text,
+    including through foreign keys (`user__username`) and text-typed annotations.
+    Numbers, dates and foreign-key ids sort as before.
+- **The dashboards forms no longer ask people to write JSON or a key.**
+  - **Metric key:** made from the name on create (`open_urgent_tickets`, then
+    `_2` if taken) and shown read-only. It can't change afterwards: REST/MCP
+    explain with a 400 instead of quietly breaking the dashboards, reports and
+    templates that use it. Agents can still choose a key on create.
+  - **The "edit as JSON" boxes are gone** from the metric, report and playlist
+    forms; their visual editors write hidden fields. A filter an agent wrote
+    with conditions the builder can't show (NOT) is kept as-is, with a "Start
+    over" option.
+  - **Dashboard settings** no longer show or post the layout (cards are
+    arranged on the dashboard), so a save can't overwrite a layout changed
+    meanwhile.
+  - REST and MCP still read and write all of it.
+- **The dataset browser and the datasets index page in place** with the
+  framework pager. `{% render_paginator %}` gains:
+  - `hx_select` and `push_url`, for pages that answer with full HTML;
+  - `page_param`, `reset` and `label`, so one page can carry several lists,
+    each paging under its own parameter (the index's `fpage` / `ppage`), with
+    one "Rows per page" that starts them all again at page 1.
+
+  The tag now builds its links in Python, and the datasets app's hand-built
+  pager (`_index_pager.html`, `views._pager`) is gone.
+
+### Added
+- **Dashboard playlists.** A `Playlist` (migration `0005`) shows dashboards in
+  sequence: paged by hand like slides, or rotated on a timer for a wall screen.
+  - **Items** are JSON an agent writes in one call:
+    `[{"dashboard": slug, "seconds"?, "period"?}]`. A shared playlist holds only
+    shared dashboards.
+  - **Viewers** see only the dashboards they may open. A renamed or deleted
+    dashboard is followed.
+  - **The player** has previous, play/pause and next, one step per dashboard
+    (which fills as its time runs), full screen, and keyboard shortcuts. It pauses
+    on its own when the tab is hidden or someone clicks into a card. It fetches
+    the next slide ahead, and works without JavaScript.
+  - **Links control it:** `?slide=N&play=1|0&seconds=N&loop=1|0&kiosk=1`, and
+    the address follows the current slide.
+  - **Components** for downstream apps: `playlists.py` (`playlist_slides`,
+    `player_options`, `player_context`, `playlist_payload`), the player include
+    plus `playlist.js`, and `{% playlist "slug" play=True %}`.
+  - **SmallStack pages** built on them: `/smallstack/dashboards/playlists/`
+    (list, and a form with an ordered dashboard editor) and
+    `/smallstack/dashboards/p/<slug>/`.
+  - **Agents:** CRUD over REST/MCP, `GET dashboards/api/playlists/<slug>/slides/`
+    and the `playlist_slides` tool.
+- **Dashboards has a submenu** in the sidebar and topbar: Overview, My dashboards,
+  Metrics, Playlists. The dashboards index has a Playlists section (each one's
+  dashboards, how long a round takes, Play).
+- **`CRUDView.page_sizes` — a "Rows per page" choice for any CRUD list.** Set
+  `page_sizes = PAGE_SIZE_CHOICES` (`apps.smallstack.pagination`: 15, 25, 50, 100)
+  and `?per_page=` picks one, defaulting to the first. The framework pager
+  (`{% render_paginator %}`) shows the control, swapping the list in place and
+  keeping the choice in the address; it stays visible even when everything
+  fits on one page. Custom displays paginate with
+  `crud_config.page_size_for(request)` (the built-in, dashboards and calendar
+  displays already do); unset, a list pages at `paginate_by` as before. Every
+  dashboards-app list uses it: dashboards, playlists, metrics and reports.
+- **The dataset browser and the datasets index show 15 rows a page by default**,
+  with a "Rows per page" choice (15 / 25 / 50 / 100, `?per_page=`) in the pager
+  that keeps the filters and starts again at page 1. On the index, it sits in
+  each section's pager (it was a "Per page" control above the sections,
+  defaulting to 10) and sets both sections.
+- **The dashboard page header shows its cover** (the photo or the generated one)
+  at 16:9 beside the title.
+- **The `/smallstack/` page is now an editable dashboard.** With `apps.dashboards`
+  installed, it is the shared, staff-only system dashboard
+  (`Dashboard.system_key="smallstack"`, migration `0003`). Staff can drag, resize
+  and remove the cards, and add metric, trend and note cards next to them.
+  Publishing cards is unchanged: `dashboard.register(...)` and
+  `explorer_dashboard_widgets` still feed it.
+  - `boards.sync_widgets` places each newly published widget once, sized by its
+    `span`, and records it in `offered_widgets`, so a card someone removes stays
+    removed.
+  - A widget whose app is disabled leaves the page and returns with the app.
+  - The system dashboard can't be deleted or made personal.
+  - The core seam is `apps.smallstack.dashboard.set_dashboard_page(view)`. Without
+    `apps.dashboards`, the page is the old fixed widget grid.
+  - `boards.system_dashboard(key, …)` lets a downstream page pin its own dashboard
+    the same way.
+  - A dashboard's period bar now shows only when one of its cards reads a period.
+  - The `widget` card type is labelled "App card".
+- **A dashboard can have a picture, and there's a My dashboards page.**
+  `Dashboard.cover_image` / `cover_alt` (migration `0002`) are set on the settings
+  page (thumbnail with Replace / Remove, previewed before upload) and show on the
+  index, the dashboards list and beside the dashboard's title. A dashboard without
+  one gets a generated cover instead of the old layout miniature: its initials
+  over a chart motif (bars, line, ring or tiles; `{% board_cover %}`, stable per
+  slug), drawn in theme colours so it fits every palette. Uploads get a server-chosen name under
+  `dashboards/covers/`, are checked as images (≤ 5MB), and a replaced, cleared or
+  deleted dashboard's file is removed after the commit. Agents set it through
+  `POST /smallstack/dashboards/api/boards/<slug>/picture/` (multipart; CSRF-checked
+  for a session caller) or the `dashboard_set_picture` MCP tool (base64).
+  **My dashboards** (`/smallstack/dashboards/mine/`, in the sidebar and the user
+  menu) lists your
+  dashboards, newest change first, each with its "needs attention" line: the
+  personal ones you own and the shared ones you made. Metrics, dashboards and
+  reports now record `created_by` (migration `0004`; personal rows are backfilled
+  from their owner), set on every surface that creates one and returned by REST
+  and MCP. Unlike `owner` it survives sharing. `OwnedQuerySet.mine(user)` is the
+  query behind the page; `owned_by(user)` is personal rows only.
+- **Dashboards — metrics, grid dashboards and KPI reports (`apps/dashboards/`, label
+  `smallstack_dashboards`).** A framework layer over `@dataset` for numbers that
+  matter, built by hand or by an AI agent. A **Metric** is a stored filter tree
+  over a dataset plus an aggregate (count / distinct / sum / avg / min / max), a
+  format, thresholds (→ the stat-card states) and an optional `period_field` a
+  dashboard or report period narrows. One evaluation seam
+  (`apps.dashboards.metrics.evaluate`) feeds every surface. A **Dashboard** is a
+  12-column grid (gridstack.js 13, vendored, MIT) of lazily loaded htmx cells with a
+  period bar, optional auto-refresh and an edit mode (drag, resize, Add card, Remove,
+  Save). A **Report** is metrics × periods on screen and as CSV. Four card types ship:
+  `metric` (the exact `{% stat_card %}` markup), `metric_group` (top-N groups + Other,
+  each drilling into its rows), `widget` (any existing `/smallstack/` DashboardWidget)
+  and `text` (hardened markdown). `register_component_type()` is the seam for an app
+  on top (charts and so on); SmallStack itself ships no chart library. The **metric
+  builder** edits the AND/OR filter tree visually from the dataset schema, with a live
+  preview. `{% metric_card "key" %}` puts a saved metric on any page. All three models
+  are CRUDViews (HTML + REST + MCP). The custom MCP tools are `metric_preview` (dry run:
+  value, row count, every problem), `metric_value`, `list_dashboard_components`,
+  `dashboard_add_card`, `dashboard_remove_card`, `dashboard_snapshot` and
+  `report_values`, with matching JSON routes under `/smallstack/dashboards/api/`.
+  Ownership is personal or shared, and only staff share. A card shows its number only
+  to users the metric's dataset admits. `manage.py seed_dashboards` builds a demo.
+  Master switch `SMALLSTACK_DASHBOARDS_ENABLED` (default on). Skill:
+  `docs/skills/dashboards.md`.
+- **Dataset filter trees — nested AND/OR, stored, strict.** Every dataset read path
+  (`rows` / `count` / `series` / `scalar` / `queryset`) takes `filter_tree=`, REST takes
+  `?filter_tree=<json>`, and the `query_dataset_<key>` MCP tools take a `filter_tree`
+  object. Ops: `= != > >= < <= between in contains isnull period`, plus word aliases.
+  Unlike the tolerant flat filters, a tree **raises** `FilterTreeError` (REST 400),
+  listing every path-addressed problem, rather than dropping a condition. A dropped
+  condition on a stored KPI silently widens the number, the fail-open shape v0.21.11
+  fixed for computed columns. Ported from call_stats with that one deliberate change.
+  Also added: `ds.validate_filter_tree()`, `describe_filter_tree()` (the one-line
+  reading) and `and_trees()`.
+- **Relative periods** (`apps/datasets/dateranges.py`): `today`, `yesterday`, `wtd`,
+  `pwtd`, `mtd`, `pmtd`, `qtd`, `pqtr`, `ytd`, `prev_year`, `last_<N>`, `next_<N>`. They
+  resolve at query time, so a saved "Month to date" stays current, and date filters
+  advertise them in `schema()`.
+- **Dataset `schema()` additions**: each filter's `ops` and `column_type`, a date
+  filter's `periods`, the dataset's `aggs` and `capabilities` (`measure`, `dimension`,
+  `dimension2`, `date`; `apps/datasets/capabilities.py`). A `distinct` aggregation.
+- **`@dataset(access="staff"|"auth")`** (default `staff`) declares who may read a
+  dataset through in-app surfaces that evaluate it for a user (metrics, dashboards,
+  reports). `apps.datasets.registry.user_may_read()` checks it.
+- **Dashboards UI round**:
+  - **Every page redesigned** on the theme tokens: index, dashboard, metric, report, the three
+    forms, the three lists, the delete pages and modals, and the rows modal.
+  - **One shared previous-period comparison** (`compare_with_previous`, "vs all of last month"
+    for a still-running period) on metric pages, dashboard cards, period-aware lists, the rows
+    modal, and `metric_value`/REST.
+  - **Lazy digests:** a report's up/down movement, and a dashboard's cards needing attention.
+  - **Every value drills into its rows**, including an unsaved metric's
+    (`POST dashboards/preview-rows/`).
+  - **Live report preview** (`POST dashboards/api/report-preview/`).
+  - **Metric delete impact** with same-transaction cleanup of cards and report rows.
+- **Changing the period no longer reloads the page.** On the dashboards index, the metrics list,
+  a metric's page and a dashboard, choosing a period used to reload everything: the page blanked,
+  scrolled (the index jumped to an anchor), and a dashboard's cards all collapsed to "Loading…"
+  and regrew.
+  - Now only what depends on the period refreshes, via htmx with `hx-push-url`, so the URL updates
+    and Back works.
+  - On a dashboard, each card keeps its current value until the new one arrives, and auto-refresh
+    continues on the new period.
+  - Focus returns to the newly selected period. The links keep real `href`s as the no-JS fallback.
+  - Measured in a browser: the period bar doesn't move during the switch on any of the four pages.
+- **Template `<style>` blocks moved into stylesheets.** 53 blocks (about 7,200 lines across 52
+  templates) are now `<app>/css/templates/<template>.css`, linked where each block was so the
+  cascade order is unchanged.
+  - Identical blocks share a file. The 400/403/404 pages share `errors.css`.
+  - `500.html` keeps its CSS inline on purpose (it must render without static files), and so
+    does the Swagger page's brand-logo rule.
+  - Verified by pixel-diffing all 191 pages before and after: no visual change. The only
+    differences were live data, confirmed by a second identical run.
+  - New tests fail on a new inline `<style>` block, and on any `{% static %}` path a template
+    references that doesn't exist.
+  - `style="…"` attributes are unchanged, and `style-src` still allows them.
+- **The CSP's `script-src` drops `'unsafe-inline'`** (in settings, on the API docs pages and on
+  the MCP consent page). An injected `<script>` or `onerror=` no longer runs.
+  - All 65 inline `<script>` blocks moved into static files that mirror the template tree
+    (`<app>/js/templates/<template>.js`), loaded where each block was so timing is unchanged.
+  - Server values reach those scripts as `data-` attributes on their own tag
+    (`document.currentScript.dataset`); lists use JSON data blocks.
+  - The pre-paint theme snippet, copied into ten page shells, is now one
+    `smallstack/js/theme-init.js`. `window.SMALLSTACK` comes from `smallstack/js/config.js`.
+  - The bulk-update fragment's Python-built `<script>` became a delegated listener.
+  - Verified in a real browser with the policy enforced: 191 pages showed no CSP violations or
+    script errors, and an injected inline handler and inline script were blocked and reported.
+  - New tests fail on an inline executable `<script>` in any template, and on `'unsafe-inline'` or
+    `'unsafe-eval'` in `script-src`.
+  - Fixed along the way:
+    - **The bulk-update dialog's field checkboxes never revealed their inputs.** The fragment's
+      `<script>` was inserted with `innerHTML`, which doesn't execute scripts.
+    - **A deleted CRUD row faded out but was never removed,** and an error was logged, because the
+      modal cleared its row reference before the fade finished.
+  - *Upgrade note:* the browser now blocks inline `<script>` blocks and `on…=` handlers in your
+    own templates. Move them as described in `docs/skills/templates.md`. As a stopgap, add
+    `"'unsafe-inline'"` back to `CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"]` in your
+    settings.
+- **No inline event handlers anywhere in the templates.** About 150 `onclick` / `onsubmit` /
+  `onchange` / `onkeydown` / `onmouseover` handlers in 55 templates are gone, covering CRUD
+  tables, delete and bulk modals, backups, heartbeat, runbook, help, telemetry, tokens, webhooks,
+  search, activity, calendar, blog and the starter pages. Behaviour is declared with data-
+  attributes and carried out by delegated listeners in `theme.js`:
+  - Generic behaviours: `data-confirm` (forms, links, buttons; checked in the capture phase so a
+    "no" stops htmx too), `data-autosubmit`, `data-copy` / `data-copy-text`, `data-scroll-to`,
+    `data-toggle-class`, `data-activate-in` and `data-keyclick`.
+  - Page functions: `data-ss-action="name"` plus `data-ss-args` (JSON, with `"$this"` and
+    `"$event"`). It calls only functions a script registered on `SmallStack.actions`, so markup
+    can't reach arbitrary globals. The `data-ss-` prefix avoids colliding with Stimulus-style
+    `data-action`.
+  - The focus button's hover moved from JavaScript into CSS. `event.stopPropagation()` handlers
+    that guarded nothing were removed; the bulk-select code listens for `change`, and links inside
+    `<summary>` navigate either way.
+  - `dashboard.js` dropped its own copy and auto-submit handlers in favour of these.
+  - New tests in `test_template_hygiene.py` fail on any inline handler, on a `data-ss-action` no
+    script registers, and on a template value in `data-ss-args` without `|escapejs`.
+  - Documented in `docs/skills/templates.md`.
+  - Fixed along the way: the starter page's demo "action card" called a `doAction()` that never
+    existed.
+- **`{% dashboard "slug" %}`** shows a saved dashboard on any page (`period=`, `title=False`,
+  `lazy=False`):
+  - The cards, cell endpoint, access checks and drill-down modal are the dashboard page's own.
+  - The layout is plain CSS grid, and the cards stack in reading order on a phone.
+  - It renders nothing for a viewer who may not open the dashboard.
+  - `boards.board_embed()` gives the same structure to a page that wants its own markup.
+  - `/starter/dashboard/` is a working example.
+- **`trends.metric_trend`**: a metric per day, week, month, quarter or year across a period, as
+  the series any chart reads. It's also available at `GET dashboards/api/metrics/<key>/trend/` and
+  as the `metric_trend` MCP tool.
+  - Every bucket is present: empty ones read 0 for count/sum and are gaps for averages.
+  - The running bucket is flagged `partial`.
+  - Each point carries the `[lo, hi)` filter for its rows.
+- **`Dataset.series(..., grain=)`** is call_stats' time-grain grammar, lifted into SmallStack's
+  datasets: calendar buckets with Monday weeks and `lo`/`hi` bounds.
+- **A reference chart card, registered by the project, not by SmallStack.** `apps/website/dashboard_cards.py`
+  adds a "Trend chart" card through `register_component_type`.
+  - It draws bars or a line in theme tokens; each bucket is a labelled button that opens its rows,
+    and screen readers get a table.
+  - SmallStack's built-in card types stay stat and roll-up cards. Delete the line in
+    `WebsiteConfig.ready()` to ship without the chart card.
+- **The "Add card" dialog renders any registered type's `options_schema`** (choice, integer/number,
+  text, boolean). Before this, a downstream type could be placed over MCP or REST but not from the
+  dialog.
+- **Filter descriptions read ISO datetimes as local dates or times** ("Timestamp ≥ 2026-10-19").
+- **Declarative stat modal**:
+  - Opening the global drill-down modal no longer needs inline JavaScript. `data-stat-modal="Title"`
+    on any element opens it with that title (an `<a>` doesn't navigate), and `data-stat-modal-close`
+    or the backdrop closes it. One delegated listener in `theme.js` handles both.
+  - `{% stat_card %}`, the modal's own close button and backdrop, and the CRUD table's
+    `confirm_modal` delete now use it. `openStatModal` / `closeStatModal` stay on `window`, so
+    existing inline callers keep working.
+  - This is a step toward dropping `'unsafe-inline'` from the CSP's `script-src`. The remaining
+    inline handlers are in runbook, the backups page, the explorer example and the generic CRUD
+    delete confirmation.
+- **Dashboards templates carry no inline JavaScript and no hand-numbered `?v=` cache busting.**
+  `{% static %}` already emits content-hashed names in production
+  (`CompressedManifestStaticFilesStorage`). The metrics list's period-carry script moved into
+  `dashboards/js/dashboard.js`, which now attaches its document listeners once even when htmx
+  re-executes it. `tests/test_layering.py` checks every dashboards template for both.
+- **`CRUDView.view_mixins = {Action.DELETE: [MyMixin], …}`** is the supported way to customise one
+  generated HTML view. The mixins are ordinary Django mixins placed between the auth mixins and the
+  generated base, so they use `super()`. It replaces overriding `_make_view` and assigning functions
+  onto the class it returns. Dashboards and calendar have moved over; usermanager and tokenmgr still
+  use the old pattern, which keeps working.
+- **HTML create/edit forms get `user=`** whenever their `__init__` accepts it, the same rule REST,
+  MCP and `sc` already followed (`form_bridge.build_form`). Blog and calendar dropped their copies
+  of that injection.
+  *Upgrade note:* a downstream form that takes `user` now receives it on the HTML views without a
+  `_make_view` patch. An existing patch still works; it just becomes redundant.
+- **`apps.smallstack.api.authenticate_api_request`** is the public name for the Bearer-or-session
+  check that custom JSON views use. `_authenticate_api_request` remains as an alias.
+- **Dashboards service layer**:
+  - The logic behind the pages has moved out of `views.py` into building-block modules: `periods`,
+    `comparison`, `reports`, `boards` and `previews`, with metric wording added to `metrics`.
+  - Pages, REST, MCP, template tags and list displays now all call those modules, and none of them
+    imports another. Before this, MCP imported its logic from the REST module, and REST, the
+    template tags and the displays imported from the views.
+  - `tests/test_layering.py` enforces the import direction.
+  - The unsaved-metric rows route moved from the CSRF-exempt API to a session route that requires
+    a CSRF token: it is now `POST dashboards/preview-rows/`.
+- **`Dataset` public helpers** for apps that group a dataset's queryset themselves:
+  `aggregate_expression(agg, measure)`, `column_label(name)`, `column_labels()`,
+  `value_labels(dimension, rows)` (previously the private `_fk_label_map`), and the module-level
+  `round_value`. `apps.smallstack.dashboard.widget_url` is the public name for `_resolve_url`.
+- **`CRUDView.on_delete(request, obj)`** is a hook called just before `obj.delete()` on every delete
+  surface: the HTML delete view, HTML bulk, REST, REST bulk and MCP `delete_*`. It runs inside the
+  delete's transaction, so a failed delete rolls back its side effects. The dashboards metrics CRUD
+  uses it to remove a deleted metric's cards and report rows, which means REST and MCP deletes no
+  longer leave "metric no longer exists" cards behind.
+- **Grouped dashboard cards** show each group's change from the previous period, and their groups'
+  threshold states count in the "needs attention" digests.
+- **`confirm_modal` on a CRUD delete action** (set from `row_actions`): TableDisplay loads the view's own
+  delete confirmation into the global stat modal over htmx instead of the generic "Are you sure?" box. The view
+  answers an `HX-Request` GET with a fragment. It's opt-in, so other tables are unchanged. The dashboards metrics
+  table uses it to show which dashboards and reports a delete would break.
+- **`describe_dataset` MCP tool**: a dataset's `schema()` for an agent, gated by that
+  dataset's own `mcp_access`.
+
+### Fixed
+- **Tests no longer leak CRUDView registrations into each other.**
+  - A CRUDView subclass registers itself for its model when defined. A
+    throwaway one a test made for `BackupRecord`, which has no real CRUDView,
+    stayed registered for the rest of the run.
+  - The backups dataset then linked rows through routes that don't exist, so
+    `apps/calendar`'s point-events test failed depending on which files ran
+    first.
+  - The root `conftest.py` now restores `CRUDView._registry` after every test,
+    after loading the URLconf once so real CRUDViews are never rolled back.
+    `test_crud_registry_isolation.py` pins it.
+- **MCP create/update tools no longer advertise file fields.** A JSON-RPC argument
+  can't carry a file and the form reads uploads only from `request.FILES`, so a
+  string sent for an `ImageField` was silently dropped. File fields are now left
+  out of the generated write schema; reads still return the file's URL.
+- Report columns now keep the order you chose. The grouped period chips submitted in group order,
+  which made "this month vs last month vs YTD" compare this month with the year.
+- The metric builder broke on a metric whose stored filter is a single condition, not a group.
+- `test_widget_reports_endpoint_count` asserted `"0" not in headline` and so failed
+  on any two-digit count ("20 endpoints"); it now checks the count is positive.
+- **Dataset browser: Apply and Roll up no longer undo each other.** The filter
+  bar and the roll-up controls were two forms, each carrying a hidden snapshot of
+  the other's state, so picking a new group-by and clicking Apply reverted the
+  roll-up, and editing a filter then clicking Roll up reverted the filter. They
+  are now one form (the roll-up controls attach with `form="ds-form"`), either
+  button submits the whole page state, the current sort survives a re-submit,
+  and Clear drops the filters but keeps the roll-up.
+- **A timed calendar entry ending on a date (no end time) crashed the day column.**
+  `date` cannot be formatted with `H:i`; the page 500'd with that day selected.
+  `CalendarEvent.timed_end` now guards the end time in the day column and the
+  upcoming list.
+- **`/smallstack/blog/` 404'd.** The blog console is a set of CRUDViews under that
+  prefix with no route for the prefix itself, yet every doc named it as the console
+  path. It now redirects to the posts list, the way the webhooks and scheduler
+  consoles land on theirs.
+- **Native date pickers were invisible on the dark theme.** The calendar glyph in
+  `<input type="date">` rendered near-black on the dark field and the popup it
+  opened was white. `components.css` now sets `color-scheme: dark` on date /
+  datetime-local / time / month / week inputs under `[data-theme="dark"]`, next to
+  the existing rule for `<select>`. The SLA and maintenance pages, which each
+  patched this locally, use the shared rule.
+
 ## [0.29.0] - 2026-10-31
 
 ### Fixed
@@ -2659,7 +3538,15 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.32.2...HEAD
+[0.32.2]: https://github.com/emichaud/django-smallstack/compare/v0.32.1...v0.32.2
+[0.32.1]: https://github.com/emichaud/django-smallstack/compare/v0.32.0...v0.32.1
+[0.32.0]: https://github.com/emichaud/django-smallstack/compare/v0.31.0...v0.32.0
+[0.31.0]: https://github.com/emichaud/django-smallstack/compare/v0.30.3...v0.31.0
+[0.30.3]: https://github.com/emichaud/django-smallstack/compare/v0.30.2...v0.30.3
+[0.30.2]: https://github.com/emichaud/django-smallstack/compare/v0.30.1...v0.30.2
+[0.30.1]: https://github.com/emichaud/django-smallstack/compare/v0.30.0...v0.30.1
+[0.30.0]: https://github.com/emichaud/django-smallstack/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/emichaud/django-smallstack/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/emichaud/django-smallstack/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/emichaud/django-smallstack/compare/v0.27.0...v0.27.1

@@ -4,7 +4,7 @@ CRUDView is SmallStack's declarative class for generating Django CRUD views from
 
 ## Overview
 
-The pattern: define a model, configure displays (or a table class), and a CRUDView config. CRUDView generates views, URL patterns, forms, breadcrumbs, and context collision protection.
+The pattern: define a model and a CRUDView config. CRUDView generates the views, URL patterns, forms, breadcrumbs and a sortable, resizable list table, and, when you switch them on, the REST API and MCP tools for the same model.
 
 ## File Locations
 
@@ -12,7 +12,7 @@ The pattern: define a model, configure displays (or a table class), and a CRUDVi
 apps/smallstack/
 ├── crud.py                # CRUDView, Action enum, base view classes
 ├── displays.py            # Display protocol: ListDisplay, DetailDisplay, FormDisplay
-├── tables.py              # DetailLinkColumn, BooleanColumn, ActionsColumn
+├── templatetags/crud_tags.py  # {% crud_table %}: the list table (sorting, widths, row actions)
 ├── mixins.py              # StaffRequiredMixin and other access mixins
 └── templates/smallstack/crud/
     ├── object_list.html       # Generic list template
@@ -67,20 +67,33 @@ This generates:
 |--------|------|---------|---------|
 | `model` | Model class | required | The Django model |
 | `fields` | list | required | Fields for auto-generated forms |
+| `list_fields` | list | `fields` | The list table's columns |
+| `link_field` | str | None | The column that links each row to its detail page (or its edit page when there's no DETAIL action) |
 | `url_base` | str | model name | URL prefix (e.g., `"manage/widgets"`) |
-| `paginate_by` | int | None | Rows per page. When unset, HTML views are unpaginated; API endpoints fall back to 25 |
-| `mixins` | list | `[]` | View mixins applied to all views |
-| `displays` | list | `[]` | List of display protocol classes for list view |
+| `paginate_by` | int | `25` | Rows per page, on the HTML list and the API |
+| `page_sizes` | tuple[int] | `()` | Opt-in "Rows per page" choice on the HTML list: `page_sizes = PAGE_SIZE_CHOICES` (`apps.smallstack.pagination`, 15/25/50/100). `?per_page=` picks one (anything else → the first, which becomes the default); the framework pager shows the control. A custom display paginates with `crud_config.page_size_for(request)` |
+| `mixins` | list | `[]` | View mixins applied to all views (e.g. `[StaffRequiredMixin]`) |
+| `model_permissions` | bool | `False` | Also require the user's Django model permission (view / add / change / delete) on every surface: pages, bulk actions, REST, MCP, `sc --user`. Adds to `mixins`; see **Model permissions** |
+| `enable_history` | bool | `False` | A **History** page per row (`<pk>/history/`, linked from the detail page) listing its `LogEntry` audit trail. Opt-in: it names who edited a row to everyone who can open it |
+| `view_mixins` | dict | `{}` | Extra mixins for one action's view, e.g. `{Action.DELETE: [MyDeleteMixin]}` (see **Overriding View Behavior**) |
+| `displays` | list | `[]` | List displays to switch between. Empty: the built-in table |
 | `detail_displays` | list | `[]` | List of display protocol classes for detail view |
-| `table_class` | Table class | None | django-tables2 Table for list view (legacy, still works) |
+| `list_accessories` | list | `[]` | Panels drawn above the list toolbar (`ListAccessory` instances): stats, a tag bar |
+| `field_transforms` | dict | `{}` | How a field renders in lists and details (see **Field Transforms**) |
+| `bulk_actions` | list | `[]` | Opt in to row checkboxes: `[BulkAction.DELETE, BulkAction.UPDATE]` |
 | `form_class` | Form class | auto | Custom ModelForm |
 | `enable_api` | bool | `False` | Generate REST API endpoints alongside HTML views (warns if no mixins) |
 | `actions` | list | all 5 | Which CRUD actions to generate |
 | `queryset` | QuerySet | `model.objects.all()` | Base queryset for all views |
-| `search_fields` | list | `[]` | Fields for `?q=` text search (API only) |
-| `filter_fields` | list | `[]` | Fields for query-param filtering (API only) |
+| `search_fields` | list | `[]` | Fields for `?q=` text search: the list page's search box and the API |
+| `filter_fields` | list | `[]` | Fields for query-param filtering: the list page's filter dropdowns and the API |
+| `ordering_fields` | list | sortable `list_fields` | Fields allowed in `?ordering=` |
 | `filter_class` | FilterSet | None | Custom FilterSet class (API only) |
 | `export_formats` | list | `[]` | Export formats, e.g. `["csv", "json"]` (API only) |
+| `enable_mcp` | bool | `False` | Generate MCP tools (`list_*`, `get_*`, `create_*`, …) for AI clients |
+| `column_widths` | dict | None | `{field: "140px" \| "20%" \| "auto"}` for the table view. Unset: compact types (dates, numbers, booleans, choices) get a px default, the `link_field` 240px, the rest share what's left, never below 140px: the table gets a minimum width and its wrapper scrolls rather than crush a column. Prefer px; with `table-layout: fixed` a % column out-bids the unsized ones for the slack |
+| `wrap_fields` | list | None | Table columns whose text wraps onto more lines instead of clipping with an ellipsis, e.g. `["title"]` for a long name column. Give it room too (`column_widths = {"title": "40%"}`): an unsized column bottoms out at 140px and a long title there becomes a tall stack of short lines. The rest stay one line with a tooltip while clipped; the table's "Wrap text" tool still wraps them all |
+| `column_labels` | dict | None | `{field: "Updated"}`: a table header shorter than the field's verbose name |
 | `breadcrumb_parent` | tuple | None | `(label, url_name)` for parent breadcrumb |
 | `related_tabs` | `list\|None\|False` | `None` | Related object tabs on detail page. `None`=auto-discover, list=explicit, `False`=disabled |
 | `related_tabs_exclude` | list | `[]` | Accessor names to exclude from auto-discovery |
@@ -94,8 +107,7 @@ Displays control how data renders in list and detail views. CRUDView and Explore
 
 | Class | Name | Description |
 |-------|------|-------------|
-| `TableDisplay` | `table` | Basic HTML table with field transforms and pagination |
-| `Table2Display` | `table2` | django-tables2 sortable table (requires `table_class`) |
+| `TableDisplay` | `table` | The built-in table: sortable, resizable columns, field transforms, pagination |
 | `CardDisplay` | `cards` | Card grid — zero-config key-value layout using `list_fields` |
 | `AvatarCardDisplay` | `cards` | Card grid with avatar + title + subtitle + optional pill |
 | `CalendarDisplay` | `calendar` | Month-grid calendar — events placed on date cells (supports single-date and date-range events) |
@@ -163,18 +175,6 @@ Display templates are standalone fragments with their own `<style>` — no base 
 </div>
 ```
 
-## Column Types (django-tables2)
-
-Used with `Table2Display` or `table_class`. Not needed when using `TableDisplay` or custom displays.
-
-| Column | What It Does |
-|--------|-------------|
-| `DetailLinkColumn` | Makes cell value a clickable link. `link_view="update"` or `"detail"` |
-| `BooleanColumn` | Renders `True` as checkmark, `False` as dash |
-| `ActionsColumn` | Edit (pencil) and delete (trash) icon buttons |
-
-All three take `url_base` — must match CRUDView's `url_base`.
-
 ## Actions
 
 | Action | URL Pattern | View Type |
@@ -185,7 +185,7 @@ All three take `url_base` — must match CRUDView's `url_base`.
 | `Action.UPDATE` | `url_base/<pk>/edit/` | UpdateView |
 | `Action.DELETE` | `url_base/<pk>/delete/` | DeleteView |
 
-Common: skip DETAIL and link directly to edit via `DetailLinkColumn(link_view="update")`.
+Common: leave out `Action.DETAIL`; the `link_field` column then links straight to the edit page.
 
 ## URL namespaces (`app_name` in your `urls.py`)
 
@@ -204,7 +204,7 @@ CRUDViews** (simplest). Use globally-unique URL names instead:
 urlpatterns = [
     # No app_name = "knowledge" line.
     path("featured/", FeaturedView.as_view(), name="knowledge-featured"),
-    *KnowledgeCRUDView.urlpatterns(),
+    *KnowledgeCRUDView.get_urls(),
 ]
 ```
 
@@ -217,7 +217,7 @@ collisions are worth it):
 app_name = "knowledge"
 urlpatterns = [
     path("featured/", FeaturedView.as_view(), name="featured"),
-    *KnowledgeCRUDView.urlpatterns(),
+    *KnowledgeCRUDView.get_urls(),
 ]
 
 # apps/knowledge/views.py
@@ -254,30 +254,44 @@ def _get_template_names(cls, suffix):
 
 ## Overriding View Behavior
 
-Use `_make_view` to inject custom logic:
+First reach for a classmethod hook (`get_list_queryset`, `can_update`, `on_form_valid`,
+`on_delete`, `row_actions` — see **CRUDView Hooks** below): those apply to REST and MCP as
+well as the HTML page. When only one HTML view needs different behaviour, write an ordinary
+Django mixin and list it under its action in `view_mixins`:
 
 ```python
-@classmethod
-def _make_view(cls, base_class):
-    from apps.smallstack.crud import _CRUDListBase
+from apps.smallstack.crud import Action, CRUDView
 
-    view_class = super()._make_view(base_class)
 
-    if base_class is _CRUDListBase:
-        def get_queryset(self):
-            qs = super(view_class, self).get_queryset()
-            q = self.request.GET.get("q", "").strip()
-            if q:
-                from django.db.models import Q
-                qs = qs.filter(Q(name__icontains=q))
-            return qs
+class WidgetDeleteMixin:
+    """Show what deleting would break; answer htmx with a modal fragment."""
 
-        view_class.get_queryset = get_queryset
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["used_by"] = self.object.dependents.all()
+        return context
 
-    return view_class
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request"):
+            return ["myfeature/widget_confirm_delete_modal.html"]
+        return super().get_template_names()
+
+
+class WidgetCRUDView(CRUDView):
+    model = Widget
+    view_mixins = {Action.DELETE: [WidgetDeleteMixin]}
 ```
 
-Available base classes: `_CRUDListBase`, `_CRUDCreateBase`, `_CRUDDetailBase`, `_CRUDUpdateBase`, `_CRUDDeleteBase`.
+The mixin sits after the auth mixins and before the generated base, so `super()` reaches the
+framework's behaviour. Keys are `Action.LIST`, `CREATE`, `DETAIL`, `UPDATE`, `DELETE`.
+
+**Don't** override `_make_view` and assign functions onto the class it returns. Older apps
+(usermanager, tokenmgr) still do. It works, but it isn't idiomatic Django, it breaks
+`super()`, and it hides the override from anyone reading the class.
+
+**The form gets the user for free:** the HTML create/edit views pass `user=request.user` to a
+form whose `__init__` accepts `user`, the same rule REST, MCP and `sc` follow
+(`form_bridge.build_form`). Don't inject it yourself.
 
 ## The Management Page Pattern
 
@@ -317,21 +331,23 @@ If your model name collides with Django's reserved context names (`user`, `reque
 
 | Page | URL | Demonstrates |
 |------|-----|-------------|
-| **User Manager** | `/manage/users/` | Full CRUDView + search + stat card drilldowns + custom edit form |
-| **Backups** | `/backups/` | Title bar + stat cards + tabbed content |
-| **Activity Requests** | `/activity/requests/` | Title bar number cards + tabbed tables2 |
+| **User Manager** | `/smallstack/manage/users/` | Full CRUDView + search + stat card drilldowns + custom edit form |
+| **Backups** | `/smallstack/backups/` | Title bar + stat cards + tabbed content |
+| **Activity Requests** | `/smallstack/activity/requests/` | Title bar number cards + tabbed tables |
 
 ## CRUDView Hooks
 
-Classmethod hooks for injecting custom logic without `_make_view`:
+Classmethod hooks for injecting custom logic (they apply on every surface — HTML, REST, MCP):
 
 | Hook | Purpose |
 |------|---------|
 | `get_list_queryset(qs, request)` | Filter/annotate the list queryset — the read scoper |
 | `get_detail_queryset(qs, request)` | Scope a SINGLE-object fetch; defaults to `get_list_queryset` |
 | `on_form_valid(request, form, obj, is_create)` | Callback after successful create/update — **every** transport |
-| `can_update(obj, request)` | Per-object update permission check |
-| `can_delete(obj, request)` | Per-object delete permission check |
+| `on_delete(request, obj)` | Runs before a delete, on every surface, in the delete's transaction |
+| `can_update(obj, request)` | Per-object update permission check (also hides the row's edit icon) |
+| `can_delete(obj, request)` | Per-object delete permission check (also hides the row's delete icon) |
+| `row_actions(obj, request, default_actions)` | The icons a row shows; return a changed list to add or drop some |
 
 `get_list_queryset` is the one read scoper: the HTML list, the REST list, the
 `list_*` MCP tool and the list accessories all route through it. Single-object
@@ -346,6 +362,48 @@ you don't want on a detail load (e.g. approvals' lazy expiry sweep); keep the
 `on_form_valid` fires from the HTML create/update views **and** REST, MCP and
 bulk update. (Before v0.20.2 the web path skipped it, so a hook used to stamp an
 owner or file an approval had a data-integrity hole reachable from the UI.)
+
+## Model permissions
+
+`model_permissions = True` makes every surface ask Django's permission system
+before acting, the check Django admin makes:
+
+| Surface | Needs |
+|---|---|
+| list, detail, related tab, history, field preview; REST `GET`; `list_*` / `get_*` tools; `sc ls/get --user` | `view` (or `change`) |
+| create page; REST `POST`; `create_*`; `sc new --user` | `add` |
+| edit page, bulk update; REST `PUT`/`PATCH`; `update_*`; `sc set --user` | `change` |
+| delete page and modal, bulk delete; REST `DELETE`; `delete_*`; `sc rm --user` | `delete` |
+
+Buttons, row actions, bulk actions and related tabs follow the same answers, so
+a page doesn't offer what would answer 403. A delete that would cascade into
+rows of an admin-registered model the user may not delete is refused too
+(`check_cascade_permission`). Superusers hold every permission. The flag adds to
+`mixins` (a `StaffRequiredMixin` view still needs staff first) and to the
+per-row hooks (`can_update`, `can_delete`, `check_object_permission`), which
+still decide row by row. Off by default, because a member-facing view's users
+usually hold no model permissions. `has_model_permission(request, action)` is
+the hook to override for a rule of your own.
+
+## Audit trail
+
+The create, edit and delete pages write a Django `LogEntry` (create and edit
+record which fields changed, in Django admin's format), so the trail is the same
+whichever surface made the change: REST, MCP, `sc` and the bulk views already
+wrote one. Set `enable_history = True` for a per-row History page listing them.
+Don't also add `AuditMixin` to a CRUDView, or log the write in `on_form_valid`:
+it would be recorded twice.
+
+## What a delete removes
+
+The delete confirmation, both the page and the modal the list and detail pages
+open, lists what Django's deletion collector says goes with the row: how many
+rows of each model cascade and, for staff, a few of them by name (other users
+see counts only). A row protected by a `PROTECT` or `RESTRICT` foreign key gets
+no Delete button and a list of what protects it. The modal fetches this from the
+delete URL with an `X-SmallStack-Delete-Summary` header; a custom delete template
+can include `smallstack/crud/includes/delete_summary.html` with `deletion` in
+context.
 
 ## API Endpoints
 
@@ -471,7 +529,7 @@ The default templates use HTMX for lazy loading, but since the context provides 
 ## Quick Checklist
 
 - [ ] Model in `apps/<appname>/models.py`
-- [ ] CRUDView with `displays` configured (or `table_class` for sortable tables)
+- [ ] CRUDView with `list_fields` and a `link_field` (add `displays` only for a view beyond the table)
 - [ ] URLs using `*MyCRUDView.get_urls()`
 - [ ] URL include in `config/urls.py`
 - [ ] Sidebar link (see navigation skill)

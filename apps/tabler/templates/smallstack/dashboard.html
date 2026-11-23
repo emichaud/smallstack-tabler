@@ -30,7 +30,7 @@
 
 {% block content %}
 {% if widgets %}
-<div class="row row-deck row-cards">
+<div class="row row-deck row-cards dashboard-widget-grid">
     {% for w in widgets %}
     <div class="col-sm-6 col-lg-4">
         <a href="{{ w.url }}" class="card card-link{% if w.data.status == 'degraded' %} border-warning{% elif w.data.status == 'down' %} border-danger{% endif %}">

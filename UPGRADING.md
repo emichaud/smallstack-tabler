@@ -8,6 +8,416 @@ listed, no downstream migration is required.
 
 ---
 
+## v0.32.0 — the Access app
+
+**Who is affected:** every downstream project (a new app and a middleware line), and any project
+with its own copy of `config/settings/base.py` or `apps/smallstack/site_urls.py`.
+
+**What changed.** `apps/access` records every change to access and provides `/smallstack/access/`.
+It needs an app entry, a middleware entry and a migration.
+
+**Migration.**
+
+1. `config/settings/base.py`: add `"apps.access",` to `INSTALLED_APPS` after `"apps.usermanager",`.
+2. `config/settings/base.py`: add `"apps.access.context.ActorMiddleware",` to `MIDDLEWARE` right after
+   `"django.contrib.auth.middleware.AuthenticationMiddleware",`. Without it, changes made on a page are
+   recorded with no actor (as `system`); nothing else breaks.
+3. If your `apps/smallstack/site_urls.py` diverged from upstream, add
+   `path("access/", include("apps.access.urls")),` beside the User Manager's include.
+4. `make migrate`. This creates two tables and SmallStack's five shipped groups (Access reviewer, User
+   manager, Log reader, Approver, Token manager), each with its permissions and no members. Their
+   creation is itself recorded as the first events.
+
+**Then look at the overview once.** It will likely report findings on day one (more superusers than
+needed, dormant accounts, permissions granted directly). Those describe your existing data, not a
+regression; the page says what to do about each.
+
+**The User Manager now asks for Django's user permissions.** Creating an account at
+`/smallstack/manage/users/` needs `accounts.add_user`, editing one (including the staff and active
+flags, a reset link and an unlock) needs `accounts.change_user`, and deleting needs
+`accounts.delete_user`; only a superuser may change a superuser's account. Staff without those
+permissions still see the pages, read-only. If people on your team managed accounts there with the
+staff flag alone, add them to the shipped **User manager** group (`add_user` + `change_user`) — or
+give `delete_user` directly to whoever should delete accounts — before you deploy.
+
+**Inviting by email now asks for the same permission.** `/smallstack/accounts/invite/` needs
+`accounts.add_user`, and ticking *Grant staff access* there also needs `accounts.change_user`. The
+same goes for the *Staff* box on the User Manager's create page and Explorer's user create form: an
+`add_user` holder without `change_user` creates non-staff accounts only. Staff
+who sent invites with the staff flag alone belong in the **User manager** group.
+
+**Adding someone to a group now needs every permission the group grants.** On the Access pages, REST,
+approvals and the CLI, an actor holding `accounts.change_user` may add a member only to a group whose
+permissions they hold themselves (superusers: any group). Removal is unchanged.
+
+**Explorer now asks for model permissions on accounts, groups, permissions, API tokens, the change
+history and the Access app's models, even with `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` off.** A staff
+account that browsed or edited those in Explorer with no permissions now gets a 403 there. Give the
+people who should keep that access the shipped group that fits (User manager, Token manager, Log
+reader, Access reviewer) or the `view_*` / `change_*` permissions directly. A ModelAdmin's
+`explorer_model_permissions = False` no longer turns the check off for these models. Explorer also
+follows a ModelAdmin's own `has_*_permission` overrides now, so a ModelAdmin that refuses deletes
+refuses them in Explorer too, and an API token's owner is read-only once the token exists.
+
+**Explorer also asks those overrides per row.** For each row's edit and delete (the buttons, the
+edit and delete pages, bulk actions, REST and MCP), Explorer calls the ModelAdmin's
+`has_change_permission(request, obj)` / `has_delete_permission(request, obj)` with the row, as Django
+admin does, whatever `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` says. Check your own ModelAdmins: one
+that overrides either method with a rule on `obj` now has it enforced in Explorer, and one that just
+returns `super()...` brings Django's model-permission check with it, so staff without
+`change_<model>` / `delete_<model>` lose edit or delete on that model in Explorer. If a rule was only
+meant for Django admin, check `request.resolver_match.namespace` or move it to `get_readonly_fields()`;
+if staff need the access, grant the permission. A method that raises refuses (fails closed).
+
+**Minting an API token for someone else now needs `smallstack.add_apitoken`.** At
+`/smallstack/tokens/create/`, staff without it mint only for themselves. With it (the shipped **Token
+manager** group), they may pick an active non-superuser holding no permission they lack; only a
+superuser mints for a superuser or chooses the `auth` level. If someone on your team minted tokens for
+service accounts, put them in Token manager, or have a superuser mint those.
+
+**Revoking someone else's API token now needs `smallstack.change_apitoken`.** (The Access user
+page's *Revoke tokens & sign out* also accepts `accounts.change_user`, the User manager's, since that
+role can deactivate the account anyway; it can't be used on your own account.) Anyone still revokes
+their own; staff who revoked other accounts' tokens with the staff flag alone belong in **Token
+manager**, and only a superuser revokes a superuser's token. Every revoke is now a `token_revoked`
+access event; if you recorded revocations yourself, you now record them twice.
+
+**The `/api/auth/` account endpoints are bounded by the token's owner.** An auth-level token now needs
+an owner who is active staff holding `accounts.change_user` to update, deactivate or reset a password
+(and `accounts.add_user` to register); only a superuser's token changes a superuser. A server that
+manages accounts with an auth-level token owned by a plain staff account gets 403: put that account in
+the shipped **User manager** group. A token's `access_level` can no longer be edited after it is made;
+mint a new token instead.
+
+**Changing another account's password, email or username needs every permission that account holds.**
+The User Manager (edit and *Send link*), `/api/auth/users/<id>/password/`, a `PATCH` of `email` on
+`/api/auth/users/<id>/`, Django admin's password form and user form, and Explorer's user form now refuse
+it (with the missing permissions named) unless the actor holds all of the account's permissions or is a
+superuser. A User manager can still edit the name and the staff and active flags of a wider account.
+Have a superuser (or someone holding the account's permissions) reset the passwords of privileged
+accounts; a server that rotates service-account passwords over the API needs a token owner holding
+everything those accounts hold.
+
+**Reading accounts, access and other accounts' tokens now needs a `view` permission, not just staff.**
+The Access pages, REST reads and MCP read tools, the User Manager's list and pages (not its Timezones
+dashboard, which stays open to staff and shows names and time zones only), `GET /api/auth/users/` and user search hits need `accounts.view_user`; seeing other
+accounts' API tokens on the Token Manager needs `smallstack.view_apitoken` (everyone still sees their
+own). Superusers are unaffected. **Staff who relied on the staff flag to read these get a 403** (and no
+longer see the Access and Users links): put auditors in **Access reviewer**, people who manage accounts
+in **User manager**, and people who look after tokens in **Token manager** before you deploy. A script
+reading `/smallstack/api/access/` or `/api/auth/users/` needs its token's owner to hold `view_user`. A
+custom group that should read these needs those permissions added.
+
+**Reset and invite tokens are redacted from the activity log and the captured logs.** Until now
+`RequestLog.path` held every opened password-reset and invite link in full, readable by any staff
+account at `/smallstack/activity/`. `make migrate` runs `activity.0005` and `telemetry.0002`, which
+replace the token in rows already stored (`/accounts/reset/MQ/***/`); nothing to configure. **The
+migration does not invalidate the links themselves.** A reset or invite link issued before the upgrade
+stays valid until it is used or expires (`PASSWORD_RESET_TIMEOUT`, one day in SmallStack's settings), and anyone who
+read it from the log before the upgrade can still use it. If staff you don't fully trust could read the
+activity log, rotate: ask the holders of privileged accounts to change their password (that voids every
+outstanding link for the account), or wait out `PASSWORD_RESET_TIMEOUT` before relying on the fix. Copies
+of the log outside the database (backups, exported CSVs, a log shipper) are not touched. A URL parameter
+of your own that carries a one-time credential should be named `token`, so the request log redacts it.
+**If you keep your own `gunicorn.conf`,** add `logger_class = "apps.smallstack.gunicorn_logging.RedactingLogger"`
+to it: without it the server's access log (stdout, `kamal app logs`) keeps printing reset links in
+full. A proxy in front (kamal-proxy, nginx, a CDN) logs paths itself; limit who reads those logs.
+
+**If your project records access changes itself** (a signal on `user.groups`, a custom audit of the
+staff flag), it now does so twice; keep yours only if it records something these events don't.
+
+---
+
+## v0.31.0 — CRUDView pages write their own audit entries
+
+**Who is affected:** a CRUDView that records its web writes itself: `AuditMixin` added through
+`view_mixins`, or a `log_action()` call in `on_form_valid` or `on_delete`.
+
+**What changed.** The generated create, edit and delete pages now write the `LogEntry` for each
+write, as REST, MCP, `sc` and the bulk views always did. Your own call now duplicates it.
+
+**Migration.** Remove the `AuditMixin` from `view_mixins`, or the `log_action()` call from the hook.
+To find them: `grep -rn "AuditMixin\|log_action(" apps/ | grep -v tests`. A hook that logs something the
+framework doesn't (a custom message, a related object) can stay.
+
+**Also new, nothing to migrate:** `model_permissions = True` (Django model permissions on every
+surface, off by default), `SMALLSTACK_EXPLORER_MODEL_PERMISSIONS` for Explorer (off by default),
+`enable_history = True` for a per-row History page (on for Explorer models), and a delete confirmation
+that lists what cascades. A custom `object_confirm_delete.html` keeps working; include
+`smallstack/crud/includes/delete_summary.html` in it to show the cascade.
+
+---
+
+## v0.30.3 — SmallStack's loggers are named by module
+
+**Who is affected:** anything keyed on SmallStack's logger names: a `LOGGING` entry of your own, a log
+alert or saved search, a `grep smallstack.mcp` in a runbook, `TELEMETRY_CAPTURE_LOGGERS`.
+
+**What changed.** The framework apps logged as `smallstack.<app>` (`smallstack.webhooks`,
+`smallstack.mcp.views`, …). They now use `logging.getLogger(__name__)`, so the names are module paths:
+`apps.webhooks.services`, `apps.mcp.views`, `apps.mcp.oauth_views`. The `apps` logger already configured in
+settings covers them all. MCP's own entry (INFO, so it doesn't log every tool it registers) is now
+`apps.mcp`. A `smallstack` logger is still configured, for code of your own written to the old convention.
+
+**Migration.**
+
+- In your `LOGGING`, rename a `smallstack.mcp` entry to `apps.mcp`, and any other `smallstack.<app>` entry
+  to `apps.<app>`.
+- Update log searches and alerts the same way; old records in `/smallstack/logs/` keep their old names.
+- Your own code on `getLogger("smallstack.…")` keeps working; `getLogger(__name__)` is the convention.
+
+## v0.30.3 — the design tokens move to `core.css`; embeds on your own theme
+
+**Who is affected:** forks that edited token values in `static/smallstack/css/theme.css`, and projects
+whose own base template (not `smallstack/base.html`) shows SmallStack embeds.
+
+**What changed.**
+
+- The `:root` and `[data-theme="dark"]` custom properties and `.sr-only` moved from `theme.css` to a new
+  `core.css`, which `theme.css` imports first. The drill-down modal, help-bubble and stat-list rules moved
+  to the end of `components.css`. Pages on `smallstack/base.html` load the same CSS as before (computed
+  styles checked unchanged).
+- New tags in `theme_tags`: `{% smallstack_assets %}` (head) and `{% smallstack_modal %}` (end of body).
+
+**Migration.**
+
+- **Edited tokens in `theme.css`?** The merge conflicts there. Keep upstream's `theme.css` and redo your
+  edits in `core.css`, or better, in a palette (`docs/skills/modify-palettes.md`), which upgrades never touch.
+- **Embeds on your own base template:** add the two tags (see Step 2 of `adding-your-own-theme.md`). Remove
+  any `{% include "smallstack/includes/stat_modal.html" %}` you added by hand; `{% smallstack_modal %}`
+  renders it once.
+
+## v0.30.2 — a theme built from the theming guide doesn't save the light/dark choice
+
+**Who is affected:** projects with their own base template (Bootstrap, Tailwind, a bought theme) built
+from `adding-your-own-theme.md` or `theme-scenarios.md`. Pages on `smallstack/base.html` are fine.
+
+**Symptom.** A signed-in user toggles to light on one of your pages; the next page load is dark again.
+The guide's config left out the URLs `theme.js` saves to, so the toggle changed only the browser's copy,
+and the profile's saved theme wins on load.
+
+**Migration.** Copy the two script blocks from the guide's Step 2 into your base template:
+
+- `theme-init.js` in `<head>`, with `data-user-theme` / `data-user-palette` so a new browser paints the
+  saved theme first.
+- `config.js` with `data-theme-url="{% url 'theme_preference' %}"` and
+  `data-palette-url="{% url 'palette_preference' %}"`, then htmx and `theme.js`. Keep
+  `hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'` on `<body>`; the save is a POST.
+
+Either replaces an inline `<script>` theme block, which the CSP refuses anyway unless you kept the
+`'unsafe-inline'` stopgap. `grep -rn "window.SMALLSTACK = {" templates apps` finds an old setup.
+
+## v0.30.1 — SmallStack's demo pages move to `apps/showcase`; error pages become app defaults
+
+**Who is affected:** every project, once. This is the merge that stops `apps/website/`, the error
+pages and `README.md` conflicting on every later release.
+
+**What changed.**
+
+- The demo pages left `apps/website/` for a new app, **`apps/showcase/`** (namespace `showcase`):
+  about, getting started, prompts, both platform pages, the starter pages, `/components/` and the
+  public `/search/`. Their URLs are unchanged; their names went from `website:about` to
+  `showcase:about` (and so on). Their templates and static moved with them (from
+  `templates/website/`, `templates/starter*`, `smallstack/pages/{about,getting_started,starter}_*`
+  and `static/website/` + `static/starter/`). `apps/website/` keeps the home page, `base.html` and
+  the chart card types (`dashboard_cards.py`).
+- The 400/403/404/500 pages moved from `templates/` to `apps/smallstack/templates/`, and
+  `errors.css` to `static/smallstack/css/templates/errors.css`. A `templates/404.html` of your own
+  now overrides the default without upstream ever shipping that path.
+- `README.md` is short and stable; SmallStack's description is `docs/smallstack.md`.
+
+**Migration.**
+
+- **Conflicts on files you rewrote** (`apps/website/views.py`, `urls.py`, `templates/website/*.html`,
+  `templates/40x.html`, `README.md`): keep yours. Upstream deleted or shrank them; nothing you keep
+  there is overwritten again.
+- **Links to the moved pages:** `grep -rnE "website:(about|getting_started|prompts|platform_|starter|components|search)" apps templates`
+  finds any left in your own templates. Point them at `showcase:…`, or use
+  `{% url 'showcase:about' as u %}{% if u %}…{% endif %}` so they survive deleting the app.
+- **Your own error pages** linking `website/css/templates/errors.css`: point them at
+  `smallstack/css/templates/errors.css`.
+- **Don't want the demo pages:** delete `apps/showcase/`, `"apps.showcase"` from `INSTALLED_APPS`
+  and its `include()` from `config/urls.py`. Keep them out on later merges (the conflict table in
+  `docs/skills/integration-workflow.md` says how).
+
+## v0.30.1 — a dataset filter value that won't parse is refused
+
+**Who is affected:** code or links that send a dataset a flat filter it can't read:
+`?created_at__gte=2026-13-45`, an unknown `__period` key, a non-number on a numeric column.
+
+**What changed.** Such a value used to be dropped, so the request returned every row. It now
+raises `ValueError` from `rows()`/`series()`/`scalar()`/`cells()`, a 400 over REST, and the
+dataset browser shows no rows with "These filters can't be applied". A blank value still means no
+filter.
+
+**Migration.** Check callers that build filter values themselves; `Dataset.filter_problems(filters)`
+lists what a set of filters would refuse without running a query. Each schema filter's `lookups`
+names the suffixes it takes.
+
+## v0.30.0 at a glance — what changes a build coming from 0.29
+
+Each line is one thing to check. The sections below have the details.
+
+- **CSP: `script-src` has no `'unsafe-inline'`.** Inline `<script>` blocks and `on…=` handlers in
+  your own templates stop running. See *inline scripts are blocked* below.
+- **A new app, `apps.dashboards`, is in `INSTALLED_APPS`:** a nav item (on by default), MCP tools,
+  14 migrations, and the shipped defaults synced after every migrate. See *dashboards arrive* below.
+- **Webhooks get their own queue and worker:** `webhooks` in `TASKS`, `WORKER_WEBHOOKS` in the
+  entrypoint, `SMALLSTACK_WEBHOOK_QUEUE`.
+- **Invite and sign-in-code emails are queued;** `EMAIL_TIMEOUT` now defaults to 10 seconds.
+  `SMALLSTACK_ACCOUNTS_EMAILS_INLINE` keeps the old in-request send.
+- **Cards over a dataset carry their own source** (migration `0012_card_sources`), and only
+  administrators change a dashboard's address.
+- **New settings, all with working defaults:** `SMALLSTACK_DASHBOARDS_ENABLED`,
+  `SMALLSTACK_DASHBOARD_DEFAULTS_SYNC`, `SMALLSTACK_ACCOUNTS_EMAILS_INLINE`,
+  `SMALLSTACK_WEBHOOK_QUEUE`, `SMALLSTACK_FEEDS_MAX_CONCURRENT_FETCHES`,
+  `HEARTBEAT_MAX_CONCURRENT_CHECKS` (8, endpoint checks probed in parallel) and
+  `HEARTBEAT_RUN_DEADLINE_SECONDS` (50, a probe still running this long counts as down).
+
+## v0.30.0 — inline scripts are blocked
+
+**Who is affected:** any project whose own templates carry an inline `<script>` block or an
+`onclick="…"` (or any `on…=`) handler.
+
+**What changed.** The CSP's `script-src` is `'self'` with no `'unsafe-inline'`, in settings and on
+the API docs pages. The browser refuses inline code and logs the blocked line in the console; the
+page still renders, so the symptom is a control that does nothing. Every SmallStack template moved
+its code to static files. Four tests guard the policy: `test_csp_script_src_allows_no_inline_script`
+and the inline script, handler and `<style>` sweeps in `apps/smallstack/test_template_hygiene.py`.
+
+**Migration.**
+
+- **Size it.** From v0.30.1, `manage.py template_hygiene` lists every inline script,
+  handler and style block by file and line. On 0.30.0 itself, grep:
+
+  ```bash
+  grep -rnE --include='*.html' '<script\b[^>]*>' apps templates \
+    | grep -vE 'src=|type="(application/(ld\+)?json|text/template|importmap)"'   # inline blocks
+  grep -rnE --include='*.html' " on[a-z]+=[\"']" apps templates                  # handlers
+  ```
+- **Move them** as `docs/skills/templates.md` describes: scripts to static files with server values on
+  data- attributes, handlers to `data-confirm` / `data-autosubmit` / `data-ss-action`.
+- **Stopgap:** add `"'unsafe-inline'"` back to `CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"]`.
+  On 0.30.0 the four tests above then fail, because they sweep your templates too; skip them in your
+  `conftest.py` until you take v0.30.1. From v0.30.1 they follow the policy in
+  force: with the stopgap, only SmallStack's templates are swept, and the settings test skips.
+- **A step between:** django-csp's nonce (`csp.constants.NONCE` in `script-src`,
+  `nonce="{{ request.csp_nonce }}"` on a block you can't move yet). A browser that sees a nonce
+  ignores `'unsafe-inline'`, and a nonce can't cover an `on…=` handler, so move the handlers first.
+
+## v0.30.0 — dashboards arrive (a new app in `INSTALLED_APPS`)
+
+**Who is affected:** every project, since `apps.dashboards` is in the bundled `INSTALLED_APPS`.
+
+**What changed.** The app (label `smallstack_dashboards`) adds metrics, dashboards, reports, goal
+lists and playlists at `/smallstack/dashboards/`, a nav item, MCP tools, and 14 migrations. After
+every migrate it creates and updates the defaults apps ship (`dashboard_defaults.py`), never
+overwriting an edited one. With it installed, the `/smallstack/` page is an editable dashboard.
+
+**Migration.**
+
+- Merging your own `INSTALLED_APPS`: keep `"apps.dashboards"` and run `make migrate`.
+- Don't want it yet: set `SMALLSTACK_DASHBOARDS_ENABLED=False`. The nav item, routes and MCP tools go
+  away, while the app stays installed so turning it on later needs no schema change.
+- Don't want the defaults synced on migrate (a deploy that migrates on boot, say): set
+  `SMALLSTACK_DASHBOARD_DEFAULTS_SYNC=False` and run `manage.py dashboard_defaults` when you choose.
+
+## v0.30.0 — webhooks get a queue and a worker of their own
+
+**Who is affected:** deployments using the bundled `docker-entrypoint.sh`, and
+projects that override `TASKS`.
+
+**What changed.** Outbound webhook deliveries run on a new `webhooks` task
+queue when `TASKS` lists it (the bundled `base.py` does). The entrypoint now
+starts one extra inline worker for that queue (`WORKER_WEBHOOKS`, default 1),
+and the main worker skips it. That is one more Python process in the web
+container, roughly 60 to 80 MB.
+
+**Migration.**
+
+- Your own `TASKS` setting without `webhooks`: nothing breaks, deliveries stay
+  on `default`. Add `"webhooks"` to `QUEUES` to get the isolation.
+- Tight on memory: set `WORKER_WEBHOOKS=0` to run everything on one worker,
+  as before.
+- A separate worker role or container with `--queue-name "*"` still delivers
+  webhooks. To isolate them there, see the commented examples in
+  `config/deploy.yml` and `docker-compose.yml`.
+
+## v0.30.0 — invite and sign-in-code emails are queued; SMTP times out
+
+**Who is affected:** production deployments that send staff invites or use
+passwordless sign-in (`SMALLSTACK_PASSWORDLESS_LOGIN`) and run **no task
+worker** — `WORKER_INLINE=false` with no separate worker role.
+
+**What changed.** These two emails used to be sent inside the request, so a
+slow mail server held a web thread while the user waited. They are now queued
+on the `email` task queue, like the welcome, runbook and approval emails. With
+no worker they are never sent. Separately, `EMAIL_TIMEOUT` now defaults to 10
+seconds; unset used to mean no timeout at all.
+
+**Migration.**
+
+- Run a worker that drains `email` (the default container already does), or
+  set `SMALLSTACK_ACCOUNTS_EMAILS_INLINE=True` to keep sending in the request.
+- If your mail server legitimately needs longer than 10 seconds, set
+  `EMAIL_TIMEOUT`; `0` restores the old no-timeout behaviour.
+- `send_invite_email(request, user, inviter)` keeps its signature.
+  `send_login_code_email(request, user, code)` still sends immediately; the
+  passwordless view now calls `send_login_code(request, login_code)` instead.
+
+## v0.30.0 — a chart filters a dataset of its own; a metric goes on a single stat
+
+**Who is affected:** any project with dashboard cards, and any app that
+registers a `ComponentType` of its own (a chart) or writes cards over REST or
+MCP.
+
+**What changed.** A card that draws data has one of two sources. **A dataset
+it filters itself:** `dataset` + `filter_tree` + `agg`/`measure` +
+`period_field`, the definition a metric holds, kept on the card (new
+`Component` fields, and the same keys on a dashboard cell). **A saved
+metric:** `metric`, now only on a design whose `single_value` is true (the
+single stat): a metric is a filtered result rolled up to one number, for
+goals and thresholds, and a chart needs the rows. A metric with no dataset to
+filter (entered by hand, a rate) may still be charted as it is. Saving a
+grouped stat, a pie, ranked bars or a trend over a dataset metric is refused
+on every surface, with the fields to give it instead.
+
+`smallstack_dashboards.0012_card_sources` copies each metric's definition into
+every chart and grouped card that was bound to one (saved cards and dashboard
+cells), with the metric's format, unit and colour rules as the card's own
+`options.style` / `options.thresholds` where the card had none. **Those cards
+keep drawing the same thing, and no longer follow later edits to the metric.**
+Deleting the metric no longer removes them.
+
+**Migration.**
+
+- A custom card type's `build` already received `ctx.metric`; it now receives
+  the card's source as a `Metric` either way (an unsaved one for a card's own
+  source, `components.is_inline`). Nothing to change for evaluation.
+- Any rows link a `build` draws must come from `components.rows_url(ctx, …)`
+  (or `ctx.rows_url`), not `reverse("dashboards_metric_rows", key=…)`: a
+  card's own source has no metric page, so its rows open by its place on the
+  dashboard (`d/<slug>/cards/<cell_id>/rows/`) or, unsaved, through
+  `dashboards/preview-rows/`.
+- Agents and REST clients that create charts or grouped cards send `dataset`,
+  `filter_tree`, `agg`, `measure` and `period_field` instead of `metric`
+  (`card_preview` says so). Reading a dashboard's values, a card with its own
+  source answers `dataset` where it answered `metric`.
+- **Add to goals** needs a single stat over a metric; a stat with its own
+  filter is saved as a metric first.
+
+## v0.30.0 — only administrators change an address
+
+**Who is affected:** staff (or their API tokens and agents) who change a dashboard's, report's,
+playlist's or goal list's `slug`.
+
+**What changed:** only a superuser or a member of the `admin` group may change an existing
+address. Anyone else's change is refused on every surface (the settings page, REST and MCP) with a
+validation error. Plain staff used to be able to.
+
+**Migration:** add those people to an `admin` group, or have a superuser make the change. A
+changed address doesn't redirect, so links and embeds by the old slug stop working either way.
+
 ## v0.28.0 — `can_update` / `can_delete` now gate writes, not just buttons
 
 **Who is affected:** any CRUDView that overrides `can_update(obj, request)` or

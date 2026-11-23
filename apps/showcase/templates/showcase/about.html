@@ -1,0 +1,21 @@
+{% extends "tabler/base.html" %}
+{% load static theme_tags %}
+
+{% block title %}About{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'smallstack/help/css/help.css' %}">
+<link rel="stylesheet" href="{% static 'tabler/css/slides.css' %}">
+{% endblock %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+{% include "showcase/includes/about_content.html" %}
+{% endblock %}
+
+{% block extra_js %}
+{% if slides %}
+<script src="{% static 'smallstack/help/js/slides.js' %}"></script>
+{% endif %}
+{% endblock %}

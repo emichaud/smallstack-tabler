@@ -32,6 +32,20 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+## [0.33.2-tabler.1] - 2026-11-24
+
+Carries upstream **v0.33.2**: directory-managed groups set on the Access
+pages, multi-select pickers and a New group dialog, the single sign-on help,
+native controls following the dark theme, and access guidance that starts
+from user, staff and admin. See [`CHANGELOG.md`](CHANGELOG.md).
+
+### Notes
+- Clean merge, no conflicts, no overridden template changed upstream. One
+  Access migration applies on `make migrate`.
+- Upstream's `color-scheme` declaration was not ported: Tabler's own CSS
+  already declares it for both modes, so native checkboxes, selects and date
+  pickers follow the theme here already (checked on the group pages).
+
 ## [0.33.1-tabler.1] - 2026-11-24
 
 Carries upstream **v0.33.1**, up from v0.32.2: access reviews (attestation),

@@ -32,6 +32,10 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+## [0.33.2-tabler.2] - 2026-11-25
+
+A Tabler-only build on upstream v0.33.2: the CSP stopgap is gone.
+
 ### Changed
 - **The CSP drops `'unsafe-inline'`.** `script-src` is now `'self'` +
   `cdn.jsdelivr.net`, the same policy upstream has had since v0.30.0. The 18

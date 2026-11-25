@@ -9,6 +9,62 @@ Breaking-change migration recipes live in [`UPGRADING.md`](UPGRADING.md).
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-11-24
+
+### Upgrading from 0.33.0
+- No changes to a downstream build: no migrations, settings or entrypoint changes.
+
+### Changed
+- **Groups are managed on the Access pages; nothing there sends you to Django admin any more.** The Groups page creates a group; the group page renames it, adds and removes the permissions it grants (the card swaps in place over htmx; the picker offers only what you hold yourself), and deletes it; the user page takes a direct permission off an account. All through new services (`create_group`, `rename_group`, `set_group_permission`, `delete_group`, `remove_direct_permission`) with the membership service's rules (`services.group_refusal`): the matching `auth.*_group` permission, the subset rule for granting, no rename or delete of a group declared in code, no change to a directory-managed group. Every write is recorded as before. The same writes over REST (`POST /smallstack/api/access/groups/`, `PATCH`/`DELETE …/groups/{group}/`, `PUT`/`DELETE …/groups/{group}/permissions/{perm}/`, `DELETE …/users/{user}/permissions/{perm}/`; auth-level token) and from the shell (`access group new|rename|rm|grant|revoke`, `access perm rm`).
+
+## [0.33.0] - 2026-11-24
+
+### Upgrading from 0.32
+- `make migrate`: three Access migrations (reviews, evidence bundles, directory identities) and the new *Access attester* group, with no members.
+- `SMALLSTACK_PRIVATE_MEDIA_PREFIXES` now defaults to `runbook/,access/`; if you set it yourself, add `access/`, or stored evidence packs are served by the public `/media/` route.
+- **Session writes to the REST API need `X-CSRFToken`** (token callers are unchanged). `SMALLSTACK_API_SESSION_CSRF=False` keeps the old behaviour for this release, logging each write it would refuse; removed in 0.34.0.
+- New settings, every one off or behaviour-preserving by default: `SMALLSTACK_ACCESS_REVIEW_CADENCE` (`""`), `_SCOPE`, `_DUE_DAYS`, `_REMINDER_DAYS`, `_ESCALATION_EMAILS`, `SMALLSTACK_ACCESS_EVIDENCE_KEEP`, `SMALLSTACK_DIRECTORY_ROLE_MAP`, `SMALLSTACK_DIRECTORY_LOCAL_OVERRIDE`, `SMALLSTACK_DIRECTORY_LINK_BY_EMAIL`, `SMALLSTACK_DIRECTORY_GROUP_PREFIX`.
+- Staff without `accounts.view_user` no longer see the *Users* card on `/smallstack/`; a sign-in backend that sets `user.groups` or `is_superuser` from claims should move to `apps.access.directory.sign_in`. Details in `UPGRADING.md`.
+
+### Added
+- **Access reviews (attestation)** at `/smallstack/access/reviews/`. An *Access attester* (new shipped group, `access.sign_accessreview`) opens a review for a period, which freezes the roster (`privileged` or `all`), decides each account (confirm, flag with a note, or remove, which files an `access.review_remove` approval that deactivates the account in the approver's name), and signs with their typed name. A signed review is immutable evidence (`ReviewLocked`). Nobody decides their own row and a superuser can't attest. Deciding and signing exist on the page only; reviews read over REST (`/smallstack/api/access/reviews/`) and `manage.py access review open|list|show`; CSV, JSON and print view. New findings: *Access review overdue*, *Review decisions not yet acted on*, *Privileged accounts not yet reviewed*.
+- **The evidence pack** at `/smallstack/access/evidence/`: nine read-only sheets for a period and scope (privileged roster, access matrix, changes, joiners, leavers, authentication, API credentials, findings, reviews), each mapped to the SOC 2 / PCI DSS / ISO 27001 controls it supports; CSV per sheet, ZIP bundle, JSON, print view; `manage.py access evidence` and `GET /smallstack/api/access/evidence/`, all from one `build()`. **Stored packs** (`EvidenceBundle`) keep a pack with its SHA-256 (`X-Content-SHA256` on download) under the private `MEDIA_ROOT/access/evidence/`; `SMALLSTACK_ACCESS_EVIDENCE_KEEP` per scope and reason. Apps add sheets with `register_sheet` in `apps/<app>/access_evidence.py`.
+- **The review cadence**, off by default (`SMALLSTACK_ACCESS_REVIEW_CADENCE=""`). `quarterly` adds a daily scheduled job that opens the review when a quarter closes, stores the pack, tells, reminds and escalates the attesters (`SMALLSTACK_ACCESS_REVIEW_SCOPE`, `_DUE_DAYS`, `_REMINDER_DAYS`, `_ESCALATION_EMAILS`), and an *Access review* dashboard card. Signing retires the reminders, stores the attested pack and emits the `access.review.signed` webhook event. `manage.py access cadence [--status]` runs the tick from cron.
+- **Directory-managed groups** (single sign-on): `register_group(..., directory_role=, staff=)` and `map_directory_role()`; `apps.access.directory.sign_in(provider, subject, roles, …)` keys accounts by the provider's subject and sets exactly the directory groups sent (`None` changes nothing, never superuser), recorded from `directory:<provider>`. Local membership changes to such a group are refused on every surface (`SMALLSTACK_DIRECTORY_LOCAL_OVERRIDE` lifts it). `SMALLSTACK_DIRECTORY_ROLE_MAP`, `SMALLSTACK_DIRECTORY_LINK_BY_EMAIL`, `SMALLSTACK_DIRECTORY_GROUP_PREFIX`; `manage.py access directory-manifest --provider entra|generic`; five directory findings. New skill `docs/skills/directory-sso.md`.
+- **Framework seams:** `webhooks.services.register_event()` declares a code-emitted event so the endpoint picker offers it; approval kinds take `can_cancel=fn(user, req)`, which narrows who may withdraw a request as `can_decide` narrows deciding; a saved dashboard's widget cell honours the widget's `visible_to`.
+
+### Changed
+- `SMALLSTACK_PRIVATE_MEDIA_PREFIXES` defaults to `runbook/,access/` (see `UPGRADING.md` if you set it yourself).
+- **Security: a write to the REST API on a session needs the CSRF token** (`X-CSRFToken`), as a form post does. The routes are CSRF-exempt for token callers, and a session fell back without a check, so a page on another site could make a signed-in browser create or change records. Reads and Bearer/Basic callers are unchanged; first-party pages, Swagger's *Try it out* included, send the token. `authenticate_api_request(check_csrf=False)` is for dry-run previews only. **Deprecation path:** `SMALLSTACK_API_SESSION_CSRF=False` turns the check off for one release, logging each write it would refuse, with a `smallstack.W002` system-check warning; the switch is removed in 0.34.0. See `UPGRADING.md`.
+- Approval kinds take `view_permission` (who among staff may see a kind's requests) and `can_cancel`; a kind with `can_decide` sends its notices only to the staff its hook accepts. The access kinds use all three: an access request is seen by access readers, decided and canceled by those who could make the change, never by the account it acts on.
+- A request someone can't see answers **404** on the web decide and cancel routes whatever its state, as its page and the REST/MCP routes do (was 404/403/302 by state).
+- The shared `/smallstack/` board leaves out widget cards the viewer's `visible_to` refuses instead of showing "no access" boxes; the *Users* card needs `accounts.view_user`.
+- The access MCP read tools accept any token tier (as the REST reads do); `accounts.view_user` on a staff account gates them.
+- `webhooks.fan_out` serialises with `DjangoJSONEncoder` and requires a UUID `event_id`; a bad payload or id raises in `DEBUG` and is logged with the reason otherwise.
+- Deleting a live API token revokes it first, so the deletion is recorded as `token_revoked` on every surface; Django admin refuses to delete a superuser's token for anyone else.
+
+### Fixed (from the acceptance test of the above, Test Lab evaluation 45)
+- Django admin's user form could change a directory-managed group's members; it now refuses with the reason, as every other surface does.
+- Any staff account, including the account being removed, could cancel an access review's removal approval; only the requester or someone who could decide it may now.
+- A removal whose approval was rejected, canceled or expired dropped out of *Review decisions not yet acted on* and couldn't be re-filed; it now stays listed while the account is active, and deciding *remove* again files a new approval.
+- Retention could delete the review-signed evidence pack when manual stores exceeded `SMALLSTACK_ACCESS_EVIDENCE_KEEP`; packs are now kept per reason.
+- An evidence sheet added the documented way never appeared; `register_sheet` now does.
+- A review never recorded the request id of its opening or signing.
+- REST and the evidence exports answered a bad date, a reversed period or an unknown scope with a different pack; they now return 400 with the reason, and the page says what it shows instead.
+- `access evidence --store --user` didn't check the storing rule, and a store with no `--user` was labelled *schedule*.
+- Directory sign-ins never set `last_login`, so directory users read as never signed in and dormant.
+- The directory refusal named the provider once per signed-in identity.
+- The target of an access approval could reject it; a removal whose review row was changed to confirm stayed pending and approvable.
+- Django admin's group pages could rename or delete a directory-managed group; the MCP proposal tool filed requests for one that every decision refused.
+- Signed reviews could be changed or deleted with `QuerySet.update()` / `delete()`; signing overwrote the opening's request id (now `signed_request_id`, migration 0006); the signing IP and the *new since the last review* flag were missing from REST, JSON, CSV and the CLI.
+- The evidence print views ran off the page; the on-demand ZIP had no digest header; a signed-out export link answered 403 instead of going to sign-in; the sheet preview sat below the stored packs; a refused store spoke of signing reviews.
+- `access --json` put a newline after every token; `access groups` didn't show directory roles; the review cadence counted reminders nobody received; the Access review card's states weren't coloured; turning the cadence on duplicated a card added by hand.
+
+### Added (from the same acceptance test)
+- `apps.access.directory.sign_in_or_refuse()`, the fail-closed sign-in: a known subject is synced (so an empty role list strips at once) before being refused, and an unknown one with no recognised role is refused before any account is created; `recognised_roles()` answers the role question alone. The auth-proxy middleware recipe in `docs/skills/directory-sso.md` uses it.
+- Finding *Directory accounts with a local password*; system check `access.W001` for a `map_directory_role` naming no declared group.
+- Evidence sheets say what they reflect (as of generation or within the period) and whether the scope filters them; `register_sheet(as_of=, scoped=)`.
+
 ## [0.32.2] - 2026-11-15
 
 ### Fixed
@@ -3538,7 +3594,9 @@ Condensed highlights of the v0.11 series (see git history for per-patch detail):
 See the git tag history (`git tag`) and `ai_cowork/audit_history/` for the full record of the
 v0.8–v0.10 API-server, modern-dark-theme, search, MCP, and Postgres eras.
 
-[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.32.2...HEAD
+[Unreleased]: https://github.com/emichaud/django-smallstack/compare/v0.33.1...HEAD
+[0.33.1]: https://github.com/emichaud/django-smallstack/compare/v0.33.0...v0.33.1
+[0.33.0]: https://github.com/emichaud/django-smallstack/compare/v0.32.2...v0.33.0
 [0.32.2]: https://github.com/emichaud/django-smallstack/compare/v0.32.1...v0.32.2
 [0.32.1]: https://github.com/emichaud/django-smallstack/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/emichaud/django-smallstack/compare/v0.31.0...v0.32.0

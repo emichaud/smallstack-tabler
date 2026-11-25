@@ -25,10 +25,27 @@ from .services import CHANGE_MEMBERSHIP, membership_refusal, set_membership
 KIND = "access.membership"
 
 
+def _is_target(user: Any, req: Any) -> bool:
+    """Whether ``user`` is the account the request acts on."""
+    target = req.target
+    return isinstance(target, get_user_model()) and target.pk == user.pk
+
+
 def _can_decide(user: Any, req: Any) -> bool:
     """Narrows the default (staff) rule: the approver must be able to make the
-    change by hand."""
-    return bool(user.has_perm(CHANGE_MEMBERSHIP))
+    change by hand, and is never the account the request acts on (G2-1: a
+    User manager under review can't reject its own removal)."""
+    return bool(user.has_perm(CHANGE_MEMBERSHIP)) and not _is_target(user, req)
+
+
+def _can_cancel(user: Any, req: Any) -> bool:
+    """Narrows the default (requester or any staff): besides the requester,
+    only someone who could decide may withdraw an access request, and never
+    the account it acts on, so an account under review can't make its own
+    removal go away (T3-2)."""
+    if req.requested_by_id == user.pk:
+        return True
+    return _can_decide(user, req)
 
 
 def proposal(req: Any) -> dict[str, Any]:
@@ -119,6 +136,9 @@ MEMBERSHIP_KIND = ApprovalKind(
     ),
     on_decision=on_membership_decision,
     can_decide=_can_decide,
+    can_cancel=_can_cancel,
+    # Reading it is reading access; deciding it needs change_user.
+    view_permission=("accounts.view_user", CHANGE_MEMBERSHIP),
     check_approve=_check_approve,
     default_expires_in=timedelta(days=3),
     # Only access_request_membership files this kind: the generic REST/MCP
@@ -129,6 +149,76 @@ MEMBERSHIP_KIND = ApprovalKind(
 # Registered at import (the approvals app autodiscovers this module); a test
 # that clears the kind registry re-registers it the same way.
 register_kind(MEMBERSHIP_KIND)
+
+
+# --- Removal found by an access review ----------------------------------------------
+# A *remove* decision on a review row files this. Approving deactivates the
+# account in the approver's name (which revokes its tokens and ends its
+# sessions, as any deactivation does); the review itself never changes access.
+
+REVIEW_REMOVE = "access.review_remove"
+
+
+def _review_remove_account(req: Any) -> Any:
+    target = req.target
+    return target if isinstance(target, get_user_model()) else None
+
+
+def _review_item_for(req: Any) -> Any:
+    """The review row that filed ``req`` (its ``follow_up`` names it), or None."""
+    from .models import AccessReviewItem
+
+    return AccessReviewItem.objects.filter(follow_up=f"approval:{req.pk}").first()
+
+
+def _check_review_remove(actor: Any, req: Any) -> str | None:
+    from .services import account_flags_refusal
+
+    user = _review_remove_account(req)
+    if user is None:
+        return f"The account {req.target_repr!r} no longer exists."
+    if not user.is_active:
+        return f"{user.get_username()} is already deactivated; approving would change nothing. Reject the request."
+    item = _review_item_for(req)
+    if item is not None and item.decision != item.Decision.REMOVE:
+        # G2-2: the attester changed the row away from *remove* after filing.
+        return (
+            f"Access review #{item.review_id} now records {item.get_decision_display().lower()} for "
+            f"{user.get_username()}, not remove. Reject the request."
+        )
+    return account_flags_refusal(actor, user, is_active=False, is_staff=user.is_staff) or None
+
+
+def on_review_remove_decision(req: Any) -> None:
+    if req.status != req.Status.APPROVED:
+        return
+    from .context import acting_as
+
+    user = _review_remove_account(req)
+    if user is None:
+        raise LookupError(f"The account {req.target_repr!r} no longer exists; nothing changed.")
+    with acting_as(req.decided_by, f"approval:{req.pk}"):
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+
+
+REVIEW_REMOVE_KIND = ApprovalKind(
+    key=REVIEW_REMOVE,
+    label="Deactivate an account (access review)",
+    description=(
+        "An access review decided this account should no longer hold access. Approving "
+        "deactivates it in your name, which also revokes its API tokens and ends its sessions."
+    ),
+    on_decision=on_review_remove_decision,
+    can_decide=_can_decide,
+    can_cancel=_can_cancel,
+    # Reading it is reading access; deciding it needs change_user.
+    view_permission=("accounts.view_user", CHANGE_MEMBERSHIP),
+    check_approve=_check_review_remove,
+    default_expires_in=timedelta(days=14),
+    remote_filing=False,
+)
+register_kind(REVIEW_REMOVE_KIND)
 
 
 def request_membership_change(

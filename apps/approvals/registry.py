@@ -46,6 +46,17 @@ class ApprovalKind:
     # dotted is import-order-safe (scheduler task_path idiom).
     on_decision: DecisionCallback | str | None = None
     can_decide: EligibilityHook | None = None
+    # can_cancel(user, req) -> bool. NARROWS who may withdraw a pending request
+    # (the requester or any staff by default), ANDed and failing closed like
+    # can_decide. Set it on a kind whose target must not be able to make the
+    # request go away (an access removal's own account).
+    can_cancel: EligibilityHook | None = None
+    # The permission ("app.codename"), or any one of several, a staff member
+    # needs to SEE this kind's requests, besides the requester and the
+    # assignees, who always see their own. For kinds whose context is
+    # sensitive (who is being removed and why). Include what deciding needs,
+    # so everyone who may decide can also see.
+    view_permission: str | tuple[str, ...] = ""
     default_expires_in: timedelta | None = None
     # Explicit card template; otherwise approvals/kinds/<key dots→dashes>.html
     # then approvals/kinds/default.html.
@@ -108,6 +119,8 @@ def approval_kind(
     label: str = "",
     description: str = "",
     can_decide: EligibilityHook | None = None,
+    can_cancel: EligibilityHook | None = None,
+    view_permission: str | tuple[str, ...] = "",
     default_expires_in: timedelta | None = None,
     context_template: str = "",
     notify: list[str] | None = None,
@@ -127,6 +140,8 @@ def approval_kind(
                 description=description,
                 on_decision=fn,
                 can_decide=can_decide,
+                can_cancel=can_cancel,
+                view_permission=view_permission,
                 default_expires_in=default_expires_in,
                 context_template=context_template,
                 notify=list(notify or []),

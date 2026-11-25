@@ -223,9 +223,13 @@ def board_embed(
     :func:`render_cell` (no htmx needed — an email, a PDF, a test)."""
     period = (dashboard.default_period or None) if period is None else (period or None)
     cells = []
+    from .components import widget_refused
+
     for cell in sorted(
         (c for c in dashboard.layout if isinstance(c, dict)), key=lambda c: (c.get("y", 0), c.get("x", 0))
     ):
+        if dashboard.system_key and widget_refused(cell, request.user):
+            continue  # as the page does (T5-9)
         url = reverse("dashboards_cell", kwargs={"slug": dashboard.slug, "cell_id": cell["id"]})
         html: SafeString | None = None
         if not lazy:
@@ -457,6 +461,10 @@ def sync_widgets(dashboard: Dashboard) -> list[str]:
             for c in board.layout
             if not (c.get("type") == "widget" and (c.get("options") or {}).get("widget") not in registered)
         ]
+        placed = {(c.get("options") or {}).get("widget") for c in layout if c.get("type") == "widget"}
+        # A widget someone already put on the board by hand counts as offered:
+        # mark it, don't place a second copy (T5-3).
+        offered += [k for k, _w in publishable_widgets() if k in placed and k not in offered]
         fresh = [(k, w) for k, w in publishable_widgets() if k not in offered]
         if not fresh and layout == board.layout and offered == board.offered_widgets:
             return []
@@ -556,7 +564,9 @@ def cell_value(dashboard: Dashboard, cell: dict[str, Any], request: HttpRequest)
                 out["problem"] = "This widget is no longer published"
             else:
                 widget, info = found
-                data = widget.get_data(model_class=info.model_class) if info is not None else widget.get_data()
+                from apps.smallstack.displays import widget_data
+
+                data = widget_data(widget, user, info.model_class if info is not None else None)
                 out["display"], out["number"] = str(data.get("headline") or ""), widget_number(data)
     except Exception:  # noqa: BLE001 — one card's failure must not take the table down
         logger.exception("dashboard %s card %s: value failed", dashboard.slug, cell.get("id"))
@@ -720,3 +730,63 @@ def make_card_unique(dashboard: Dashboard, cell_id: str, user: Any, *, copy_metr
         dashboard.layout = [fresh if c.get("id") == cell_id else c for c in dashboard.layout]
         dashboard.save()
     return {"metric": created.key if created is not None else ""}
+
+
+def visible_layout(dashboard: Dashboard, user: Any) -> list[dict[str, Any]]:
+    """The layout as ``user`` sees it: on a system board, without the widget
+    cards their ``visible_to`` refuses (T5-9)."""
+    from .components import widget_refused
+
+    cells = [c for c in dashboard.layout if isinstance(c, dict)]
+    if not dashboard.system_key:
+        return cells
+    return [c for c in cells if not widget_refused(c, user)]
+
+
+def keep_hidden_cells(dashboard: Dashboard, posted: list[Any], user: Any) -> list[Any]:
+    """An editor who can't see some cards of a system board saves the layout
+    they saw: keep the cards hidden from them as stored, and move any whose
+    slot the new layout now covers below everything (G3-1). An editor who sees
+    every card gets exactly what they posted."""
+    from .components import widget_refused
+
+    if not dashboard.system_key:
+        return posted
+    hidden = [c for c in dashboard.layout if isinstance(c, dict) and widget_refused(c, user)]
+    if not hidden:
+        return posted
+    hidden_ids = {c.get("id") for c in hidden}
+    cells = [c for c in posted if not (isinstance(c, dict) and c.get("id") in hidden_ids)]
+
+    def box(c: Any) -> tuple[int, int, int, int]:
+        return int(c.get("x") or 0), int(c.get("y") or 0), int(c.get("w") or 1), int(c.get("h") or 1)
+
+    def overlaps(a: Any, b: Any) -> bool:
+        ax, ay, aw, ah = box(a)
+        bx, by, bw, bh = box(b)
+        return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+    # The editor's grid had no slot for the hidden cards, so the cards below
+    # them floated up. Put the hidden ones back where they were and push the
+    # visible cards they now overlap down again (G5-2), column by column, as
+    # the grid would have; only if that still collides is a hidden card moved
+    # to the bottom.
+    posted_cells = [dict(c) for c in cells if isinstance(c, dict)]
+    for cell in sorted(hidden, key=lambda c: box(c)[1]):
+        hx, hy, hw, hh = box(cell)
+        for c in posted_cells:
+            cx, cy, cw, _ch = box(c)
+            if cx < hx + hw and hx < cx + cw and cy + _ch > hy:
+                c["y"] = cy + hh
+    placed: list[dict[str, Any]] = list(posted_cells)
+    for cell in hidden:
+        if any(overlaps(cell, c) for c in placed):
+            bottom = max((box(c)[1] + box(c)[3] for c in placed), default=0)
+            cell = {**cell, "x": 0, "y": bottom}
+        placed.append(cell)
+    if any(overlaps(a_, b_) for i, a_ in enumerate(placed) for b_ in placed[i + 1:]):
+        # The push created a collision between visible cards: fall back to
+        # the posted layout with the hidden cards below it.
+        bottom = max((box(c)[1] + box(c)[3] for c in cells if isinstance(c, dict)), default=0)
+        return list(cells) + [{**c, "x": 0, "y": bottom + 2 * i} for i, c in enumerate(hidden)]
+    return placed

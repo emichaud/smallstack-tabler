@@ -3393,3 +3393,33 @@ a.stat-list-row:hover .stat-list-name { color: var(--primary); }
 }
 a.stat-list-row:hover .stat-list-chevron { color: var(--primary); transform: translateX(3px); }
 .stat-list-empty { padding: 36px 20px; text-align: center; color: var(--body-quiet-color); margin: 0; }
+
+/* ── Dashboard widget status, the ok / warning / error spelling (v0.33.1) ── */
+.dashboard-widget.widget-status-ok      .widget-headline { color: var(--success-fg); }
+.dashboard-widget.widget-status-warning .widget-headline { color: var(--warning-fg); }
+.dashboard-widget.widget-status-error   .widget-headline { color: var(--error-fg); }
+a.dashboard-widget.widget-status-ok      { border-left-color: var(--success-fg); }
+a.dashboard-widget.widget-status-warning { border-left-color: var(--warning-fg); }
+a.dashboard-widget.widget-status-error   { border-left-color: var(--error-fg); }
+
+/* ── Filter toggle pills (access evidence, activity): port of components.css ── */
+.filter-toggles { display: flex; flex-wrap: wrap; gap: 4px; }
+.filter-toggle {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, var(--body-fg) 20%, var(--body-bg));
+    border-radius: var(--radius-sm, 4px);
+    background: var(--card-bg, var(--body-bg));
+    color: var(--body-fg);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+}
+.filter-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.filter-toggle.active {
+    background: color-mix(in srgb, var(--primary) 15%, var(--body-bg));
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}

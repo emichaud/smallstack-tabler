@@ -44,7 +44,8 @@ When the user asks you to do any of these, read the matching skill file BEFORE w
 | Take a screenshot to verify UI work | `docs/skills/screenshot-workflow.md` |
 | Set up auth or protect a view | `docs/skills/authentication.md` |
 | Pull upstream `django-smallstack` updates into this Tabler downstream | `docs/skills/upstream-workflow.md` |
-| Add a **permission check**, declare a **group** an app ships, review **who can do what** (least privilege, audit evidence), prepare for **SSO group mapping** | `docs/skills/access-control.md` |
+| Add a **permission check**, declare a **group** an app ships, review **who can do what** (least privilege, audit evidence), run or report on the periodic **access review** (attestation for SOC 2 / PCI), produce the **audit evidence pack**, put the review **on a schedule** (quarterly open + stored pack + reminders/escalation, the `access.review.signed` webhook) | `docs/skills/access-control.md` |
+| Put the app behind **Entra / Okta / Google / an auth proxy** so IT assigns groups in the directory — any SSO backend, middleware or claims hook (`directory_role`, `sign_in`, the Entra manifest) | `docs/skills/directory-sso.md` |
 
 The full skill index lives at `docs/skills/README.md`.
 
@@ -96,7 +97,7 @@ All custom apps in `apps/`, registered as `apps.<name>`:
 - `apps/tasks/` — Background-task helpers
 - `apps/tokenmgr/` — Self-service API token UI at `/smallstack/tokens/`
 - `apps/usermanager/` — User CRUD at `/smallstack/manage/users/`
-- `apps/access/` — Access: groups declared in code, every access change recorded, the least-privilege review at `/smallstack/access/`
+- `apps/access/` — Access: groups declared in code, every access change recorded, the least-privilege findings, periodic access reviews at `/smallstack/access/`
 - `apps/webhooks/` — Outbound event delivery (`enable_webhooks`) + inbound receivers (`@webhook_handler`) at `/smallstack/webhooks/`
 - `apps/blog/` — Blogs + newsletters (label: `smallstack_blog`); console at `/smallstack/blog/` (lands on the posts list), public reading at `/blog/`
 - `apps/calendar/` — Calendar (label: `smallstack_calendar`): datasets with a date axis merged on one grid at `/smallstack/calendar/`, saved views, events + `.ics` API; `{% calendar_card %}` + a `calendar` dashboard card put one on any page

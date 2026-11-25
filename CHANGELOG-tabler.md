@@ -32,6 +32,26 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+## [0.33.1-tabler.1] - 2026-11-24
+
+Carries upstream **v0.33.1**, up from v0.32.2: access reviews (attestation),
+the audit evidence pack with stored packs, the opt-in review cadence,
+directory-managed groups for SSO, groups managed on the Access pages without
+Django admin, and session writes to the REST API now needing the CSRF token.
+See [`CHANGELOG.md`](CHANGELOG.md) and [`UPGRADING.md`](UPGRADING.md).
+
+### Changed
+- `AGENTS.md` takes upstream's reworked access-control row and the new
+  `directory-sso.md` row, keeping this fork's upstream-workflow row.
+- `tabler_overrides.css`: ported the `widget-status-ok/warning/error`
+  dashboard-widget colours (v0.33.1) and the `.filter-toggles` pills the
+  Access evidence page and Activity use.
+
+### Notes
+- No Tabler template override changed upstream in this range; two Access
+  migrations apply on `make migrate` (reviews, evidence bundles, the *Access
+  attester* group). The CSP stopgap from 0.32.2-tabler.1 is unchanged.
+
 ## [0.32.2-tabler.1] - 2026-11-22
 
 Carries upstream **v0.32.2**, up from v0.29.0: the Access app (groups in code,

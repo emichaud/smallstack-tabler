@@ -13,12 +13,13 @@ User = get_user_model()
 
 @pytest.fixture(autouse=True)
 def _reregister():
-    from apps.access.approvals import MEMBERSHIP_KIND
+    from apps.access.approvals import MEMBERSHIP_KIND, REVIEW_REMOVE_KIND
     from apps.access.mcp_tools import register_access_tools
     from apps.approvals.registry import register_kind
 
     register_access_tools()
     register_kind(MEMBERSHIP_KIND)
+    register_kind(REVIEW_REMOVE_KIND)
     try:
         from apps.approvals.mcp_tools import register_approvals_tools
         from apps.approvals.views import ApprovalRequestCRUDView
@@ -28,6 +29,14 @@ def _reregister():
         register_mcp_tools_from_crudview(ApprovalRequestCRUDView)
     except Exception:
         pass
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _private_media(settings, tmp_path):
+    """Stored evidence packs go to a temporary MEDIA_ROOT, not the checkout's
+    media/ (G2-7)."""
+    settings.MEDIA_ROOT = str(tmp_path / "media")
     yield
 
 

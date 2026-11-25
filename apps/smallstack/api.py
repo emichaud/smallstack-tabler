@@ -377,6 +377,8 @@ def _token_from_authorization(auth_header: str) -> str | None:
 
 def authenticate_api_request(
     request: HttpRequest,
+    *,
+    check_csrf: bool = True,
 ) -> tuple[Any, JsonResponse | None]:
     """Authenticate via an API token (``Bearer`` or ``Basic``) or the existing
     session. API views only — public for apps writing their own JSON views
@@ -417,8 +419,41 @@ def authenticate_api_request(
         setattr(request, "_api_token_auth", True)
         return user, None
 
-    # No token header — use existing session auth
+    # No token header — use existing session auth. A session is ambient: a
+    # page on another site can make the browser send it. So a write on a
+    # session must carry the CSRF token, as a form post does (the routes are
+    # csrf_exempt for token callers, which a cross-site page can't forge).
+    # ``check_csrf=False`` is for dry runs only (a preview that never saves).
     if request.user.is_authenticated:
+        if check_csrf and request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            from django.conf import settings as dj_settings
+            from django.middleware.csrf import CsrfViewMiddleware
+
+            class _Check(CsrfViewMiddleware):
+                reason = ""
+
+                def _reject(self, request: HttpRequest, reason: str) -> HttpResponse:  # type: ignore[override]
+                    self.reason = reason  # say which check failed (G3-5)
+                    return HttpResponse(status=403)
+
+            check = _Check(lambda r: None)  # type: ignore[arg-type,return-value]
+            if check.process_view(request, None, (), {}) is not None:  # type: ignore[arg-type]
+                if not getattr(dj_settings, "SMALLSTACK_API_SESSION_CSRF", True):
+                    # The one-release escape hatch: let it through, and say
+                    # which caller to fix (removed in 0.34.0).
+                    logger.warning(
+                        "api: %s %s on a session without a valid CSRF token (%s) was allowed because "
+                        "SMALLSTACK_API_SESSION_CSRF=False; send X-CSRFToken before 0.34.0 refuses it",
+                        request.method,
+                        request.path,
+                        check.reason,
+                    )
+                    return request.user, None
+                return None, _error(
+                    f"CSRF check failed: {check.reason.rstrip('.')}. With session auth, send the X-CSRFToken header "
+                    "(the csrftoken cookie) from a trusted origin; scripts and other sites should use an API token.",
+                    403,
+                )
         return request.user, None
 
     return None, _error("Authentication required", 401)
@@ -2267,6 +2302,9 @@ def _api_docs_response(request, template):
 
 def api_docs_swagger(request: HttpRequest) -> HttpResponse:
     """Serve Swagger UI pointing at the OpenAPI schema."""
+    from django.middleware.csrf import get_token
+
+    get_token(request)  # sets the csrftoken cookie "Try it out" sends on a session (G3-3)
     return _api_docs_response(request, "smallstack/api/swagger.html")
 
 

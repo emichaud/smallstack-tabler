@@ -73,12 +73,14 @@ from .boards import (
     board_attention,
     board_cards,
     cell_value,
+    keep_hidden_cells,
     make_card_unique,
     placement_counts,
     render_cell,
     set_sharing,
     share_payload,
     system_dashboard,
+    visible_layout,
 )
 from .comparison import compare_with_previous
 from .components import (
@@ -89,6 +91,7 @@ from .components import (
     describe_types,
     get_component_type,
     is_inline,
+    widget_refused,
 )
 from .datasets import visible_entries
 from .displays import (
@@ -655,6 +658,8 @@ class DashboardPageView(LoginRequiredMixin, TemplateView):
         metrics = {m.key: m for m in Metric.objects.filter(key__in=dashboard.metric_keys())} if can_edit else {}
         cells = []
         for cell in dashboard.layout:
+            if dashboard.system_key and widget_refused(cell, user):
+                continue  # the shared system board leaves out what the viewer can't read (T5-9)
             ct = get_component_type(str(cell.get("type", "")))
             type_label = ct.label if ct else cell.get("type")
             where = {"slug": dashboard.slug, "cell_id": cell.get("id", "")}
@@ -721,7 +726,9 @@ class DashboardPageView(LoginRequiredMixin, TemplateView):
         if dashboard.owner_id is not None:
             cards = cards | Component.objects.active().filter(owner_id=dashboard.owner_id)
         return {
-            "layout": dashboard.layout,
+            # Cards the page leaves out for this viewer stay out of edit mode too;
+            # the save keeps them where they were (G3-1).
+            "layout": visible_layout(dashboard, user),
             "types": describe_types(user),
             # Saved cards this dashboard may place: shared ones, and its owner's.
             "components": [
@@ -782,7 +789,7 @@ class DashboardLayoutView(LoginRequiredMixin, View):
         layout = payload.get("layout") if isinstance(payload, dict) else None
         if not isinstance(layout, list):
             return JsonResponse({"errors": ['Send {"layout": [...]}.']}, status=400)
-        dashboard.layout = layout
+        dashboard.layout = keep_hidden_cells(dashboard, layout, request.user)
         try:
             dashboard.save()
         except ValidationError as exc:

@@ -137,8 +137,10 @@ def ip_is_blocked(ip: str) -> bool:
 
 def fan_out(event_type: str, payload: dict[str, Any], *, event_id: str | None = None) -> int:
     """Create one WebhookDelivery per enabled endpoint whose filter matches, and
-    enqueue each. Returns the number of deliveries created. Never raises — a
-    fan-out failure must not break the originating model save.
+    enqueue each. Returns the number of deliveries created. A delivery failure
+    never breaks the originating model save; a payload that can't be sent (not
+    JSON-serialisable, NaN, a non-UUID ``event_id``) raises ``ValueError`` in
+    DEBUG — a programming error to see at once — and is logged otherwise.
 
     ``event_id`` is the stable per-event idempotency key, shared by every
     delivery for this event and reused by replay.
@@ -146,6 +148,31 @@ def fan_out(event_type: str, payload: dict[str, Any], *, event_id: str | None = 
     if not getattr(settings, "SMALLSTACK_WEBHOOKS_ENABLED", True):
         return 0
     if not getattr(settings, "SMALLSTACK_WEBHOOKS_OUTBOUND", True):
+        return 0
+    # An adopter's mistake used to read as "outbound is off" (0) with only a
+    # traceback in the log (T5-10). Dates, Decimals and UUIDs in the payload
+    # are serialised as Django's encoder does; an event id must be a UUID. In
+    # DEBUG a bad one raises; in production it is logged and nothing is sent.
+    import json
+    import uuid
+
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    problem = ""
+    if event_id is not None:
+        try:
+            uuid.UUID(str(event_id))
+        except ValueError:
+            problem = f"event_id must be a UUID string (got {event_id!r})"
+    if not problem:
+        try:
+            payload = json.loads(json.dumps(payload, cls=DjangoJSONEncoder, allow_nan=False))
+        except (TypeError, ValueError) as exc:
+            problem = f"the payload isn't JSON-serialisable ({exc})"
+    if problem:
+        if getattr(settings, "DEBUG", False):
+            raise ValueError(f"webhooks.fan_out({event_type!r}): {problem}")
+        logger.error("webhooks: fan_out(%s) sent nothing: %s", event_type, problem)
         return 0
 
     max_attempts = int(getattr(settings, "SMALLSTACK_WEBHOOK_MAX_ATTEMPTS", 5))
@@ -337,15 +364,35 @@ def replay_dead(
 # ---------------------------------------------------------------------------
 
 
+#: Events emitted by code rather than by a CRUDView save — ``register_event``
+#: puts them in the picker beside the model events, with a plain-English hint.
+_custom_events: dict[str, str] = {}
+
+
+def register_event(event_type: str, hint: str = "") -> None:
+    """Declare an event your app emits itself with :func:`fan_out`, so the
+    endpoint picker offers it and ``unmatched_patterns`` knows it exists.
+    ``event_type`` is dotted (``access.review.signed``); ``hint`` is "when it
+    fires" in plain English. Re-registering replaces the hint."""
+    if not _PATTERN_RE.match(event_type) or "*" in event_type:
+        raise ValueError(f"event_type {event_type!r} must be a concrete dotted name.")
+    _custom_events[event_type] = hint
+
+
+def custom_events() -> dict[str, str]:
+    return dict(_custom_events)
+
+
 def available_events() -> list[str]:
-    """Every concrete event type a model with ``enable_webhooks`` can emit, plus the
-    common wildcards — the option list for the event-filter picker."""
+    """Every concrete event type a model with ``enable_webhooks`` can emit, every
+    event registered with :func:`register_event`, plus the common wildcards — the
+    option list for the event-filter picker."""
     try:
         from apps.smallstack.crud import CRUDView
     except Exception:  # noqa: BLE001
-        return ["*"]
+        return ["*", *sorted(_custom_events)]
     all_actions = ("created", "updated", "deleted")
-    events: list[str] = []
+    events: list[str] = list(_custom_events)
     for view in CRUDView._registry.values():
         if not getattr(view, "enable_webhooks", False):
             continue
@@ -430,7 +477,7 @@ def describe_event_pattern(pattern: str) -> str:
     the model's verbose name from the CRUDView registry; anything unrecognised
     returns "" and the picker shows the bare pattern.
     """
-    hint = _WILDCARD_HINTS.get(pattern)
+    hint = _WILDCARD_HINTS.get(pattern) or _custom_events.get(pattern)
     if hint:
         return hint
     parts = pattern.split(".")

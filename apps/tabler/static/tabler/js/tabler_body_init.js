@@ -9,6 +9,7 @@
     } catch (e) { /* storage unavailable */ }
     // The profile's theme, when tabler_init.js saw one, is already in localStorage.
     if (t === 'dark') document.body.classList.add('theme-dark');
+    if ('noLayout' in document.body.dataset) return;   // the auth shell keeps its own layout
     if (layout === 'sticky') layout = 'navbar-sticky';   // legacy value
     if (layout === 'boxed') document.body.classList.add('layout-boxed');
     else if (layout === 'condensed') document.body.classList.add('layout-condensed');

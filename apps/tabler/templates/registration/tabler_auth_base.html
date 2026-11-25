@@ -6,13 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% endblock %} | {{ brand.name }}</title>
 
-    <!-- Blocking theme script -->
-    <script>
-    (function() {
-        var t = localStorage.getItem('smallstack-theme') || 'dark';
-        document.documentElement.dataset.stkTheme = t;
-    })();
-    </script>
+    <!-- Blocking first-paint script (no inline JS: the CSP's script-src is 'self') -->
+    <script src="{% static 'tabler/js/tabler_init.js' %}"></script>
 
     <!-- Favicon -->
     <link rel="icon" type="image/x-icon" href="{% static brand.favicon %}">
@@ -32,14 +27,8 @@
         a:hover { color: #ffffff; }
     </style>
 </head>
-<body class="d-flex flex-column">
-    <script>
-    (function() {
-        var t = localStorage.getItem('smallstack-theme') || 'dark';
-        if (t === 'dark') document.body.classList.add('theme-dark');
-        document.documentElement.setAttribute('data-bs-theme', t);
-    })();
-    </script>
+<body class="d-flex flex-column" data-no-layout>
+    <script src="{% static 'tabler/js/tabler_body_init.js' %}"></script>
     <div class="page page-center">
         <div class="container container-tight py-4">
             <div class="text-center mb-4">

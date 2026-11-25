@@ -32,6 +32,8 @@ from django.conf import settings
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _SKIP_DIRS = {".git", ".venv", "node_modules", "staticfiles", "htmlcov", "site-packages", "__pycache__"}
+# Tabler fork: a local, gitignored checkout of Tabler's source (docs/skills/tabler/customization.md).
+_SKIP_DIRS.add("_tabler_source")
 
 #: The framework's own apps: everything under apps/ but ``website``, which is the
 #: project's to edit. ``showcase`` is SmallStack's demo pages, which a project may

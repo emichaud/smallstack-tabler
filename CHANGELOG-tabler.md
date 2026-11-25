@@ -32,6 +32,22 @@ name and are kept only for history.
 
 ## [Unreleased]
 
+### Changed
+- **The CSP drops `'unsafe-inline'`.** `script-src` is now `'self'` +
+  `cdn.jsdelivr.net`, the same policy upstream has had since v0.30.0. The 18
+  inline `<script>` blocks and nine `onclick=` handlers in this fork's templates
+  moved to static files: `apps/tabler/static/tabler/js/templates/` (backups,
+  profile edit, the CRUD form and field-preview modal, heartbeat dashboard and
+  SLA, Explorer index and example pages), `static/website/js/templates/home.js`
+  and `apps/preview/static/preview/js/templates/charts.js`. Server values ride
+  on `data-` attributes or a JSON data block; buttons are `data-ss-action`.
+  The cookie banner uses upstream's script; the auth shells use the shared
+  first-paint scripts (`tabler_init.js`, `tabler_body_init.js`, upstream's
+  `theme-init.js`). With the stopgap gone, upstream's hygiene tests now hold
+  every template in the project to the rule.
+- `template_hygiene.py` skips `_tabler_source/` (a local, gitignored Tabler
+  checkout) so the sweep sees only the project's templates.
+
 ## [0.33.2-tabler.1] - 2026-11-24
 
 Carries upstream **v0.33.2**: directory-managed groups set on the Access

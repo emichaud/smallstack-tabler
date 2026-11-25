@@ -250,9 +250,8 @@ CSRF_COOKIE_SAMESITE = "Lax"
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": ["'self'"],
-        # Tabler fork: 'unsafe-inline' stays until the inline blocks in apps/tabler/templates/
-        # are moved to static JS; cdn.jsdelivr.net serves Tabler's CSS/JS bundle.
-        "script-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
+        # Tabler fork: cdn.jsdelivr.net serves Tabler's JS bundle and Chart.js.
+        "script-src": ["'self'", "cdn.jsdelivr.net"],
         "style-src": ["'self'", "'unsafe-inline'", "https:"],
         "img-src": ["'self'", "data:", "https:"],
         "font-src": ["'self'", "https:", "data:"],

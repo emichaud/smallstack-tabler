@@ -53,7 +53,8 @@ git push origin main
 | `templates/website/*.html` | Keep `{% extends "tabler/base.html" %}` (upstream uses `website/base.html`) |
 | `uv.lock` | Accept upstream's version, then run `uv lock` to reconcile |
 | `config/settings/base.py` | Accept upstream structural changes; tabler-specific settings live in `apps/tabler/` |
-| `config/settings/base.py` — `CONTENT_SECURITY_POLICY` | Upstream's `script-src` is `'self'` only. Keep this fork's `'unsafe-inline'` + `cdn.jsdelivr.net` (the stopgap) until every inline `<script>` in `apps/tabler/templates/` has moved to `static/`; `grep -rn "<script>" apps/tabler/templates` lists what's left |
+| `config/settings/base.py` — `CONTENT_SECURITY_POLICY` | Upstream's `script-src` is `'self'`; this fork's is `'self'` + `cdn.jsdelivr.net` (Tabler's JS bundle, Chart.js). Keep the CDN origin; never add `'unsafe-inline'` back — every template is CSP-clean and `test_template_hygiene.py` enforces it |
+| `apps/smallstack/template_hygiene.py` | Take upstream's, keep the two fork lines that add `_tabler_source` to `_SKIP_DIRS` (a local, gitignored Tabler checkout the sweep would otherwise flag) |
 | `apps/website/urls.py`, `views.py` | Upstream's demo pages live in `apps/showcase/` (namespace `showcase`) since v0.30.1. Keep upstream's `home_view` plus this fork's `changelog_view`; `templates/website/changelog.html` + `apps/website/github.py` are fork-only |
 | `config/deploy.yml` | Accept upstream docs/comments; keep tabler deploy config |
 | `AGENTS.md` / `CLAUDE.md` | `AGENTS.md` holds this fork's orientation; keep the Tabler guidance and take upstream's new rows. `CLAUDE.md` stays upstream's thin `@AGENTS.md` import |

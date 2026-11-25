@@ -1,4 +1,5 @@
 {% extends "tabler/base.html" %}
+{% load static %}
 {% load theme_tags %}
 
 {% block title %}SLA{% endblock %}
@@ -138,7 +139,7 @@
                             <div class="form-hint">{{ form.service_minimum.help_text }}</div>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-primary w-100" onclick="document.getElementById('sla-confirm-modal').style.display='flex'">Save SLA Settings</button>
+                    <button type="button" class="btn btn-primary w-100" data-ss-action="slaModalOpen">Save SLA Settings</button>
                 </form>
             </div>
         </div>
@@ -207,14 +208,14 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Update SLA Configuration</h5>
-                <button type="button" class="btn-close" onclick="slaModalClose()"></button>
+                <button type="button" class="btn-close" data-ss-action="slaModalClose"></button>
             </div>
             <div class="modal-body">
                 <p class="text-secondary">Are you sure you want to update the SLA settings? Uptime percentages will recalculate from the new start date.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn" onclick="slaModalClose()">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="slaModalConfirm()">Save Settings</button>
+                <button type="button" class="btn" data-ss-action="slaModalClose">Cancel</button>
+                <button type="button" class="btn btn-primary" data-ss-action="slaModalConfirm">Save Settings</button>
             </div>
         </div>
     </div>
@@ -222,19 +223,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-function slaModalClose() {
-    document.getElementById('sla-confirm-modal').style.display = 'none';
-}
-function slaModalConfirm() {
-    slaModalClose();
-    document.getElementById('sla-form').submit();
-}
-document.addEventListener('click', function(e) {
-    if (e.target.id === 'sla-confirm-modal') slaModalClose();
-});
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') slaModalClose();
-});
-</script>
+<script src="{% static 'tabler/js/templates/heartbeat/sla.js' %}"></script>
 {% endblock %}

@@ -1,4 +1,5 @@
 {% extends "tabler/base.html" %}
+{% load static %}
 {% load theme_tags crud_tags %}
 
 {% block title %}{% if object %}Edit{% else %}Create{% endif %} {{ object_verbose_name }}{% endblock %}
@@ -87,15 +88,5 @@
     </div>
 </div>
 
-<script>
-// Wrap date/datetime-local/time inputs with a picker button
-document.querySelectorAll('form input[type="date"], form input[type="datetime-local"], form input[type="time"]').forEach(function(input) {
-    // Add Tabler form-control class if not present
-    if (!input.classList.contains('form-control')) input.classList.add('form-control');
-    input.style.cursor = 'pointer';
-    input.addEventListener('click', function() {
-        if (this.showPicker) this.showPicker();
-    });
-});
-</script>
+<script src="{% static 'tabler/js/templates/crud/object_form.js' %}"></script>
 {% endblock %}

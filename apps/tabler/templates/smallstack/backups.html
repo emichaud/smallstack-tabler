@@ -1,4 +1,5 @@
 {% extends "tabler/base.html" %}
+{% load static %}
 {% load theme_tags %}
 
 {% block title %}Backups{% endblock %}
@@ -37,14 +38,14 @@
                     {% endif %}
 
                     {% if is_sqlite %}
-                    <button type="button" class="btn btn-primary" id="backup-now-btn" onclick="backupNow()">
+                    <button type="button" class="btn btn-primary" id="backup-now-btn" data-ss-action="backupNow">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                         <span id="backup-label">Backup Now</span>
                     </button>
                     {% endif %}
 
                     {% if is_sqlite and backup_download_enabled %}
-                    <button type="button" class="btn btn-outline-primary" id="download-btn" onclick="downloadBackup()">
+                    <button type="button" class="btn btn-outline-primary" id="download-btn" data-ss-action="downloadBackup">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         <span id="download-label">Download</span>
                     </button>
@@ -80,87 +81,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-function _getCSRFToken() {
-    var el = document.querySelector('[name=csrfmiddlewaretoken]');
-    if (el) return el.value;
-    var match = document.cookie.match(/csrftoken=([^;]+)/);
-    return match ? match[1] : '';
-}
-
-function backupNow() {
-    var btn = document.getElementById('backup-now-btn');
-    if (btn.dataset.busy) return;
-    btn.dataset.busy = '1';
-    var label = document.getElementById('backup-label');
-    if (label) label.textContent = 'Creating\u2026';
-
-    fetch("{% url 'smallstack:backup_now' %}", {
-        method: 'POST',
-        headers: { 'X-CSRFToken': _getCSRFToken() },
-        credentials: 'same-origin'
-    })
-    .then(function(response) {
-        if (label) label.textContent = 'Backup Now';
-        delete btn.dataset.busy;
-        htmx.ajax('GET', "{% url 'smallstack:backups' %}", {
-            target: '#backup-page-content',
-            swap: 'innerHTML'
-        });
-    })
-    .catch(function(err) {
-        if (label) label.textContent = 'Failed';
-        setTimeout(function() {
-            if (label) label.textContent = 'Backup Now';
-            delete btn.dataset.busy;
-        }, 2000);
-    });
-}
-
-function downloadBackup() {
-    var btn = document.getElementById('download-btn');
-    if (btn.dataset.busy) return;
-    btn.dataset.busy = '1';
-    var label = document.getElementById('download-label');
-    if (label) label.textContent = 'Creating\u2026';
-
-    fetch("{% url 'smallstack:backup_download' %}", {
-        method: 'POST',
-        headers: { 'X-CSRFToken': _getCSRFToken() },
-        credentials: 'same-origin'
-    })
-    .then(function(response) {
-        if (!response.ok) throw new Error('Download failed');
-        var disposition = response.headers.get('Content-Disposition') || '';
-        var filenameMatch = disposition.match(/filename="?([^"]+)"?/);
-        var filename = filenameMatch ? filenameMatch[1] : 'backup.sqlite3';
-        return response.blob().then(function(blob) {
-            return {blob: blob, filename: filename};
-        });
-    })
-    .then(function(result) {
-        var url = URL.createObjectURL(result.blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = result.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        if (label) label.textContent = 'Download';
-        delete btn.dataset.busy;
-        htmx.ajax('GET', "{% url 'smallstack:backups' %}", {
-            target: '#backup-page-content',
-            swap: 'innerHTML'
-        });
-    })
-    .catch(function(err) {
-        if (label) label.textContent = 'Failed';
-        setTimeout(function() {
-            if (label) label.textContent = 'Download';
-            delete btn.dataset.busy;
-        }, 2000);
-    });
-}
-</script>
+<script src="{% static 'tabler/js/templates/backups.js' %}"
+        data-backup-now-url="{% url 'smallstack:backup_now' %}"
+        data-backups-url="{% url 'smallstack:backups' %}"
+        data-backup-download-url="{% url 'smallstack:backup_download' %}"></script>
 {% endblock %}

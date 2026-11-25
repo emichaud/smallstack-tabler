@@ -376,23 +376,20 @@ Note: the theme engine (`tabler_theme.js`) still runs and reads `localStorage`; 
 
 If you enable CSP headers (in `MIDDLEWARE` or via a reverse proxy), Tabler needs:
 
-- `script-src` — CDN (`cdn.jsdelivr.net`), inline scripts (the FOUC blockers in base.html) — needs `'unsafe-inline'` or nonces
-- `style-src` — CDN, inline `<style>` blocks — needs `'unsafe-inline'` or nonces
-- `font-src` — `fonts.googleapis.com`, `fonts.gstatic.com`
-- `img-src` — `data:` for inline-image previews; CDN if loading from Tabler's static assets
-- `connect-src` — any API endpoints + ApexCharts may attempt analytics requests
+- `script-src` — `'self'` plus the CDN (`cdn.jsdelivr.net`: Tabler's JS bundle, Chart.js). **No `'unsafe-inline'`**: every script is a static file. The first-paint blockers are `tabler/js/tabler_init.js` and `tabler_body_init.js`; page scripts live under `apps/tabler/static/tabler/js/templates/` and get server values from `data-` attributes on their own `<script>` tag or a `json_script` block; buttons use `data-ss-action` (see `docs/skills/templates.md`). `test_template_hygiene.py` fails the suite on an inline `<script>` or `onclick=`.
+- `style-src` — CDN + `'unsafe-inline'` (Tabler's own markup and the per-page `<style>` blocks in `apps/tabler/templates/` need it; `style-src` doesn't carry the XSS risk `script-src` does)
+- `font-src` — `https:` (rsms.me for Inter) + `data:`
+- `img-src` — `data:` for inline-image previews; `https:` for CDN assets
+- `connect-src` — `'self'`; add any API origin a page fetches
 
-Example CSP for production:
+The policy in force is `CONTENT_SECURITY_POLICY` in `config/settings/base.py` (django-csp):
 
 ```python
-CSP_DEFAULT_SRC = ("'self'",)
-CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "cdn.jsdelivr.net")
-CSP_STYLE_SRC  = ("'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "fonts.googleapis.com")
-CSP_FONT_SRC   = ("'self'", "fonts.gstatic.com")
-CSP_IMG_SRC    = ("'self'", "data:")
+"script-src": ["'self'", "cdn.jsdelivr.net"],
+"style-src": ["'self'", "'unsafe-inline'", "https:"],
 ```
 
-For stricter CSP without `'unsafe-inline'`, move all inline scripts (FOUC blockers, settings reset, etc.) to external files. Significant refactor.
+Adding a third-party script means adding its origin to `script-src` (or vendoring it under `static/`), never `'unsafe-inline'`. A one-off inline block for a page you are prototyping: move it to a static file before committing; the test suite will insist.
 
 ## Print stylesheets
 
